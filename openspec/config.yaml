@@ -4,25 +4,26 @@ context: |
   Language: zh-CN
   All artifacts must be written in zh-CN.
   Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  Read PROJECT.md before planning. Read STATUS.md for current state and RUNBOOK.md for operations.
+  The production path is console -> local API -> SQLite queue -> per-device Worker -> uiautomator2 -> Android.
+  MBH/Codex are development tools; AI returns decisions or candidates and never clicks devices directly.
+  Preserve runtime data and evidence. Device actions default to preview and require explicit authorization for writes.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - State explicit non-goals for any change touching devices, data, models, credentials, or architecture.
+    - Distinguish current verified facts from assumptions and historical evidence.
+  design:
+    - Include rollback and explain how runtime databases and device state remain protected.
+  tasks:
+    - Every task must include an observable verification criterion.
+    - Put offline, API, browser, and device checks in increasing-risk order.
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+operations:
+  apply:
+    guidance:
+      - Keep runtime interfaces and task-state semantics unchanged unless the approved change explicitly modifies them.
+      - Do not operate a phone or submit a device task solely to validate documentation or governance changes.
+  archive:
+    guidance:
+      - Update STATUS.md or CHANGELOG.md when the accepted current state changes.

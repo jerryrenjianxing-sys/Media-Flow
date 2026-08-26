@@ -1,5 +1,8 @@
 # vinext-starter
 
+> [!NOTE]
+> 这是早期脚手架说明，不是 RiskFlow 当前运行手册。当前启动、状态检查和验收流程见根目录 `RUNBOOK.md`；重写本文件已列入 `STATUS.md` 的 P0 治理队列。
+
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
 Drizzle support.

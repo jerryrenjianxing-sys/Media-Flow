@@ -1,5 +1,8 @@
 # 统一手机 Agent 池架构
 
+> [!WARNING]
+> 历史方案，未进入当前正式架构。AutoGLM/MBH 不参与 RiskFlow 日常运行；当前生产链路见根目录 `PROJECT.md` 和 `openspec/specs/runtime-safety-baseline/spec.md`。正文保留用于追溯当时的方案比较。
+
 ## 目标
 
 让 AutoGLM 与 Codex + Mobile Harness 从同一任务池领取任务、读取同一种设备状态、回写同一种执行记录，并在失败时安全交接手机控制权。
