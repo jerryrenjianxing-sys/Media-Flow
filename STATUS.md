@@ -19,10 +19,11 @@
 - 任务池：保持暂停，0 条运行中、2 条历史等待任务；本次治理未新增任务。
 - 运行数据库和历史截图：保留在本机，未清理、未纳入 Git。
 
-## 正在进行
+## 最近完成
 
-- OpenSpec change：`riskflow-v1-consolidation`。
-- 目标：形成项目真相、运行手册、架构决定、Agent 规则和首批主规格。
+- OpenSpec change `riskflow-v1-consolidation` 已于 2026-08-26 验收并归档。
+- 已形成项目真相、运行手册、架构决定、Agent 规则和 `project-governance`、`runtime-safety-baseline` 两项主规格。
+- 当前没有活动 OpenSpec change；下一项高影响工作需要新建 change。
 
 ## 后续治理队列
 

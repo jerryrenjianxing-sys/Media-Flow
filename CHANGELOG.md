@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+暂无。
+
+## [riskflow-governance-v1] - 2026-08-26
+
 ### Added
 
 - OpenSpec 项目治理、正式规格、运行手册、架构决定和 Agent 规则。
@@ -12,6 +16,7 @@
 ### Changed
 
 - 旧架构与设计材料增加状态说明，保留正文但不再作为当前事实源。
+- `riskflow-v1-consolidation` 已合并为正式主规格并归档。
 
 ## [riskflow-v1-baseline-2026-08-26] - 2026-08-26
 
