@@ -1,0 +1,51 @@
+# Operating state and evidence
+/fixed_runner/runtime/
+/fixed_runner/artifacts/
+/fixed_runner/artifacts-uia2/
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite3
+**/*.log
+**/*.pid
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+
+# Python caches and local environments
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
+
+# Frontend dependencies and generated output
+/control_console/node_modules/
+/control_console/.next/
+/control_console/.npm-cache/
+/control_console/.vinext/
+/control_console/.wrangler/
+/control_console/dist/
+/control_console/coverage/
+
+# Local browsers, tools, packages, and generated launchers
+/.edge-*/
+/work/
+/RiskFlow.exe
+*.apk
+*.zip
+*.part[0-9]*
+
+# Verification screenshots and editor/OS noise
+/verify-*.png
+Thumbs.db
+.DS_Store
+*.tmp
+*.temp
+*~
