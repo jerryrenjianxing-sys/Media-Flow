@@ -502,6 +502,94 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         except Exception:
             return main_feed_visible(image)
 
+    def main_feed_shell_confirmed(
+        self, image: Image.Image, source: str | None = None
+    ) -> bool:
+        """Confirm a browsable feed shell without granting mutation access."""
+        try:
+            current_source = source
+            if current_source is None:
+                current_source = self.device.dump_hierarchy(
+                    compressed=True, pretty=False
+                )
+            if foreground_package(self.device) != DOUYIN_PACKAGE:
+                return False
+            if (
+                comment_panel_source_visible(current_source)
+                or minor_mode_overlay_visible(current_source)
+                or any(
+                    marker in current_source
+                    for marker in (
+                        "登录后，体验完整功能",
+                        "请输入手机号",
+                        "验证并登录",
+                    )
+                )
+            ):
+                return False
+            home_bounds = find_bottom_navigation_bounds(
+                current_source,
+                "首页",
+                self.profile.width,
+                self.profile.height,
+            )
+            if home_bounds is None:
+                return False
+            signals = _visible_aweme_signals(
+                current_source, self.profile.width, self.profile.height
+            )
+            has_complete_feed_controls = not _missing_feed_controls(signals)
+            feed_tabs = ("推荐", "关注", "精选", "同城")
+            has_exact_feed_tab = any(
+                signal == tab or signal.startswith(f"{tab}，")
+                for signal in signals
+                for tab in feed_tabs
+            )
+            return has_complete_feed_controls or has_exact_feed_tab
+        except Exception:
+            return False
+
+    def wait_for_main_feed_shell(
+        self, reason: str, *, attempts: int = 16, delay_s: float = 0.75
+    ) -> bool:
+        """Poll a bounded number of times after a slow application restart."""
+        for attempt in range(1, attempts + 1):
+            try:
+                image = self.device.screenshot(format="pillow").convert("RGB")
+                self.ensure_profile(image)
+                source = self.device.dump_hierarchy(compressed=True, pretty=False)
+                if self.main_feed_shell_confirmed(image, source):
+                    self.recorder.emit(
+                        "feed_recovery_wait",
+                        reason=reason,
+                        outcome="ready",
+                        attempt=attempt,
+                    )
+                    self.recorder.screenshot(
+                        self.device, f"feed-recovery-{reason}-app-start-ready"
+                    )
+                    return True
+            except Exception as exc:
+                self.recorder.emit(
+                    "feed_recovery_wait",
+                    reason=reason,
+                    outcome="observation_failed",
+                    attempt=attempt,
+                    error=type(exc).__name__,
+                )
+            if attempt < attempts:
+                time.sleep(delay_s)
+        self.recorder.emit(
+            "feed_recovery_wait",
+            reason=reason,
+            outcome="timeout",
+            attempts=attempts,
+        )
+        self.recorder.screenshot(
+            self.device, f"feed-recovery-{reason}-app-start-timeout"
+        )
+        return False
+
     def search_feed_confirmed(self, source: str) -> bool:
         try:
             signals = _visible_aweme_signals(
@@ -652,7 +740,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             image = self.recorder.screenshot(
                 self.device, f"feed-recovery-{reason}-home-tab"
             )
-            if self.main_feed_confirmed(image):
+            if self.main_feed_shell_confirmed(image):
                 return True
 
         fallback = (
@@ -671,7 +759,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             image = self.recorder.screenshot(
                 self.device, f"feed-recovery-{reason}-home-fallback"
             )
-            if self.main_feed_confirmed(image):
+            if self.main_feed_shell_confirmed(image):
                 return True
 
         for attempt in range(1, 4):
@@ -683,7 +771,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             image = self.recorder.screenshot(
                 self.device, f"feed-recovery-{reason}-back-{attempt}"
             )
-            if self.main_feed_confirmed(image):
+            if self.main_feed_shell_confirmed(image):
                 return True
 
             source = self.device.dump_hierarchy(compressed=True, pretty=False)
@@ -711,7 +799,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                 image = self.recorder.screenshot(
                     self.device, f"feed-recovery-{reason}-close-{attempt}"
                 )
-                if self.main_feed_confirmed(image):
+                if self.main_feed_shell_confirmed(image):
                     return True
 
         self.recorder.emit("feed_recovery", reason=reason, action="app_restart")
@@ -720,11 +808,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         except Exception:
             pass
         self.device.app_start(DOUYIN_PACKAGE, wait=False, stop=False)
-        time.sleep(2.0)
-        image = self.recorder.screenshot(
-            self.device, f"feed-recovery-{reason}-app-start"
-        )
-        return self.main_feed_confirmed(image)
+        return self.wait_for_main_feed_shell(reason)
 
     def ensure_app_ready(self) -> None:
         started = time.monotonic()
@@ -794,7 +878,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                     )
                     return
                 break
-            if self.main_feed_confirmed(image):
+            if self.main_feed_shell_confirmed(image, source):
                 # Douyin can show its feed first and animate a login sheet a
                 # fraction of a second later. Require a second observation so
                 # the delayed overlay is handled before the task begins.
@@ -826,7 +910,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                         close_attempts += 1
                         time.sleep(0.8)
                         continue
-                if self.main_feed_confirmed(verify_image):
+                if self.main_feed_shell_confirmed(verify_image, verify_source):
                     self.recorder.emit(
                         "app_ready",
                         launch_needed=launch_needed,
@@ -968,7 +1052,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         before = self.recorder.screenshot(
             self.device, f"video-{from_video}-pre-swipe-state"
         )
-        if not self.main_feed_confirmed(before):
+        if not self.main_feed_shell_confirmed(before):
             if not self.recover_main_feed(f"before-swipe-{from_video}"):
                 raise RuntimeError("Could not recover the main feed before swipe")
         start_x, start_y = self.profile.absolute(self.profile.swipe_start)

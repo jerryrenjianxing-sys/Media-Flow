@@ -1,4 +1,6 @@
 "use client";
+/* Vinext client navigation can fail after hot updates; local page links use hard navigation. */
+/* eslint-disable @next/next/no-html-link-for-pages */
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -32,7 +34,10 @@ export default function GovernancePage() {
       setNotice("本机数据已同步");
     } catch { setNotice("本机控制服务未启动，暂时无法读取数据"); }
   }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    const initial = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(initial);
+  }, [refresh]);
 
   const confirm = async (review: Review) => {
     const draft = drafts[review.sample_id]; if (!draft) return; setBusy(review.sample_id);

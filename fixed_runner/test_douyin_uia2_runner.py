@@ -164,6 +164,41 @@ class DeviceLayoutProfileTest(unittest.TestCase):
         runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=0)
         self.assertFalse(runner.main_feed_confirmed(Image.new("RGB", (1080, 2400), "black")))
 
+    def test_feed_shell_accepts_exact_recommendation_tab_without_mutation_controls(self) -> None:
+        source = page_xml("推荐", include_controls=False)
+        device = Mock()
+        device.dump_hierarchy.return_value = source
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=0)
+        image = Image.new("RGB", (1080, 2400), "black")
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertTrue(runner.main_feed_shell_confirmed(image))
+            self.assertFalse(runner.main_feed_confirmed(image))
+
+        mutation = classify_mutation_gate(source, PACKAGE)
+        self.assertFalse(mutation.allowed)
+        self.assertTrue(
+            any(reason.startswith("missing_feed_controls") for reason in mutation.reasons)
+        )
+
+    def test_feed_shell_rejects_profile_copy_that_only_contains_recommendation_word(self) -> None:
+        source = page_xml(
+            "热门抖音视频推荐",
+            include_controls=False,
+        )
+        device = Mock()
+        device.dump_hierarchy.return_value = source
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=0)
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertFalse(
+                runner.main_feed_shell_confirmed(
+                    Image.new("RGB", (1080, 2400), "black")
+                )
+            )
+
     def test_verified_search_video_is_accepted_only_inside_search_session(self) -> None:
         search_page = page_xml(include_controls=False).replace(
             node(text="首页", description="首页", bounds="[0,2100][220,2280]", clickable="true"),
@@ -482,7 +517,7 @@ class AppReadyRegressionTest(unittest.TestCase):
         device.dump_hierarchy.side_effect = [login_page, page_xml(), page_xml()]
         recorder = Mock()
         runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
-        runner.main_feed_confirmed = Mock(side_effect=[True, True])
+        runner.main_feed_shell_confirmed = Mock(side_effect=[True, True])
 
         with (
             patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE),
@@ -520,7 +555,7 @@ class AppReadyRegressionTest(unittest.TestCase):
         device.dump_hierarchy.side_effect = [minor_mode_page, comment_panel_page]
         recorder = Mock()
         runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
-        runner.main_feed_confirmed = Mock(return_value=True)
+        runner.main_feed_shell_confirmed = Mock(return_value=True)
         runner.recover_main_feed = Mock(return_value=True)
 
         with (
@@ -537,6 +572,27 @@ class AppReadyRegressionTest(unittest.TestCase):
             if call.args and call.args[0] == "startup_overlay_recovery"
         ]
         self.assertEqual(overlay_events[0]["overlay"], "minor_mode")
+
+    def test_restart_waits_through_splash_until_feed_shell_is_ready(self) -> None:
+        device = Mock()
+        image = Image.new("RGB", (720, 1600), "black")
+        device.screenshot.return_value = image
+        device.dump_hierarchy.side_effect = ["<hierarchy />", "<hierarchy />", page_xml("推荐", include_controls=False)]
+        recorder = Mock()
+        recorder.screenshot.return_value = image
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
+        runner.main_feed_shell_confirmed = Mock(side_effect=[False, False, True])
+
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            ready = runner.wait_for_main_feed_shell(
+                "slow-start", attempts=3, delay_s=0.01
+            )
+
+        self.assertTrue(ready)
+        self.assertEqual(runner.main_feed_shell_confirmed.call_count, 3)
+        recorder.screenshot.assert_called_once_with(
+            device, "feed-recovery-slow-start-app-start-ready"
+        )
 
 
 class CommentPanelRecoveryRegressionTest(unittest.TestCase):
