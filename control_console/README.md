@@ -1,103 +1,37 @@
-# vinext-starter
+# RiskFlow 控制台
 
-> [!NOTE]
-> 这是早期脚手架说明，不是 RiskFlow 当前运行手册。当前启动、状态检查和验收流程见根目录 `RUNBOOK.md`；重写本文件已列入 `STATUS.md` 的 P0 治理队列。
+本目录是 RiskFlow 的本地产品界面。它只访问 `127.0.0.1:48138` 的本地控制接口，不直接连接手机。
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+## 功能页面
 
-## Prerequisites
+- `/`：策略、设备、概率、任务提交、暂停和安全停止。
+- `/records`：全部任务与纠错记录，任务和异常默认各显示 5 条后再展开。
+- `/governance`：主题人工复核、覆盖缺口、证据盘点、保留政策和数据库备份。
 
-- Node.js `>=22.13.0`
+## 本地开发
 
-## Quick Start
+要求 Node.js `>=22.13.0`。在本目录执行：
 
-```bash
+```powershell
 npm install
 npm run dev
-npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+正式运行不需要单独启动本目录，根目录的 `RiskFlow.exe`、`启动-RiskFlow控制台.cmd` 或 `run-riskflow-console.ps1` 会统一管理网页和本地接口。
 
-## Included Shape
+## 验证
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```powershell
+npm test
+npm run lint
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+`npm test` 会先构建，再检查三个页面的服务端渲染、关键安全文案和接口入口。页面测试通过不代表设备在线；设备状态必须在控制台和 ADB 中实时确认。
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## 设计约束
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+- 面向非技术测试人员，状态名称使用“等待执行、正在执行、已结束”。
+- 亮暗主题共享同一套 Linear 风格设计变量。
+- 密钥只提交给本地控制接口，界面不回显完整值。
+- 证据页面只显示已登记或白名单路径内的图片，不暴露任意本机路径。
+- 网页不能绕过队列直接触发 ADB 或设备动作。
