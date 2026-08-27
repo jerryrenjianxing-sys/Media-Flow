@@ -37,6 +37,10 @@ class DeviceFatalError(RuntimeError):
     """A task cannot safely continue because the device/feed was not recovered."""
 
 
+class ConsecutiveAnomalyLimitError(RuntimeError):
+    """Too many abnormal pages occurred without a normal video between them."""
+
+
 def parse_worker_dwell(value: str) -> list[float]:
     try:
         values = [float(part.strip()) for part in value.split(",")]
@@ -280,6 +284,7 @@ def comment_preview(
         "blocked_pages": blocked_pages,
         "videos_seen": video,
         "sent": sent,
+        "comment_screenshots": _comment_screenshot_evidence(recorder, video, sent),
     }
 
 
@@ -405,6 +410,18 @@ def two_video_demo(
     }
 
 
+def routed_action_probabilities(
+    config: dict[str, Any], matched: bool
+) -> dict[str, float]:
+    prefix = "matched_" if matched else ""
+    return {
+        action: float(
+            config.get(prefix + action + "_probability", config[action + "_probability"])
+        )
+        for action in ("like", "favorite", "comment")
+    }
+
+
 def topic_session(
     device,
     recorder: Uia2RunRecorder,
@@ -417,9 +434,21 @@ def topic_session(
     wall_started = time.monotonic()
     rng = random.Random(int(config["seed"]))
     runner = Uia2DouyinRunner(
-        device, recorder, PROFILE, max_gate_skips=int(config.get("max_gate_skips", 3))
+        device,
+        recorder,
+        PROFILE,
+        max_gate_skips=int(config.get("max_gate_skips", 3)),
+        device_id=str(config.get("device_id", "")),
+    )
+    content_mode = str(
+        config.get(
+            "content_mode",
+            "mixed" if config.get("topic_filter_enabled", True) else "general",
+        )
     )
     runner.ensure_app_ready()
+    if content_mode == "search":
+        runner.enter_topic_search(str(config.get("search_query", "")).strip())
     initial = recorder.screenshot(device, "topic-session-initial")
     runner.ensure_profile(initial)
     runner.require_main_feed(initial, "topic session")
@@ -430,24 +459,18 @@ def topic_session(
         "favorites": 0,
         "comments_generated": 0,
         "comments_sent": 0,
+        "comment_screenshots": [],
         "blocked_pages": 0,
         "video_errors": 0,
         "recovered_videos": 0,
         "skipped_videos": 0,
+        "content_mode": content_mode,
     }
     decisions: list[dict[str, Any]] = []
     preview_only = bool(config["preview_only"])
-    confidence_threshold = float(config["topic_confidence"])
-    topic_filter_enabled = bool(config.get("topic_filter_enabled", True))
-    engagement_requires_topic = bool(
-        config.get("engagement_requires_topic", topic_filter_enabled)
-    )
-    comment_requires_topic = bool(
-        config.get("comment_requires_topic", topic_filter_enabled)
-    )
-    max_likes = int(config.get("max_likes", config["video_count"]))
-    max_favorites = int(config.get("max_favorites", config["video_count"]))
-    max_comments = int(config.get("max_comments", config["video_count"]))
+    topic_filter_enabled = content_mode != "general"
+    anomaly_limit = max(1, min(50, int(config.get("max_gate_skips", 3))))
+    consecutive_anomalies = 0
     wait_for_resume = pause_waiter or (lambda: None)
 
     for video in range(1, int(config["video_count"]) + 1):
@@ -466,8 +489,13 @@ def topic_session(
             summary["videos_seen"] += 1
             if not gate.allowed:
                 summary["blocked_pages"] += 1
+                consecutive_anomalies += 1
                 entry.update({"matched": False, "reason": ",".join(gate.reasons), "actions": []})
                 decisions.append(entry)
+                if consecutive_anomalies >= anomaly_limit:
+                    raise ConsecutiveAnomalyLimitError(
+                        f"连续异常页面达到 {anomaly_limit} 条，当前任务已停止"
+                    )
                 continue
 
             frame_path = recorder.run_dir / f"video-{video}-topic-analysis-before.png"
@@ -481,7 +509,7 @@ def topic_session(
             (recorder.run_dir / f"video-{video}-topic-ai-raw.txt").write_text(
                 topic.raw_response[:8000], encoding="utf-8"
             )
-            matched = topic.matches and topic.confidence >= confidence_threshold
+            matched = bool(topic.matches and content_mode != "general")
             if matched:
                 summary["topic_matches"] += 1
             entry.update(topic.public_dict())
@@ -492,19 +520,19 @@ def topic_session(
                 "comment": round(rng.random(), 6),
             }
             entry["random_draws"] = draws
+            probabilities = routed_action_probabilities(config, matched)
+            entry["probability_route"] = "matched" if matched else "general"
+            entry["probabilities"] = probabilities
             recorder.emit(
-                "topic_ai_decision", video=video, threshold=confidence_threshold,
-                matched=matched, **topic.public_dict(), random_draws=draws,
+                "topic_ai_decision", video=video,
+                matched=matched, probability_route=entry["probability_route"],
+                probabilities=probabilities, **topic.public_dict(), random_draws=draws,
             )
 
             safe_for_action = bool(getattr(topic, "safe", True))
-            engagement_eligible = safe_for_action and (
-                matched or not engagement_requires_topic
-            )
             if (
-                engagement_eligible
-                and summary["likes"] < max_likes
-                and draws["like"] < float(config["like_probability"])
+                safe_for_action
+                and draws["like"] < probabilities["like"]
             ):
                 wait_for_resume()
                 stage = "like"
@@ -514,9 +542,8 @@ def topic_session(
                     summary["likes"] += 1
 
             if (
-                engagement_eligible
-                and summary["favorites"] < max_favorites
-                and draws["favorite"] < float(config["favorite_probability"])
+                safe_for_action
+                and draws["favorite"] < probabilities["favorite"]
             ):
                 wait_for_resume()
                 stage = "favorite"
@@ -527,9 +554,7 @@ def topic_session(
 
             if (
                 safe_for_action
-                and (matched or not comment_requires_topic)
-                and summary["comments_generated"] < max_comments
-                and draws["comment"] < float(config["comment_probability"])
+                and draws["comment"] < probabilities["comment"]
             ):
                 wait_for_resume()
                 stage = "comment"
@@ -543,10 +568,16 @@ def topic_session(
                         summary["comments_generated"] += 1
                     if sent:
                         summary["comments_sent"] += 1
+                        summary["comment_screenshots"].extend(
+                            _comment_screenshot_evidence(recorder, video, sent)
+                        )
             entry["actions"] = actions
             decisions.append(entry)
+            consecutive_anomalies = 0
         except Exception as exc:
             summary["video_errors"] += 1
+            if not isinstance(exc, ConsecutiveAnomalyLimitError):
+                consecutive_anomalies += 1
             screenshot_path: str | None = None
             ui_tree_path: str | None = None
             incident_image = None
@@ -577,7 +608,16 @@ def topic_session(
                     recovered = runner.recover_main_feed(f"video-{video}-{stage}-error")
                 except Exception:
                     recovered = False
-            outcome = "skipped" if already_on_feed else "recovered" if recovered else "device_fatal"
+            limit_reached = consecutive_anomalies >= anomaly_limit
+            outcome = (
+                "device_fatal"
+                if limit_reached
+                else "skipped"
+                if already_on_feed
+                else "recovered"
+                if recovered
+                else "device_fatal"
+            )
             if outcome == "recovered":
                 summary["recovered_videos"] += 1
             elif outcome == "skipped":
@@ -612,9 +652,11 @@ def topic_session(
                 }
             )
             decisions.append(entry)
-            if not recovered:
+            if not recovered or limit_reached:
                 raise DeviceFatalError(
-                    f"Video {video} failed at {stage} and the main feed could not be recovered"
+                    str(exc)
+                    if limit_reached
+                    else f"Video {video} failed at {stage} and the main feed could not be recovered"
                 ) from exc
 
     result_path = recorder.run_dir / "topic-session-decisions.json"
@@ -627,16 +669,11 @@ def topic_session(
         "status": "passed_with_recovery" if summary["video_errors"] else "passed",
         "task_type": "douyin_topic_session",
         "preview_only": preview_only,
+        "content_mode": content_mode,
         "topic_filter_enabled": topic_filter_enabled,
-        "engagement_requires_topic": engagement_requires_topic,
-        "comment_requires_topic": comment_requires_topic,
         "seed": int(config["seed"]),
         "round_index": int(config.get("round_index", 1)),
-        "action_caps": {
-            "likes": max_likes,
-            "favorites": max_favorites,
-            "comments": max_comments,
-        },
+        "action_control": "probability_only",
         **summary,
         "wall_s": round(time.monotonic() - wall_started, 3),
     }
@@ -644,6 +681,21 @@ def topic_session(
 
 def _comment_task_type(send: bool) -> str:
     return "douyin_comment" if send else "douyin_comment_preview"
+
+
+def _comment_screenshot_evidence(
+    recorder: Uia2RunRecorder, video: int, sent: bool
+) -> list[dict[str, Any]]:
+    if not sent:
+        return []
+    return [
+        {
+            "video_index": video,
+            "screenshot_path": str(
+                recorder.run_dir / f"video-{video}-comment-sent.png"
+            ),
+        }
+    ]
 
 
 def _normalized_visible_text(value: str) -> str:

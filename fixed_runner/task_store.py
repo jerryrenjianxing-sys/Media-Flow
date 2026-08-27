@@ -228,11 +228,11 @@ class TaskStore:
             raise KeyError(incident_id)
         return self._incident_record(row)
 
-    def list_incidents(self, limit: int = 20) -> list[IncidentRecord]:
+    def list_incidents(self, limit: int = 20, offset: int = 0) -> list[IncidentRecord]:
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT * FROM incidents ORDER BY created_at DESC, id DESC LIMIT ?",
-                (limit,),
+                "SELECT * FROM incidents ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
             ).fetchall()
         return [self._incident_record(row) for row in rows]
 
@@ -293,10 +293,9 @@ class TaskStore:
             interval = payload.get("round_interval_minutes", 0)
             if not isinstance(interval, int) or not 0 <= interval <= 1440:
                 raise ValueError("round_interval_minutes must be between 0 and 1440")
-            for name in ("max_likes", "max_favorites", "max_comments"):
-                value = payload.get(name, video_count)
-                if not isinstance(value, int) or not 0 <= value <= 200:
-                    raise ValueError(f"{name} must be between 0 and 200")
+            max_gate_skips = payload.get("max_gate_skips", 3)
+            if not isinstance(max_gate_skips, int) or not 1 <= max_gate_skips <= 50:
+                raise ValueError("max_gate_skips must be between 1 and 50")
             dwell_min = payload.get("dwell_min")
             dwell_max = payload.get("dwell_max")
             if (
@@ -313,18 +312,30 @@ class TaskStore:
                 value = payload.get(name, topic_filter_enabled)
                 if not isinstance(value, bool):
                     raise ValueError(f"{name} must be a boolean")
+            content_mode = payload.get(
+                "content_mode", "mixed" if topic_filter_enabled else "general"
+            )
+            if content_mode not in {"general", "mixed", "search"}:
+                raise ValueError("content_mode must be general, mixed, or search")
             topic_prompt = payload.get("topic_prompt")
-            if topic_filter_enabled and (
+            if content_mode != "general" and (
                 not isinstance(topic_prompt, str) or not topic_prompt.strip()
             ):
                 raise ValueError("topic_prompt is required")
-            for name in ("like_probability", "favorite_probability", "comment_probability"):
-                value = payload.get(name)
+            if content_mode == "search" and not str(payload.get("search_query", "")).strip():
+                raise ValueError("search_query is required in search mode")
+            for name in (
+                "like_probability",
+                "favorite_probability",
+                "comment_probability",
+                "matched_like_probability",
+                "matched_favorite_probability",
+                "matched_comment_probability",
+            ):
+                fallback = payload.get(name.removeprefix("matched_"))
+                value = payload.get(name, fallback)
                 if not isinstance(value, (int, float)) or not 0 <= value <= 1:
                     raise ValueError(f"{name} must be between 0 and 1")
-            confidence = payload.get("topic_confidence")
-            if not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
-                raise ValueError("topic_confidence must be between 0 and 1")
             seed = payload.get("seed")
             if not isinstance(seed, int) or seed < 0:
                 raise ValueError("seed must be a non-negative integer")
@@ -351,6 +362,29 @@ class TaskStore:
                 "SELECT config_json FROM automation_profiles WHERE name=?", (name,)
             ).fetchone()
         return json.loads(row["config_json"]) if row else None
+
+    def list_profiles(self, prefix: str = "") -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                "SELECT name, config_json, updated_at FROM automation_profiles "
+                "WHERE name LIKE ? ORDER BY updated_at DESC, name ASC",
+                (f"{prefix}%",),
+            ).fetchall()
+        return [
+            {
+                "name": row["name"],
+                "config": json.loads(row["config_json"]),
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
+
+    def delete_profile(self, name: str) -> bool:
+        with self.connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM automation_profiles WHERE name=?", (name,)
+            )
+        return cursor.rowcount > 0
 
     def set_paused(self, paused: bool) -> None:
         with self.connection() as connection:
@@ -544,11 +578,11 @@ class TaskStore:
             raise KeyError(task_id)
         return self._record(row)
 
-    def list(self, limit: int = 20) -> list[TaskRecord]:
+    def list(self, limit: int = 20, offset: int = 0) -> list[TaskRecord]:
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT * FROM tasks ORDER BY created_at DESC, id DESC LIMIT ?",
-                (limit,),
+                "SELECT * FROM tasks ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
             ).fetchall()
         return [self._record(row) for row in rows]
 

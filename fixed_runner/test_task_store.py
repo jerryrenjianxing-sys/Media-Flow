@@ -44,6 +44,21 @@ class TaskStoreTest(unittest.TestCase):
         self.store.submit("healthcheck", "device-2")
         self.assertIsNone(self.store.claim_next("device-1", "worker-1"))
 
+    def test_profiles_can_be_listed_by_prefix_and_deleted_exactly(self) -> None:
+        self.store.save_profile("default", {"video_count": 20})
+        self.store.save_profile("preset:均衡", {"video_count": 30})
+        self.store.save_profile("preset:长时", {"video_count": 100})
+
+        profiles = self.store.list_profiles("preset:")
+
+        self.assertEqual(
+            {item["name"] for item in profiles}, {"preset:均衡", "preset:长时"}
+        )
+        self.assertTrue(self.store.delete_profile("preset:均衡"))
+        self.assertFalse(self.store.delete_profile("preset:不存在"))
+        self.assertIsNotNone(self.store.get_profile("default"))
+        self.assertIsNone(self.store.get_profile("preset:均衡"))
+
     def test_future_task_is_not_claimed_early(self) -> None:
         future = (datetime.now().astimezone() + timedelta(minutes=5)).isoformat(
             timespec="milliseconds"
@@ -252,6 +267,33 @@ class TaskStoreTest(unittest.TestCase):
             recovery_action="back_to_feed",
         )
         self.assertEqual([item.id for item in self.store.list_incidents(2)], [second, first])
+
+    def test_tasks_and_incidents_support_stable_pagination(self) -> None:
+        task_ids = []
+        incident_ids = []
+        for index in range(4):
+            task_id = self.store.submit("healthcheck", f"device-{index}")
+            task_ids.append(task_id)
+            incident_ids.append(
+                self.store.record_incident(
+                    task_id=task_id,
+                    device_id=f"device-{index}",
+                    video_index=index,
+                    stage="test",
+                    error_type="RuntimeError",
+                    error_message=str(index),
+                    outcome="skipped",
+                    recovery_action="continue",
+                )
+            )
+        self.assertEqual(
+            [item.id for item in self.store.list(limit=2, offset=2)],
+            list(reversed(task_ids))[2:4],
+        )
+        self.assertEqual(
+            [item.id for item in self.store.list_incidents(limit=2, offset=1)],
+            list(reversed(incident_ids))[1:3],
+        )
 
     def test_clear_all_tasks_removes_tasks_and_incidents(self) -> None:
         task_id = self.store.submit("healthcheck", "device-1")

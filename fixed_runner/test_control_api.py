@@ -8,11 +8,18 @@ from datetime import datetime
 from pathlib import Path
 
 from control_api import (
+    BUILTIN_PRESETS,
     DEFAULT_CONFIG,
+    PRESET_FIELDS,
     _pid_is_running,
     build_status_payload,
+    comment_screenshot_path,
+    delete_preset,
+    list_presets,
     normalized_config,
+    save_preset,
     submit_scheduled_rounds,
+    validate_preset_name,
     validate_openrouter_key,
     worker_id_is_running,
     worker_status,
@@ -49,7 +56,7 @@ class ControlApiTest(unittest.TestCase):
         self.assertEqual(config["like_probability"], 0.2)
         self.assertEqual(config["favorite_probability"], 0.1)
         self.assertEqual(config["comment_probability"], 0.05)
-        self.assertEqual(config["max_comments"], 1)
+        self.assertEqual(config["max_comments"], config["video_count"])
         self.assertGreater(config["dwell_max"], config["dwell_min"])
         self.assertEqual(config["round_count"], 1)
 
@@ -63,6 +70,51 @@ class ControlApiTest(unittest.TestCase):
             store.save_profile("default", DEFAULT_CONFIG)
             self.assertEqual(store.get_profile("default"), DEFAULT_CONFIG)
 
+    def test_builtin_presets_are_read_only_and_complete(self) -> None:
+        self.assertEqual(
+            list(BUILTIN_PRESETS), ["保守预演", "均衡测试", "长时稳定性"]
+        )
+        with self.assertRaisesRegex(ValueError, "内置预设不能覆盖"):
+            validate_preset_name("均衡测试")
+        with self.assertRaisesRegex(ValueError, "请输入预设名称"):
+            validate_preset_name("   ")
+
+    def test_custom_preset_round_trip_isolated_from_runtime_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            store.save_profile("default", DEFAULT_CONFIG)
+            source = {
+                **DEFAULT_CONFIG,
+                "video_count": 37,
+                "device_id": "private-device",
+                "device_ids": ["private-device"],
+                "seed": 99,
+                "preview_only": False,
+            }
+
+            created = save_preset(store, "我的预设", source)
+            updated = save_preset(store, "我的预设", {**source, "video_count": 41})
+            listed = list_presets(store)
+
+            self.assertEqual(created["config"]["video_count"], 37)
+            self.assertEqual(updated["config"]["video_count"], 41)
+            self.assertEqual(set(updated["config"]), set(PRESET_FIELDS))
+            self.assertNotIn("device_ids", updated["config"])
+            self.assertNotIn("seed", updated["config"])
+            self.assertNotIn("preview_only", updated["config"])
+            self.assertEqual(len([item for item in listed if item["name"] == "我的预设"]), 1)
+            self.assertEqual(store.get_profile("default"), DEFAULT_CONFIG)
+            self.assertTrue(delete_preset(store, "我的预设"))
+            self.assertFalse(delete_preset(store, "我的预设"))
+
+    def test_preset_rejects_non_object_config_and_long_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            with self.assertRaisesRegex(ValueError, "参数格式无效"):
+                save_preset(store, "测试", "not-an-object")
+            with self.assertRaisesRegex(ValueError, "最多 40"):
+                save_preset(store, "太" * 41, DEFAULT_CONFIG)
+
     def test_probability_out_of_range_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "like_probability"):
             normalized_config({**DEFAULT_CONFIG, "like_probability": 1.2})
@@ -73,27 +125,48 @@ class ControlApiTest(unittest.TestCase):
         )
         self.assertFalse(config["topic_filter_enabled"])
 
-    def test_two_action_groups_can_require_topic_independently(self) -> None:
+    def test_legacy_topic_switches_migrate_to_mixed_mode(self) -> None:
         config = normalized_config(
             {
                 **DEFAULT_CONFIG,
+                "content_mode": "mixed",
                 "engagement_requires_topic": True,
                 "comment_requires_topic": False,
                 "topic_prompt": "宠物日常",
             }
         )
-        self.assertTrue(config["engagement_requires_topic"])
-        self.assertFalse(config["comment_requires_topic"])
+        self.assertEqual(config["content_mode"], "mixed")
         self.assertTrue(config["topic_filter_enabled"])
-        self.assertTrue(config["like_only_on_match"])
+        self.assertFalse(config["engagement_requires_topic"])
+        self.assertFalse(config["comment_requires_topic"])
+        self.assertFalse(config["like_only_on_match"])
 
     def test_long_run_limits_are_validated(self) -> None:
         with self.assertRaisesRegex(ValueError, "round_count"):
             normalized_config({**DEFAULT_CONFIG, "round_count": 21})
-        with self.assertRaisesRegex(ValueError, "max_comments"):
-            normalized_config({**DEFAULT_CONFIG, "max_comments": 201})
         with self.assertRaisesRegex(ValueError, "video_count"):
             normalized_config({**DEFAULT_CONFIG, "video_count": 201})
+
+    def test_legacy_action_caps_are_ignored_and_normalized_to_video_count(self) -> None:
+        config = normalized_config(
+            {
+                **DEFAULT_CONFIG,
+                "video_count": 37,
+                "max_likes": 0,
+                "max_favorites": 1,
+                "max_comments": 9999,
+            }
+        )
+        self.assertEqual(config["max_likes"], 37)
+        self.assertEqual(config["max_favorites"], 37)
+        self.assertEqual(config["max_comments"], 37)
+        self.assertNotIn("max_likes", PRESET_FIELDS)
+        self.assertNotIn("max_favorites", PRESET_FIELDS)
+        self.assertNotIn("max_comments", PRESET_FIELDS)
+
+    def test_legacy_anomaly_threshold_is_migrated_into_safe_range(self) -> None:
+        self.assertEqual(normalized_config({**DEFAULT_CONFIG, "max_gate_skips": 0})["max_gate_skips"], 1)
+        self.assertEqual(normalized_config({**DEFAULT_CONFIG, "max_gate_skips": 99})["max_gate_skips"], 50)
 
     def test_scheduled_rounds_have_distinct_seeds_and_times(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -178,6 +251,31 @@ class ControlApiTest(unittest.TestCase):
         self.assertEqual(payload["incidents"][0]["video_index"], 2)
         self.assertEqual(payload["incidents"][0]["analysis_status"], "queued")
 
+    def test_status_payload_is_bounded_to_five_tasks_and_incidents(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            for index in range(7):
+                task_id = store.submit("healthcheck", f"device-{index}")
+                store.record_incident(
+                    task_id=task_id,
+                    device_id=f"device-{index}",
+                    video_index=index,
+                    stage="test",
+                    error_type="RuntimeError",
+                    error_message=f"incident-{index}",
+                    outcome="skipped",
+                    recovery_action="continue",
+                )
+            with (
+                patch("control_api.device_statuses", return_value=[{"device_id": "device-0", "state": "device"}]),
+                patch("control_api.worker_status", return_value={"device_id": "device-0", "running": False, "pid": None}),
+            ):
+                payload = build_status_payload(store, normalized_config(DEFAULT_CONFIG))
+        self.assertEqual(len(payload["tasks"]), 5)
+        self.assertEqual(len(payload["incidents"]), 5)
+        self.assertEqual(payload["task_summary"]["pending"], 7)
+        self.assertEqual(payload["incident_summary"]["total"], 7)
+
     def test_status_payload_closes_task_whose_worker_is_gone(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
@@ -204,6 +302,56 @@ class ControlApiTest(unittest.TestCase):
         self.assertIsNotNone(task["finished_at"])
         self.assertEqual(payload["task_summary"]["running"], 0)
         self.assertEqual(payload["task_summary"]["failed"], 1)
+
+    def test_comment_screenshot_path_accepts_registered_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = root / "artifacts"
+            image = artifacts / "runs" / "run-1" / "video-2-comment-sent.png"
+            image.parent.mkdir(parents=True)
+            image.write_bytes(b"png")
+            store = TaskStore(root / "tasks.db")
+            task_id = store.submit("healthcheck", "device-1")
+            store.claim_next("device-1", "worker-1")
+            store.finish(
+                task_id,
+                status="completed",
+                run_dir=str(image.parent),
+                result={
+                    "comment_screenshots": [
+                        {"video_index": 2, "screenshot_path": str(image)}
+                    ]
+                },
+            )
+            with patch("control_api.DEFAULT_ARTIFACTS", artifacts):
+                resolved = comment_screenshot_path(store, task_id, 2)
+        self.assertEqual(resolved, image.resolve())
+
+    def test_comment_screenshot_path_rejects_unregistered_or_outside_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+            outside = root / "outside.png"
+            outside.write_bytes(b"png")
+            store = TaskStore(root / "tasks.db")
+            task_id = store.submit("healthcheck", "device-1")
+            store.claim_next("device-1", "worker-1")
+            store.finish(
+                task_id,
+                status="completed",
+                run_dir=str(root),
+                result={
+                    "comment_screenshots": [
+                        {"video_index": 1, "screenshot_path": str(outside)}
+                    ]
+                },
+            )
+            with patch("control_api.DEFAULT_ARTIFACTS", artifacts):
+                with self.assertRaises(KeyError):
+                    comment_screenshot_path(store, task_id, 1)
+                with self.assertRaises(KeyError):
+                    comment_screenshot_path(store, task_id, 9)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,25 @@
+{
+  "topic": "1. 人工智能技术、AI工具、大模型、机器人及科技产业动态；\n2. AI人才培养、AI岗位、职业发展及企业AI能力建设；\n3. 传统制造业数字化转型、智能制造、工厂自动化和AI降本增效；\n4. 塑料袋、塑料包装、吹膜、制袋、印刷等工厂的生产工艺、设备、经营管理和转型案例。",
+  "cases": [
+    {
+      "id": "unrelated-qipao",
+      "expected": "unrelated",
+      "path": "C:/Users/jerry/Pictures/Screenshots/屏幕截图 2026-08-26 213456.png"
+    },
+    {
+      "id": "exact-openai-news",
+      "expected": "exact",
+      "path": "runtime/artifacts/runs/20260826-210919-966608-C8TBB20411204727/video-10-topic-analysis-before.png"
+    },
+    {
+      "id": "exact-comfyui-workflow",
+      "expected": "exact",
+      "path": "runtime/artifacts/runs/20260821-105656-984068-AVAY025416000292/video-6-topic-analysis-before.png"
+    },
+    {
+      "id": "unrelated-pet-parrot",
+      "expected": "unrelated",
+      "path": "runtime/artifacts/runs/20260826-213919-925725-C8TBB20411204727/video-3-topic-analysis-before.png"
+    }
+  ]
+}

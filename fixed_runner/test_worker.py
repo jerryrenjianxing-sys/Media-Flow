@@ -13,17 +13,40 @@ from douyin_fixed_runner import DOUYIN_PACKAGE  # noqa: E402
 from douyin_uia2_runner import GateDecision, Uia2RunRecorder  # noqa: E402
 from task_store import TaskStore  # noqa: E402
 from worker import (  # noqa: E402
+    DeviceFatalError,
+    _comment_screenshot_evidence,
     _comment_task_type,
     build_parser,
     connect_with_retry,
     device_preflight,
     run_worker,
+    routed_action_probabilities,
     send_comment,
     topic_session,
     wait_while_paused,
     wake_and_unlock,
     write_report,
 )
+
+
+class TopicProbabilityRoutingTest(unittest.TestCase):
+    def test_matched_and_general_probabilities_are_independent(self) -> None:
+        config = {
+            "like_probability": 0.1,
+            "favorite_probability": 0.05,
+            "comment_probability": 0.02,
+            "matched_like_probability": 1.0,
+            "matched_favorite_probability": 0.9,
+            "matched_comment_probability": 0.8,
+        }
+        self.assertEqual(
+            routed_action_probabilities(config, False),
+            {"like": 0.1, "favorite": 0.05, "comment": 0.02},
+        )
+        self.assertEqual(
+            routed_action_probabilities(config, True),
+            {"like": 1.0, "favorite": 0.9, "comment": 0.8},
+        )
 
 
 class FakeSelector:
@@ -110,10 +133,21 @@ class CommentSendTest(unittest.TestCase):
             device = FakeDevice()
             self.assertTrue(send_comment(device, recorder, "雨中的舞台很有力量", 1))
             self.assertEqual(device.typed, "雨中的舞台很有力量")
+            self.assertTrue(
+                (recorder.run_dir / "video-1-comment-sent.png").is_file()
+            )
             send_selectors = [
                 value for selector, value in device.selectors if selector.get("text") == "发送"
             ]
             self.assertTrue(send_selectors[0].clicked)
+
+    def test_comment_screenshot_evidence_requires_successful_send(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = Uia2RunRecorder(Path(directory), "device-1")
+            self.assertEqual(_comment_screenshot_evidence(recorder, 2, False), [])
+            evidence = _comment_screenshot_evidence(recorder, 2, True)
+        self.assertEqual(evidence[0]["video_index"], 2)
+        self.assertTrue(evidence[0]["screenshot_path"].endswith("video-2-comment-sent.png"))
 
     def test_send_comment_accepts_current_empty_panel_placeholder(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -159,6 +193,115 @@ class CommentSendTest(unittest.TestCase):
 
 
 class WorkerSupportTest(unittest.TestCase):
+    def test_topic_session_actions_are_probability_only_even_with_zero_legacy_caps(self) -> None:
+        class ProbabilityRunner:
+            def __init__(self, *args, **kwargs): pass
+            def ensure_app_ready(self): pass
+            def ensure_profile(self, image): pass
+            def require_main_feed(self, image, stage): pass
+            def swipe_next(self, from_video, to_video): pass
+            def watch(self, video, dwell): pass
+            def capture_gate(self, video, action):
+                return Image.new("RGB", (1080, 2400), "black"), GateDecision(True, (), ())
+            def like_verified(self, video, frame): return True
+            def favorite_verified(self, video, frame): return True
+
+        class SafeTopic:
+            matches = True
+            confidence = 1.0
+            raw_response = "{}"
+            safe = True
+            def public_dict(self):
+                return {"matches": True, "topic": "测试", "reason": "matched", "confidence": 1.0, "safe": True}
+
+        config = {
+            "seed": 1, "video_count": 2, "dwell_min": 0, "dwell_max": 0,
+            "max_gate_skips": 3, "preview_only": True, "topic_confidence": 0.7,
+            "topic_filter_enabled": False, "topic_prompt": "不限主题",
+            "engagement_requires_topic": False, "comment_requires_topic": False,
+            "max_likes": 0, "max_favorites": 0, "max_comments": 0,
+            "like_probability": 1, "favorite_probability": 1,
+            "comment_probability": 0,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = Uia2RunRecorder(Path(directory), "device-1")
+            with (
+                patch("worker.Uia2DouyinRunner", ProbabilityRunner),
+                patch("worker.analyze_topic", return_value=SafeTopic()),
+            ):
+                result = topic_session(FakeDevice(), recorder, config=config)
+        self.assertEqual(result["likes"], 2)
+        self.assertEqual(result["favorites"], 2)
+        self.assertEqual(result["action_control"], "probability_only")
+        self.assertNotIn("action_caps", result)
+
+    def test_topic_session_stops_after_consecutive_anomaly_threshold(self) -> None:
+        class BlockedRunner:
+            def __init__(self, *args, **kwargs): pass
+            def ensure_app_ready(self): pass
+            def ensure_profile(self, image): pass
+            def require_main_feed(self, image, stage): pass
+            def swipe_next(self, from_video, to_video): pass
+            def watch(self, video, dwell): pass
+            def capture_gate(self, video, action):
+                return Image.new("RGB", (1080, 2400), "black"), GateDecision(False, ("unexpected_page",), ())
+            def main_feed_confirmed(self, image): return True
+            def recover_main_feed(self, reason): return True
+
+        config = {
+            "seed": 1, "video_count": 3, "dwell_min": 0, "dwell_max": 0,
+            "max_gate_skips": 2, "preview_only": True, "topic_confidence": 0.7,
+            "topic_filter_enabled": False, "topic_prompt": "不限主题",
+            "engagement_requires_topic": False, "comment_requires_topic": False,
+            "like_probability": 0, "favorite_probability": 0, "comment_probability": 0,
+        }
+        incidents = []
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = Uia2RunRecorder(Path(directory), "device-1")
+            with patch("worker.Uia2DouyinRunner", BlockedRunner):
+                with self.assertRaisesRegex(DeviceFatalError, "连续异常页面达到 2 条"):
+                    topic_session(FakeDevice(), recorder, config=config, incident_sink=incidents.append)
+        self.assertEqual(len(incidents), 1)
+        self.assertEqual(incidents[0]["outcome"], "device_fatal")
+
+    def test_normal_video_resets_consecutive_anomaly_counter(self) -> None:
+        class MixedRunner:
+            def __init__(self, *args, **kwargs): pass
+            def ensure_app_ready(self): pass
+            def ensure_profile(self, image): pass
+            def require_main_feed(self, image, stage): pass
+            def swipe_next(self, from_video, to_video): pass
+            def watch(self, video, dwell): pass
+            def capture_gate(self, video, action):
+                allowed = video == 2
+                return Image.new("RGB", (1080, 2400), "black"), GateDecision(allowed, () if allowed else ("unexpected_page",), ())
+
+        class SafeTopic:
+            matches = True
+            confidence = 1.0
+            raw_response = "{}"
+            safe = True
+            def public_dict(self):
+                return {"matches": True, "topic": "测试", "reason": "matched", "confidence": 1.0, "safe": True}
+
+        config = {
+            "seed": 1, "video_count": 3, "dwell_min": 0, "dwell_max": 0,
+            "max_gate_skips": 2, "preview_only": True, "topic_confidence": 0.7,
+            "topic_filter_enabled": False, "topic_prompt": "不限主题",
+            "engagement_requires_topic": False, "comment_requires_topic": False,
+            "like_probability": 0, "favorite_probability": 0, "comment_probability": 0,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = Uia2RunRecorder(Path(directory), "device-1")
+            with (
+                patch("worker.Uia2DouyinRunner", MixedRunner),
+                patch("worker.analyze_topic", return_value=SafeTopic()),
+            ):
+                result = topic_session(FakeDevice(), recorder, config=config)
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["blocked_pages"], 2)
+        self.assertEqual(result["videos_seen"], 3)
+
     def test_topic_session_records_recoverable_video_error_and_continues(self) -> None:
         class ResilientRunner:
             def __init__(self, *args, **kwargs):

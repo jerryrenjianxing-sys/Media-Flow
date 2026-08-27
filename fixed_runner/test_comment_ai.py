@@ -7,6 +7,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PIL import Image
 
 from comment_ai import (  # noqa: E402
+    TOPIC_PROMPT_VERSION,
+    build_topic_request_payload,
     build_request_payload,
     parse_comment_decision,
     parse_streaming_response,
@@ -29,6 +31,29 @@ class CommentDecisionTest(unittest.TestCase):
         )
         self.assertFalse(decision.matches)
         self.assertFalse(decision.safe)
+
+    def test_exact_topic_requires_visible_evidence(self) -> None:
+        decision = parse_topic_decision(
+            '{"relevance":"exact","topic":"人工智能","evidence":[],'
+            '"reason":"模型自报匹配","safe":true}'
+        )
+        self.assertFalse(decision.matches)
+        self.assertEqual(decision.relevance, "uncertain")
+
+    def test_exact_topic_with_evidence_is_accepted(self) -> None:
+        decision = parse_topic_decision(
+            '{"relevance":"exact","topic":"人工智能","evidence":["画面出现AI模型字样"],'
+            '"reason":"主体直接讨论AI模型","safe":true}'
+        )
+        self.assertTrue(decision.matches)
+        self.assertEqual(decision.relevance, "exact")
+
+    def test_unrelated_qipao_content_stays_unmatched(self) -> None:
+        decision = parse_topic_decision(
+            '{"relevance":"unrelated","topic":"旗袍穿搭",'
+            '"evidence":["人物穿着旗袍"],"reason":"与AI制造包装无关","safe":true}'
+        )
+        self.assertFalse(decision.matches)
 
     def test_openrouter_payload_uses_portable_fields(self) -> None:
         payload = build_request_payload(
@@ -66,6 +91,24 @@ class CommentDecisionTest(unittest.TestCase):
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertNotIn("provider", payload)
 
+    def test_topic_prompt_has_versioned_discussion_boundary(self) -> None:
+        payload = build_topic_request_payload(
+            self.image_path,
+            "人工智能技术、AI工具、AI人才与产业动态",
+            model="google/gemini-3.1-flash-lite",
+            base_url="https://openrouter.ai/api/v1",
+            fallback_models=("openai/gpt-4.1-nano",),
+        )
+
+        self.assertTrue(TOPIC_PROMPT_VERSION.startswith("topic-"))
+        user_text = payload["messages"][1]["content"][0]["text"]
+        self.assertIn("POLICY: legacy-free-text@1", user_text)
+        self.assertIn("关键词只是纳入线索", user_text)
+        self.assertIn("discussion, analysis, education, careers", user_text)
+        self.assertIn("does not need to be a product demo", user_text)
+        self.assertIn("AI-generated visual style alone", user_text)
+        self.assertEqual(payload["models"][0], "google/gemini-3.1-flash-lite")
+
     def test_streaming_response_is_combined(self) -> None:
         lines = [
             b'data: {"choices":[{"delta":{"content":"{\\"decision\\":\\""}}]}\n',
@@ -80,6 +123,21 @@ class CommentDecisionTest(unittest.TestCase):
     def test_streaming_response_without_content_fails(self) -> None:
         with self.assertRaises(RuntimeError):
             parse_streaming_response([b"data: [DONE]\n"])
+
+    def test_streaming_response_accepts_text_blocks(self) -> None:
+        lines = [
+            b'data: {"choices":[{"delta":{"content":[{"type":"text","text":"{\\"safe\\":true}"}]}}]}\n',
+            b"data: [DONE]\n",
+        ]
+        self.assertEqual(parse_streaming_response(lines), '{"safe":true}')
+
+    def test_streaming_response_surfaces_provider_error(self) -> None:
+        lines = [
+            b'data: {"error":{"message":"No available provider"}}\n',
+            b"data: [DONE]\n",
+        ]
+        with self.assertRaisesRegex(RuntimeError, "No available provider"):
+            parse_streaming_response(lines)
 
     def test_safe_json_comment_is_accepted(self) -> None:
         decision = parse_comment_decision(

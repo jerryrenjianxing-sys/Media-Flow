@@ -36,6 +36,7 @@
 
 # Local browsers, tools, packages, and generated launchers
 /.edge-*/
+/.chrome-*/
 /work/
 /RiskFlow.exe
 *.apk
