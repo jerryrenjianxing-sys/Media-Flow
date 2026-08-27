@@ -62,7 +62,7 @@ export default function RecordsPage() {
   }, [refresh]);
 
   return <main className="app-shell records-page">
-    <header className="topbar"><a className="brand" href="/" onClick={goHome}><span className="brand-mark">R</span><div><strong>RiskFlow</strong><small>CONTROL LAB</small></div></a><nav aria-label="页面导航"><a href="/" onClick={goHome}>策略控制台</a><a className="active" href="/records">运行记录</a></nav><div className="system-status"><span className="dot online"/><span>{notice}</span></div><span className="environment">本机 · 内部测试</span></header>
+    <header className="topbar"><a className="brand" href="/" onClick={goHome}><span className="brand-mark">R</span><div><strong>RiskFlow</strong><small>CONTROL LAB</small></div></a><nav aria-label="页面导航"><a href="/" onClick={goHome}>策略控制台</a><a className="active" href="/records">运行记录</a><a href="/governance">评测与证据</a></nav><div className="system-status"><span className="dot online"/><span>{notice}</span></div><span className="environment">本机 · 内部测试</span></header>
     <div className="page-shell">
       <section className="records-hero"><div><p className="eyebrow">AUDIT &amp; RECOVERY</p><h1>全部任务与纠错记录</h1><p>任务与纠错默认各显示最近 5 条，需要时可分别展开完整记录。</p></div><a className="secondary back-link" href="/" onClick={goHome}>返回策略控制台</a></section>
 

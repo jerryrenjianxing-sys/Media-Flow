@@ -29,12 +29,14 @@ from control_config import (
     validate_preset_name,
 )
 from device_profiles import enrich_device_statuses
+from evidence_governance import EvidenceGovernance
 from runtime_control import (
     PROJECT_PYTHON,
     RuntimeControl,
     worker_role,
     worker_spec,
 )
+from topic_review_store import TopicReviewStore
 
 
 HOST = "127.0.0.1"
@@ -43,6 +45,17 @@ PROFILE_NAME = "default"
 RUNTIME_ROOT = Path(__file__).resolve().parent / "runtime"
 WORKER_PID = RUNTIME_ROOT / "control-worker.pid"
 WORKER_LOG = RUNTIME_ROOT / "control-worker.log"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TOPIC_MANIFESTS = (
+    RUNTIME_ROOT / "topic_evaluation" / "ai-search-topic-v3-1-final-results.jsonl",
+    RUNTIME_ROOT / "topic_evaluation" / "core-boundary-v3-1-results.jsonl",
+)
+EVIDENCE_ROOTS = (
+    RUNTIME_ROOT,
+    Path(__file__).resolve().parent / "artifacts",
+    Path(__file__).resolve().parent / "artifacts-uia2",
+    Path.home() / "Pictures",
+)
 
 
 def _pid_is_running(pid: int) -> bool:
@@ -226,6 +239,11 @@ def comment_screenshot_path(
 
 class Handler(BaseHTTPRequestHandler):
     store = TaskStore(DEFAULT_DB)
+    review_store = TopicReviewStore(DEFAULT_DB, PROJECT_ROOT)
+    review_store.seed_manifests(TOPIC_MANIFESTS)
+    governance = EvidenceGovernance(
+        DEFAULT_DB, EVIDENCE_ROOTS, RUNTIME_ROOT / "backups"
+    )
 
     def log_message(self, format: str, *args: Any) -> None:
         sys.stdout.write((format % args) + "\n")
@@ -270,6 +288,37 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             config = normalized_config(self.store.get_profile(PROFILE_NAME) or {})
             self._json(build_status_payload(self.store, config))
+            return
+        if path == "/api/topic-reviews":
+            query = parse_qs(parsed.query)
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+                self._json(self.review_store.payload(limit, offset))
+            except (TypeError, ValueError) as exc:
+                self._json({"error": str(exc)}, 400)
+            return
+        if path == "/api/topic-review-image":
+            sample_id = parse_qs(parsed.query).get("id", [""])[0]
+            try:
+                image_path = self.review_store.image_path(sample_id, EVIDENCE_ROOTS)
+            except KeyError:
+                self._json({"error": "Review image is unavailable"}, 404)
+                return
+            content_type = "image/jpeg" if image_path.suffix.lower() in {".jpg", ".jpeg"} else "image/png"
+            self._headers(200, content_type)
+            self.wfile.write(image_path.read_bytes())
+            return
+        if path == "/api/evidence/status":
+            self._json(
+                {
+                    "inventory": self.governance.inventory(),
+                    "backups": self.governance.backups(),
+                }
+            )
+            return
+        if path == "/api/evidence/manifest":
+            self._json(self.governance.inventory())
             return
         if path in {"/api/records/tasks", "/api/records/incidents"}:
             query = parse_qs(parsed.query)
@@ -352,6 +401,36 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/model-key":
                 save_openrouter_key(body.get("api_key"))
                 self._json({"ok": True, **openrouter_key_status()})
+                return
+            if path == "/api/topic-reviews/confirm":
+                sample_id = str(body.get("sample_id") or "").strip()
+                if not sample_id:
+                    raise ValueError("请选择需要复核的样本")
+                review = self.review_store.confirm(
+                    sample_id,
+                    str(body.get("relevance") or ""),
+                    str(body.get("note") or ""),
+                )
+                self._json(
+                    {
+                        "ok": True,
+                        "review": review,
+                        "evaluation": self.review_store.evaluation(),
+                    }
+                )
+                return
+            if path == "/api/evidence/policy":
+                raw_days = body.get("retention_days")
+                if isinstance(raw_days, bool):
+                    raise ValueError("证据保留天数格式无效")
+                try:
+                    days = int(raw_days)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("证据保留天数格式无效") from exc
+                self._json({"ok": True, "policy": self.governance.save_policy(days)})
+                return
+            if path == "/api/evidence/backup":
+                self._json({"ok": True, "backup": self.governance.create_backup()}, 201)
                 return
             if path == "/api/pause":
                 self.store.set_paused(True)

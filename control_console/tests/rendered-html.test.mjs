@@ -103,3 +103,19 @@ test("server-renders the complete task and correction records page", async () =>
   assert.match(source, /incidentsExpanded/);
   assert.match(source, /SUMMARY_SIZE = 5/);
 });
+
+test("server-renders human topic review and non-destructive evidence governance", async () => {
+  const response = await render("/governance");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /评测与证据/);
+  assert.match(html, /主题人工复核/);
+  assert.match(html, /不计入正式准确率/);
+  assert.match(html, /只盘点和备份，不自动删除/);
+  const source = await readFile(new URL("../app/governance/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /创建数据库备份/);
+  assert.match(source, /\/api\/topic-reviews\/confirm/);
+  assert.match(source, /人工真值独立保存/);
+  assert.match(source, /只记录政策，不自动删除任何证据/);
+  assert.doesNotMatch(source, /api\/evidence\/delete|api\/evidence\/cleanup/);
+});
