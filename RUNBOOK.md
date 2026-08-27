@@ -2,7 +2,13 @@
 
 ## 1. 安全启动
 
-从项目根目录执行：
+首次使用先从项目根目录安装和自检独立环境：
+
+```powershell
+.\setup-riskflow.ps1
+```
+
+日常启动：
 
 ```powershell
 .\run-riskflow-console.ps1
@@ -10,7 +16,11 @@
 
 也可以双击 `启动-RiskFlow控制台.cmd` 或根目录的一键启动程序。启动器只启动本地 API 与网页，不会自动提交设备任务。
 
-当前依赖：Node.js 22、npm、项目已安装的前端依赖，以及现阶段借用的 Mobile Harness Python 环境。独立 Python 环境属于下一轮治理任务。
+正式运行使用项目自己的 `.venv`，不再借用 Mobile Harness 环境。独立环境包含固定执行器所需的 Python 依赖；Node、前端依赖、ADB、前端构建和本机加密 Key 由 doctor 分项检查：
+
+```powershell
+.\manage-riskflow.ps1 -Action Doctor
+```
 
 ## 2. 就绪检查
 
@@ -22,7 +32,7 @@
 
 页面和接口返回正常只说明服务在线。设备是否在线必须看状态接口中的设备字段并结合 ADB 实时检查；不要用 PID 文件或历史截图判断。
 
-## 3. 维护前暂停
+## 3. 暂停、停止和取消
 
 在控制台点击暂停，或调用：
 
@@ -30,7 +40,9 @@
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:48138/api/pause -ContentType 'application/json' -Body '{}'
 ```
 
-暂停只阻止 Worker 领取下一项任务；已经执行中的任务需要等待安全终态。确认没有 `running` 任务后再维护代码或数据库。
+暂停只阻止 Worker 领取下一项任务，不会中断正在看的视频。
+
+需要停止已选设备时，使用页面上的“安全停止已选设备”。固定执行器会完成当前视频，在下一条视频开始前把任务收口为 `stopped`。需要撤销尚未开始的任务时，使用“取消等待任务”，终态为 `cancelled`。两者都不会自动重试。
 
 恢复领取：
 
@@ -59,13 +71,19 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:48138/api/resume -ContentTy
 
 ## 6. 停机边界
 
-当前版本没有正式的一键停机脚本。需要结束服务时：
+需要结束服务时：
 
 1. 先暂停并确认没有运行中任务。
-2. 只结束工作目录属于本项目的控制接口和网页进程。
-3. 不使用“结束所有 Python/Node 进程”的方式，避免影响其他本地项目。
+2. 双击 `停止-RiskFlow控制台.cmd`，或执行：
 
-新增安全停机入口已列入 `STATUS.md` 的 P0 队列。
+```powershell
+.\manage-riskflow.ps1 -Action Stop
+```
+
+3. 停机模块只处理登记过且 PID、启动时间和可执行文件身份均匹配的 RiskFlow API、网页和 Worker；身份不一致时拒绝停止。
+4. 不使用“结束所有 Python/Node 进程”的方式，避免影响其他本地项目。
+
+重复执行 `Start`、`Stop` 或 `Restart` 是幂等的。全服务重启会在有运行中任务时拒绝执行；只重启某台设备 Worker 请使用控制台“精确重启已选 Worker”。
 
 ## 7. 变更验收顺序
 

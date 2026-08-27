@@ -17,13 +17,14 @@ type Config = {
   comment_requires_topic: boolean; preview_only: boolean; seed: number;
   max_gate_skips: number; max_likes: number; max_favorites: number; max_comments: number;
 };
-type Task = { id: string; device_id: string; task_type: string; status: "pending"|"running"|"completed"|"failed"; created_at: string; started_at?: string|null; finished_at?: string|null; result?: Record<string, unknown>|null; error?: string|null };
+type TaskStatus = "pending"|"running"|"completed"|"failed"|"stopped"|"cancelled";
+type Task = { id: string; device_id: string; task_type: string; status: TaskStatus; created_at: string; started_at?: string|null; finished_at?: string|null; result?: Record<string, unknown>|null; error?: string|null };
 type DeviceStatus = { device_id: string; state: string; friendly_name?: string; profile_verified?: boolean; model?: string };
 type WorkerStatus = { device_id: string; running: boolean; pid: number|null };
 type Incident = { id: string; task_id: string; device_id: string; video_index: number|null; stage: string; error_type: string; error_message: string; outcome: "recovered"|"skipped"|"device_fatal"; recovery_action?: string|null; screenshot_path?: string|null; analysis_status: string; created_at: string };
 type IncidentSummary = { total: number; queued: number; recovered: number; skipped: number; device_fatal: number };
-type TaskSummary = { pending: number; running: number; completed: number; failed: number };
-type Status = { device: DeviceStatus; devices: DeviceStatus[]; worker: WorkerStatus; workers: WorkerStatus[]; paused: boolean; task_summary: TaskSummary; tasks: Task[]; incidents: Incident[]; incident_summary: IncidentSummary };
+type TaskSummary = Record<TaskStatus, number>;
+type Status = { device: DeviceStatus; devices: DeviceStatus[]; worker: WorkerStatus; workers: WorkerStatus[]; paused: boolean; stop_requested_device_ids: string[]; task_summary: TaskSummary; tasks: Task[]; incidents: Incident[]; incident_summary: IncidentSummary };
 type ModelStatus = { provider: string; model: string; key_configured: boolean };
 type CommentScreenshot = { video_index: number };
 type Preset = { name: string; builtin: boolean; config: Partial<Config> };
@@ -45,6 +46,8 @@ const statusText = (task: Task) => {
   if (task.status === "pending") return "等待执行";
   if (task.status === "running") return "正在执行";
   if (task.status === "completed") return "已结束 · 成功";
+  if (task.status === "stopped") return "已结束 · 安全停止";
+  if (task.status === "cancelled") return "已结束 · 已取消";
   return task.error?.includes("worker_interrupted") ? "已结束 · 中断" : "已结束 · 失败";
 };
 const incidentOutcome = (value: Incident["outcome"]) => ({ recovered: "已恢复", skipped: "已跳过", device_fatal: "需处理" })[value];
@@ -96,6 +99,9 @@ export default function Home() {
   const [scanningDevices, setScanningDevices] = useState(false);
   const [deviceScanNotice, setDeviceScanNotice] = useState("");
   const [pausing, setPausing] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [restartingWorkers, setRestartingWorkers] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [imageStamp, setImageStamp] = useState(0);
@@ -113,7 +119,7 @@ export default function Home() {
       const refreshedAt = Date.now();
       const online = next.devices.filter((device) => device.state === "device").length;
       setStatus(next); setImageStamp(refreshedAt); setNow(refreshedAt);
-      setNotice(next.paused ? "所有任务已暂停" : online ? `${online} 台手机已连接，可以提交测试` : "未检测到已授权的安卓手机");
+      setNotice(next.stop_requested_device_ids?.length ? `${next.stop_requested_device_ids.length} 台设备正在安全停止` : next.paused ? "所有任务已暂停领取" : online ? `${online} 台手机已连接，可以提交测试` : "未检测到已授权的安卓手机");
     } catch { setNotice("本机控制服务未启动，请双击启动器"); }
   }, []);
 
@@ -230,8 +236,36 @@ export default function Home() {
     setPausing(true);
     try {
       const pause = !status?.paused; const response = await fetch(`${API}${pause ? "/api/pause" : "/api/resume"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const result = await response.json(); if (!response.ok) throw new Error(result.error || "操作失败"); await refresh(); setNotice(pause ? "所有任务将在当前安全步骤后暂停" : "所有任务已恢复执行");
+      const result = await response.json(); if (!response.ok) throw new Error(result.error || "操作失败"); await refresh(); setNotice(pause ? "已暂停领取新任务；运行中的任务保持运行" : "已恢复领取任务，并清除安全停止请求");
     } catch (error) { setNotice(error instanceof Error ? error.message : "操作失败"); } finally { setPausing(false); }
+  }
+
+  async function requestSafeStop() {
+    setStopping(true);
+    try {
+      const response = await fetch(`${API}/api/tasks/stop`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_ids: selectedDeviceIds }) });
+      const result = await response.json(); if (!response.ok) throw new Error(result.error || "安全停止失败");
+      await refresh(); setNotice(result.running ? `已发送安全停止请求，${result.running} 个任务将在当前视频后结束` : "设备已停止领取新任务；当前没有运行任务");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "安全停止失败"); } finally { setStopping(false); }
+  }
+
+  async function cancelPendingTasks() {
+    if (!window.confirm(`确定取消当前 ${pendingCount} 个等待任务吗？记录会保留。`)) return;
+    setCancelling(true);
+    try {
+      const response = await fetch(`${API}/api/tasks/cancel-pending`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmation: "CANCEL_PENDING_TASKS" }) });
+      const result = await response.json(); if (!response.ok) throw new Error(result.error || "取消失败");
+      await refresh(); setNotice(`已取消 ${result.cancelled || 0} 个等待任务，历史记录已保留`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "取消失败"); } finally { setCancelling(false); }
+  }
+
+  async function restartSelectedWorkers() {
+    setRestartingWorkers(true);
+    try {
+      const response = await fetch(`${API}/api/workers/restart`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_ids: selectedDeviceIds }) });
+      const result = await response.json(); if (!response.ok) throw new Error(result.error || "Worker 重启失败");
+      await refresh(); setNotice(`已精确重启 ${result.workers?.length || 0} 个设备 Worker`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Worker 重启失败"); } finally { setRestartingWorkers(false); }
   }
 
   function toggleTheme(event: React.MouseEvent<HTMLButtonElement>) {
@@ -296,10 +330,10 @@ export default function Home() {
             <div className="action-group"><div className="action-group-title"><div><span className="group-icon">↗</span><div><strong>其他安全内容</strong><small>不限主题或未匹配主题时使用</small></div></div><span>通用分支</span></div><div className="probability-grid three"><Probability label="通用点赞概率" hint="未匹配主题时" value={config.like_probability} onChange={(value) => set("like_probability", value)}/><Probability label="通用收藏概率" hint="未匹配主题时" value={config.favorite_probability} onChange={(value) => set("favorite_probability", value)}/><Probability label="通用评论概率" hint="未匹配主题时" value={config.comment_probability} onChange={(value) => set("comment_probability", value)}/></div></div></div>
           <div className="advanced-row"><label className="field"><span>随机种子</span><input type="number" min="0" value={config.seed} onChange={(event) => set("seed", Number(event.target.value))}/></label><label className="field"><span>连续异常停止阈值</span><input type="number" min="1" max="50" value={config.max_gate_skips} onChange={(event) => set("max_gate_skips", Number(event.target.value))}/><small>连续出现异常页面才计数；正常完成一条视频后自动清零。</small></label><label className="field"><span>连续轮数</span><input type="number" min="1" max="20" value={config.round_count} onChange={(event) => set("round_count", Number(event.target.value))}/></label><label className="field"><span>轮次间隔（分钟）</span><input type="number" min="0" max="1440" value={config.round_interval_minutes} onChange={(event) => set("round_interval_minutes", Number(event.target.value))}/></label></div>
         </section>
-        <section id="devices" className="panel device-panel"><div className="panel-heading"><div><p className="section-index">03 · EXECUTION POOL</p><h2>设备与模型</h2></div><button type="button" className="text-button" disabled={scanningDevices} onClick={() => void scanAvailableDevices()}>{scanningDevices ? "正在检索…" : "检索所有可用设备"}</button></div><div className="device-layout"><div className="device-pool"><div className="subheading"><strong>设备池</strong><small>设备之间并行，同一设备独占执行</small></div>{deviceScanNotice && <p className="device-scan-notice">{deviceScanNotice}</p>}<div className="device-options">{status?.devices.map((device) => { const available = device.state === "device"; return <label key={device.device_id} className={available ? "device-option online" : "device-option unavailable"}><input type="checkbox" disabled={!available} checked={available && config.device_ids.includes(device.device_id)} onChange={() => toggleDevice(device.device_id)}/><span><strong>{device.friendly_name || device.device_id}</strong><small>{device.model ? `${device.model} · ` : ""}{device.device_id} · {available ? device.profile_verified ? "档案已验证" : "在线但档案待验证" : device.state === "unauthorized" ? "等待确认 ADB 调试授权" : device.state === "unknown" ? "无法读取设备状态" : "设备离线"}</small></span><em>{available ? "可用" : device.state === "unauthorized" ? "待授权" : "不可用"}</em></label>; })}{!status?.devices.length && <p className="empty-device">还没有检测到安卓设备</p>}</div></div>
+        <section id="devices" className="panel device-panel"><div className="panel-heading"><div><p className="section-index">03 · EXECUTION POOL</p><h2>设备与模型</h2></div><div className="panel-actions"><button type="button" className="text-button" disabled={restartingWorkers || !selectedCount || runningCount > 0} onClick={() => void restartSelectedWorkers()}>{restartingWorkers ? "正在重启…" : "精确重启已选 Worker"}</button><button type="button" className="text-button" disabled={scanningDevices} onClick={() => void scanAvailableDevices()}>{scanningDevices ? "正在检索…" : "检索所有可用设备"}</button></div></div><div className="device-layout"><div className="device-pool"><div className="subheading"><strong>设备池</strong><small>设备之间并行，同一设备独占执行</small></div>{deviceScanNotice && <p className="device-scan-notice">{deviceScanNotice}</p>}<div className="device-options">{status?.devices.map((device) => { const available = device.state === "device"; return <label key={device.device_id} className={available ? "device-option online" : "device-option unavailable"}><input type="checkbox" disabled={!available} checked={available && config.device_ids.includes(device.device_id)} onChange={() => toggleDevice(device.device_id)}/><span><strong>{device.friendly_name || device.device_id}</strong><small>{device.model ? `${device.model} · ` : ""}{device.device_id} · {available ? device.profile_verified ? "档案已验证" : "在线但档案待验证" : device.state === "unauthorized" ? "等待确认 ADB 调试授权" : device.state === "unknown" ? "无法读取设备状态" : "设备离线"}</small></span><em>{status?.stop_requested_device_ids?.includes(device.device_id) ? "停止中" : available ? "可用" : device.state === "unauthorized" ? "待授权" : "不可用"}</em></label>; })}{!status?.devices.length && <p className="empty-device">还没有检测到安卓设备</p>}</div></div>
           <div className="model-key-box"><div className="model-title"><div><strong>视觉模型</strong><small>{model ? `${model.provider} · ${model.model}` : "正在读取模型设置…"}</small></div><span className={model?.key_configured ? "key-state ready" : "key-state"}>{model?.key_configured ? "已配置" : "未配置"}</span></div><div className="key-entry"><input aria-label="OpenRouter API Key" type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={model?.key_configured ? "输入新 Key 可替换当前配置" : "粘贴 OpenRouter Key"}/><button type="button" className="secondary" disabled={savingKey || !apiKey.trim()} onClick={() => void saveModelKey()}>{savingKey ? "保存中…" : "安全保存"}</button></div>{keyNotice && <em>{keyNotice}</em>}<small className="key-help">Key 只传给本机接口并以 Windows 用户加密形式保存，网页不会回显原值。</small></div></div></section>
       </div><aside className="side-column"><section className="panel preview-panel"><div className="panel-heading compact-heading"><div><p className="section-index">LIVE VIEW</p><h2>设备画面</h2></div><button className="icon-button" aria-label="刷新设备画面" onClick={() => setImageStamp(Date.now())}>↻</button></div><div className="phone-preview"><img src={`${API}/api/latest-image?t=${imageStamp}`} alt="最近一次设备执行截图" onError={(event) => { event.currentTarget.style.opacity = "0"; }}/><span>等待设备画面</span></div><div className="preview-meta"><span>{selectedCount} 台已选</span><b>{onlineCount} 台 ADB 在线</b></div></section>
-        <section className="panel run-panel"><div className="run-status-row"><div><span className={status?.paused ? "dot paused" : "dot online"}/><strong>{status?.paused ? "调度已暂停" : "调度器待命"}</strong></div><small>{runningCount} 执行中 · {pendingCount} 排队</small></div><label className="switch-row important"><div><strong>仅预览评论</strong><small>生成内容但不实际发送</small></div><input aria-label="仅预览评论，不实际发送" type="checkbox" checked={config.preview_only} onChange={(event) => set("preview_only", event.target.checked)}/></label>{!config.preview_only && <div className="warning">实际发送已开启。通过规则与安全检查的评论会发送到内部测试页面。</div>}<button type="button" className={status?.paused ? "resume-all" : "pause-all"} disabled={pausing} onClick={() => void togglePause()}>{pausing ? "处理中…" : status?.paused ? "恢复所有任务" : "暂停所有任务"}</button><div className="launch-actions"><button type="button" className="secondary" disabled={busy || !selectedCount || !strategyReady} onClick={() => void save(false)}>保存方案</button><button type="button" className="primary" disabled={busy || !selectedCount || !strategyReady} onClick={() => void save(true)}>{busy ? "处理中…" : `提交 ${config.round_count * selectedCount} 个任务`}</button></div><p className="fine-print">执行会在安全步骤间响应暂停；失败任务不会自动重试。</p></section></aside></div>
+        <section className="panel run-panel"><div className="run-status-row"><div><span className={status?.paused ? "dot paused" : "dot online"}/><strong>{status?.paused ? "已暂停领取" : "调度器待命"}</strong></div><small>{runningCount} 执行中 · {pendingCount} 排队</small></div><label className="switch-row important"><div><strong>仅预览评论</strong><small>生成内容但不实际发送</small></div><input aria-label="仅预览评论，不实际发送" type="checkbox" checked={config.preview_only} onChange={(event) => set("preview_only", event.target.checked)}/></label>{!config.preview_only && <div className="warning">实际发送已开启。通过规则与安全检查的评论会发送到内部测试页面。</div>}<div className="task-control-grid"><button type="button" className={status?.paused ? "resume-all" : "pause-all"} disabled={pausing} onClick={() => void togglePause()}>{pausing ? "处理中…" : status?.paused ? "恢复领取任务" : "暂停领取新任务"}</button><button type="button" className="safe-stop" disabled={stopping || !selectedCount} onClick={() => void requestSafeStop()}>{stopping ? "正在请求…" : "安全停止已选设备"}</button><button type="button" className="cancel-pending" disabled={cancelling || pendingCount <= 0} onClick={() => void cancelPendingTasks()}>{cancelling ? "正在取消…" : `取消 ${pendingCount} 个等待任务`}</button></div><div className="launch-actions"><button type="button" className="secondary" disabled={busy || !selectedCount || !strategyReady} onClick={() => void save(false)}>保存方案</button><button type="button" className="primary" disabled={busy || !selectedCount || !strategyReady} onClick={() => void save(true)}>{busy ? "处理中…" : `提交 ${config.round_count * selectedCount} 个任务`}</button></div><p className="fine-print">暂停不等于停止；安全停止会在当前视频结束后收口。失败和停止任务都不会自动重试。</p></section></aside></div>
         <section id="records" className="records-grid"><section className="panel history-panel"><div className="panel-heading"><div><p className="section-index">AUDIT LOG</p><h2>最近任务</h2><small className="section-note">首页固定显示最近 5 条 · 共 {Object.values(status?.task_summary || {}).reduce((sum, value) => sum + value, 0)} 条</small></div><div className="panel-actions"><a className="view-all-link" href="/records#tasks">查看所有</a><button type="button" className="danger-button" disabled={!status?.tasks.length} onClick={() => setConfirmClear(true)}>清空全部任务</button></div></div><div className="task-list">{status?.tasks.slice(0, 5).map((task) => <article key={task.id}><span className={`task-dot ${task.status}`}/><div><strong>{task.task_type === "douyin_topic_session" ? "内容策略测试" : task.task_type}</strong><small>{task.id.slice(0, 8)} · 设备 {task.device_id.slice(-6)} · {new Date(task.created_at).toLocaleString("zh-CN", { hour12: false })}</small><small className="task-duration">{taskDuration(task, now)}</small>{Number(task.result?.video_errors || 0) > 0 && <small className="task-correction">纠错 {String(task.result?.video_errors)} 条 · 恢复 {String(task.result?.recovered_videos || 0)} 条</small>}{commentScreenshots(task).length > 0 && <span className="task-evidence">{commentScreenshots(task).map((evidence) => <a key={evidence.video_index} href={`${API}/api/comment-image?task_id=${encodeURIComponent(task.id)}&video=${evidence.video_index}`} target="_blank" rel="noreferrer">评论截图 · 第 {evidence.video_index} 条</a>)}</span>}{task.error && <em>{task.error.includes("worker_interrupted") ? "执行进程已结束，任务已自动收口" : task.error}</em>}</div><b className={`task-status ${task.status}`}>{statusText(task)}</b></article>)}{!status?.tasks.length && <p className="empty">暂无任务记录。配置策略后提交第一轮测试。</p>}</div></section>
         <section className="panel correction-panel"><div className="panel-heading"><div><p className="section-index">RECOVERY MONITOR</p><h2>纠错监控</h2></div><div className="panel-actions"><a className="view-all-link" href="/records#incidents">查看所有</a><span className="tag quiet">异常自动留档</span></div></div><div className="correction-summary"><div><span>已恢复</span><b>{status?.incident_summary.recovered || 0}</b></div><div><span>已跳过</span><b>{status?.incident_summary.skipped || 0}</b></div><div className={(status?.incident_summary.device_fatal || 0) > 0 ? "danger" : ""}><span>需处理</span><b>{status?.incident_summary.device_fatal || 0}</b></div></div><div className="incident-list">{status?.incidents.slice(0, 5).map((incident) => <article key={incident.id}><span className={`incident-dot ${incident.outcome}`}/><div><strong>第 {incident.video_index ?? "-"} 条 · {incident.stage}</strong><small>设备 {incident.device_id.slice(-6)} · {new Date(incident.created_at).toLocaleString("zh-CN", { hour12: false })}</small><em>{incident.error_type}: {incident.error_message}</em></div><div className="incident-actions"><b className={incident.outcome}>{incidentOutcome(incident.outcome)}</b>{incident.screenshot_path && <a href={`${API}/api/incident-image?id=${incident.id}`} target="_blank" rel="noreferrer">查看截图</a>}</div></article>)}{!status?.incidents.length && <p className="empty">暂无异常记录，固定程序运行正常。</p>}</div></section></section>
       <footer><span>RiskFlow · 社媒风控实验台</span><span>本机数据 · 内部测试 · 审计记录保留</span></footer>

@@ -33,18 +33,17 @@ class ControlApiTest(unittest.TestCase):
         self.assertTrue(worker_id_is_running(f"test-host-{os.getpid()}"))
         self.assertFalse(worker_id_is_running("malformed-worker"))
 
-    def test_worker_status_rejects_reused_pid_from_non_worker_process(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            pid_path = Path(directory) / "worker.pid"
-            pid_path.write_text("12345", encoding="ascii")
-            with (
-                patch("control_api._worker_pid_path", return_value=pid_path),
-                patch("control_api._pid_is_running", return_value=True),
-                patch("control_api._process_image_name", return_value="python.exe"),
-            ):
-                status = worker_status("device-1")
-
-        self.assertFalse(status["running"])
+    def test_worker_status_uses_verified_runtime_identity(self) -> None:
+        with patch("control_api.RuntimeControl.status") as status:
+            status.return_value = {
+                "role": "worker-device-1",
+                "running": False,
+                "pid": 12345,
+                "identity": "command_mismatch",
+            }
+            result = worker_status("device-1")
+        self.assertFalse(result["running"])
+        self.assertEqual(result["identity"], "command_mismatch")
 
     def test_default_config_is_valid(self) -> None:
         config = normalized_config(DEFAULT_CONFIG)

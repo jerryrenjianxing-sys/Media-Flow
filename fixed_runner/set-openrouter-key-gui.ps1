@@ -2,7 +2,8 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-$savedKeyPath = 'C:\Users\jerry\Documents\Codex\Tools\Open-AutoGLM\.secrets\openrouter-api-key.dpapi'
+$projectRoot = Split-Path $PSScriptRoot -Parent
+$savedKeyPath = Join-Path $projectRoot '.secrets\openrouter-api-key.dpapi'
 $secretDirectory = Split-Path -Parent $savedKeyPath
 
 $form = New-Object System.Windows.Forms.Form

@@ -31,6 +31,7 @@ DEFAULT_ARTIFACTS = RUNTIME_ROOT / "artifacts"
 DEFAULT_REPORT = RUNTIME_ROOT / "latest-report.md"
 PauseWaiter = Callable[[], None]
 IncidentSink = Callable[[dict[str, Any]], None]
+StopChecker = Callable[[], bool]
 
 
 class DeviceFatalError(RuntimeError):
@@ -142,9 +143,15 @@ def wait_while_paused(
     store: TaskStore,
     poll_seconds: float,
     recorder: Uia2RunRecorder | None = None,
+    device_id: str | None = None,
 ) -> None:
     pause_seen = False
     while store.is_paused():
+        if device_id and store.is_stop_requested(device_id):
+            print_json({"event": "pause_interrupted_by_stop", "device_id": device_id})
+            if recorder is not None:
+                recorder.emit("pause_interrupted_by_stop")
+            return
         if not pause_seen:
             pause_seen = True
             print_json({"event": "worker_paused"})
@@ -170,7 +177,7 @@ def write_report(store: TaskStore, output: Path) -> dict[str, Any]:
         "| 状态 | 数量 |",
         "|---|---:|",
     ]
-    for status in ("pending", "running", "completed", "failed"):
+    for status in ("pending", "running", "completed", "failed", "stopped", "cancelled"):
         lines.append(f"| {status} | {statistics['by_status'].get(status, 0)} |")
     lines.extend(
         [
@@ -429,6 +436,7 @@ def topic_session(
     config: dict[str, Any],
     pause_waiter: PauseWaiter | None = None,
     incident_sink: IncidentSink | None = None,
+    stop_checker: StopChecker | None = None,
 ) -> dict[str, Any]:
     """Run a bounded, reproducible topic-matching safety-test session."""
     wall_started = time.monotonic()
@@ -472,8 +480,18 @@ def topic_session(
     anomaly_limit = max(1, min(50, int(config.get("max_gate_skips", 3))))
     consecutive_anomalies = 0
     wait_for_resume = pause_waiter or (lambda: None)
+    should_stop = stop_checker or (lambda: False)
+    stopped_by_user = False
 
     for video in range(1, int(config["video_count"]) + 1):
+        if should_stop():
+            stopped_by_user = True
+            recorder.emit(
+                "task_stop_checkpoint",
+                next_video=video,
+                videos_seen=summary["videos_seen"],
+            )
+            break
         dwell = round(rng.uniform(float(config["dwell_min"]), float(config["dwell_max"])), 2)
         entry: dict[str, Any] = {"video": video, "dwell_s": dwell}
         actions: list[str] = []
@@ -666,7 +684,14 @@ def topic_session(
             "All sampled pages were blocked; check whether the phone is locked or the feed is unavailable"
         )
     return {
-        "status": "passed_with_recovery" if summary["video_errors"] else "passed",
+        "status": (
+            "stopped"
+            if stopped_by_user
+            else "passed_with_recovery"
+            if summary["video_errors"]
+            else "passed"
+        ),
+        "stopped_by_user": stopped_by_user,
         "task_type": "douyin_topic_session",
         "preview_only": preview_only,
         "content_mode": content_mode,
@@ -805,6 +830,7 @@ def execute_task(
     *,
     pause_waiter: PauseWaiter | None = None,
     incident_sink: IncidentSink | None = None,
+    stop_checker: StopChecker | None = None,
 ) -> dict[str, Any]:
     recorder.emit(
         "task_start", task_id=task.id, task_type=task.task_type, payload=task.payload
@@ -849,6 +875,7 @@ def execute_task(
             config=task.payload,
             pause_waiter=pause_waiter,
             incident_sink=incident_sink,
+            stop_checker=stop_checker,
         )
     else:
         raise ValueError(f"Unsupported task type: {task.task_type}")
@@ -887,7 +914,25 @@ def run_worker(
         device = None
         needs_reconnect = False
         while max_tasks == 0 or completed < max_tasks:
-            wait_while_paused(store, poll_seconds)
+            if store.is_stop_requested(device_id):
+                print_json(
+                    {
+                        "event": "worker_stop_requested",
+                        "device_id": device_id,
+                        "processed_tasks": completed,
+                    }
+                )
+                break
+            wait_while_paused(store, poll_seconds, device_id=device_id)
+            if store.is_stop_requested(device_id):
+                print_json(
+                    {
+                        "event": "worker_stop_requested",
+                        "device_id": device_id,
+                        "processed_tasks": completed,
+                    }
+                )
+                break
             if device is None or needs_reconnect:
                 if needs_reconnect:
                     print_json({"event": "device_reconnect_before_next_task"})
@@ -931,17 +976,29 @@ def run_worker(
                     task,
                     recorder,
                     pause_waiter=lambda: wait_while_paused(
-                        store, poll_seconds, recorder
+                        store, poll_seconds, recorder, device_id
                     ),
                     incident_sink=save_video_incident,
+                    stop_checker=lambda: store.is_stop_requested(device_id),
                 )
+                task_status = "stopped" if result.get("stopped_by_user") else "completed"
                 store.finish(
                     task.id,
-                    status="completed",
+                    status=task_status,
                     run_dir=run_dir,
                     result=result,
+                    error="stopped_by_user" if task_status == "stopped" else None,
                 )
-                print_json({"event": "task_completed", "task_id": task.id, **result})
+                print_json(
+                    {
+                        "event": "task_stopped" if task_status == "stopped" else "task_completed",
+                        "task_id": task.id,
+                        **result,
+                    }
+                )
+                if task_status == "stopped":
+                    completed += 1
+                    break
             except Exception as exc:
                 task_screenshot_path: str | None = None
                 task_ui_tree_path: str | None = None

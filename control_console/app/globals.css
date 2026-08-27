@@ -230,9 +230,12 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .switch-row input:checked::after { transform: translateX(14px); }
 .warning, .modal-warning { border: 1px solid rgba(215,155,59,.28); border-radius: 6px; color: #e1b66d; background: rgba(215,155,59,.08); font-size: 10px; line-height: 1.5; }
 .warning { margin-top: 10px; padding: 9px 10px; }
-.pause-all, .resume-all { width: 100%; margin-top: 10px; padding: 10px; border-radius: 6px; font-size: 11px; font-weight: 500; }
+.task-control-grid { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pause-all, .resume-all, .safe-stop, .cancel-pending { width: 100%; padding: 10px; border-radius: 6px; font-size: 11px; font-weight: 500; }
 .pause-all { border: 1px solid rgba(215,155,59,.35); color: #e1b66d; background: rgba(215,155,59,.08); }
 .resume-all { border: 1px solid rgba(39,166,68,.35); color: #69c784; background: rgba(39,166,68,.08); }
+.safe-stop { border: 1px solid rgba(215,155,59,.35); color: #f0c778; background: rgba(215,155,59,.12); }
+.cancel-pending { grid-column: 1 / -1; border: 1px solid var(--line); color: var(--ink-muted); background: var(--surface-2); }
 .launch-actions { margin-top: 10px; display: grid; grid-template-columns: .8fr 1.2fr; gap: 8px; }
 .primary, .secondary, .danger-confirm { padding: 10px 12px; border-radius: 6px; font-size: 11px; font-weight: 500; }
 .primary { border: 1px solid var(--primary); color: #fff; background: var(--primary); }
@@ -263,11 +266,15 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .task-dot.running { background: var(--warning); box-shadow: 0 0 0 4px rgba(215,155,59,.1); }
 .task-dot.completed, .incident-dot.recovered { background: var(--success); }
 .task-dot.failed, .incident-dot.device_fatal { background: var(--danger); }
+.task-dot.stopped { background: var(--warning); }
+.task-dot.cancelled { background: var(--ink-subtle); }
 .incident-dot.skipped { background: var(--warning); }
 .task-status { padding: 4px 6px; border-radius: 4px; color: var(--ink-muted); background: var(--surface-2); font-size: 9px; font-weight: 500; }
 .task-status.completed { color: #69c784; }
 .task-status.running { color: #e1b66d; }
 .task-status.failed { color: #e98484; }
+.task-status.stopped { color: #e1b66d; }
+.task-status.cancelled { color: var(--ink-subtle); }
 .correction-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .correction-summary div { padding: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface-2); }
 .correction-summary span { color: var(--ink-subtle); font-size: 9px; }
@@ -348,7 +355,8 @@ footer { padding: 24px 0 34px; display: flex; justify-content: space-between; co
   .probability-grid.two, .probability-grid.three, .cap-grid.two { grid-template-columns: 1fr; }
   .policy-summary { align-items: flex-start; flex-direction: column; gap: 6px; }
   .device-layout { grid-template-columns: 1fr; }
-  .key-entry, .launch-actions { grid-template-columns: 1fr; }
+  .key-entry, .launch-actions, .task-control-grid { grid-template-columns: 1fr; }
+  .cancel-pending { grid-column: auto; }
   .phone-preview { height: 360px; }
   .task-list article, .incident-list article { grid-template-columns: 8px 1fr; }
   .task-status, .incident-actions { grid-column: 2; justify-self: start; }

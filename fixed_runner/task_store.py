@@ -20,7 +20,7 @@ TASK_TYPES = {
     "douyin_two_video_demo",
     "douyin_topic_session",
 }
-TASK_STATUSES = {"pending", "running", "completed", "failed"}
+TASK_STATUSES = {"pending", "running", "completed", "failed", "stopped", "cancelled"}
 
 
 def now_iso() -> str:
@@ -402,6 +402,74 @@ class TaskStore:
             ).fetchone()
         return bool(row and row["value"] == "1")
 
+    def request_stop(self, device_ids: list[str]) -> int:
+        unique_ids = list(dict.fromkeys(str(value).strip() for value in device_ids if str(value).strip()))
+        if not unique_ids:
+            raise ValueError("至少需要一台设备")
+        changed = 0
+        with self.connection() as connection:
+            for device_id in unique_ids:
+                key = f"stop:{device_id}"
+                previous = connection.execute(
+                    "SELECT value FROM system_state WHERE key=?", (key,)
+                ).fetchone()
+                connection.execute(
+                    "INSERT INTO system_state(key, value, updated_at) VALUES (?, '1', ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value='1', updated_at=excluded.updated_at",
+                    (key, now_iso()),
+                )
+                if previous is None or previous["value"] != "1":
+                    changed += 1
+        return changed
+
+    def clear_stop_requests(self, device_ids: list[str] | None = None) -> int:
+        with self.connection() as connection:
+            if device_ids is None:
+                cursor = connection.execute(
+                    "DELETE FROM system_state WHERE key LIKE 'stop:%'"
+                )
+                return cursor.rowcount
+            keys = [f"stop:{str(value).strip()}" for value in device_ids if str(value).strip()]
+            deleted = 0
+            for key in dict.fromkeys(keys):
+                deleted += connection.execute(
+                    "DELETE FROM system_state WHERE key=?", (key,)
+                ).rowcount
+            return deleted
+
+    def is_stop_requested(self, device_id: str) -> bool:
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT value FROM system_state WHERE key=?",
+                (f"stop:{device_id}",),
+            ).fetchone()
+        return bool(row and row["value"] == "1")
+
+    def cancel_pending(
+        self, task_ids: list[str] | None = None, *, device_ids: list[str] | None = None
+    ) -> int:
+        clauses = ["status='pending'"]
+        parameters: list[Any] = [now_iso()]
+        if task_ids is not None:
+            clean_ids = list(dict.fromkeys(str(value).strip() for value in task_ids if str(value).strip()))
+            if not clean_ids:
+                return 0
+            clauses.append("id IN (" + ",".join("?" for _ in clean_ids) + ")")
+            parameters.extend(clean_ids)
+        if device_ids is not None:
+            clean_devices = list(dict.fromkeys(str(value).strip() for value in device_ids if str(value).strip()))
+            if not clean_devices:
+                return 0
+            clauses.append("device_id IN (" + ",".join("?" for _ in clean_devices) + ")")
+            parameters.extend(clean_devices)
+        with self.connection() as connection:
+            cursor = connection.execute(
+                "UPDATE tasks SET status='cancelled', finished_at=?, "
+                "error='cancelled_by_user' WHERE " + " AND ".join(clauses),
+                parameters,
+            )
+        return cursor.rowcount
+
     def reconcile_orphaned_running(
         self, is_worker_alive: Callable[[str], bool]
     ) -> int:
@@ -462,6 +530,24 @@ class TaskStore:
             for status in TASK_STATUSES
         }
 
+    def running_count(self, device_ids: list[str] | None = None) -> int:
+        with self.connection() as connection:
+            if device_ids is None:
+                row = connection.execute(
+                    "SELECT COUNT(*) AS count FROM tasks WHERE status='running'"
+                ).fetchone()
+                return int(row["count"])
+            clean_ids = list(dict.fromkeys(str(value).strip() for value in device_ids if str(value).strip()))
+            if not clean_ids:
+                return 0
+            row = connection.execute(
+                "SELECT COUNT(*) AS count FROM tasks WHERE status='running' AND device_id IN ("
+                + ",".join("?" for _ in clean_ids)
+                + ")",
+                clean_ids,
+            ).fetchone()
+            return int(row["count"])
+
     def submit(
         self,
         task_type: str,
@@ -509,6 +595,13 @@ class TaskStore:
             if paused and paused["value"] == "1":
                 connection.commit()
                 return None
+            stopped = connection.execute(
+                "SELECT value FROM system_state WHERE key=?",
+                (f"stop:{device_id}",),
+            ).fetchone()
+            if stopped and stopped["value"] == "1":
+                connection.commit()
+                return None
             row = connection.execute(
                 "SELECT id FROM tasks WHERE device_id=? AND status='pending' "
                 "AND not_before<=? ORDER BY not_before, created_at, id LIMIT 1",
@@ -535,6 +628,12 @@ class TaskStore:
             ).fetchone()
             if paused and paused["value"] == "1":
                 return False
+            stopped = connection.execute(
+                "SELECT value FROM system_state WHERE key=?",
+                (f"stop:{device_id}",),
+            ).fetchone()
+            if stopped and stopped["value"] == "1":
+                return False
             row = connection.execute(
                 "SELECT 1 FROM tasks WHERE device_id=? AND status='pending' "
                 "AND not_before<=? LIMIT 1",
@@ -551,8 +650,8 @@ class TaskStore:
         result: dict[str, Any] | None = None,
         error: str | None = None,
     ) -> None:
-        if status not in {"completed", "failed"}:
-            raise ValueError("finish status must be completed or failed")
+        if status not in {"completed", "failed", "stopped"}:
+            raise ValueError("finish status must be completed, failed, or stopped")
         with self.connection() as connection:
             cursor = connection.execute(
                 "UPDATE tasks SET status=?, finished_at=?, run_dir=?, "

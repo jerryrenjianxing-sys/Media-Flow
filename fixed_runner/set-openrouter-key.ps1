@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
-$savedKeyPath = 'C:\Users\jerry\Documents\Codex\Tools\Open-AutoGLM\.secrets\openrouter-api-key.dpapi'
+$projectRoot = Split-Path $PSScriptRoot -Parent
+$savedKeyPath = Join-Path $projectRoot '.secrets\openrouter-api-key.dpapi'
 $secretDirectory = Split-Path -Parent $savedKeyPath
 
 New-Item -ItemType Directory -Force -Path $secretDirectory | Out-Null

@@ -23,8 +23,7 @@
 运行：
 
 ```powershell
-& 'C:\Users\jerry\.codex\skills\mobile-harness\.venv\Scripts\python.exe' `
-  'C:\Users\jerry\Documents\Codex\2026-08-19\wo-c\fixed_runner\douyin_fixed_runner.py'
+& '.\.venv\Scripts\python.exe' '.\fixed_runner\douyin_fixed_runner.py'
 ```
 
 局限：当前视觉检查针对这台 OPPO 的抖音布局校准，是速度/架构原型，不是跨机型通用适配器。商业内容、直播、商品和特效识别尚需 OCR/视觉分类硬闸门。
@@ -47,15 +46,13 @@
 运行第二版：
 
 ```powershell
-& 'C:\Users\jerry\.codex\skills\mobile-harness\.venv\Scripts\python.exe' `
-  'C:\Users\jerry\Documents\Codex\2026-08-19\wo-c\fixed_runner\douyin_uia2_runner.py'
+& '.\.venv\Scripts\python.exe' '.\fixed_runner\douyin_uia2_runner.py'
 ```
 
 运行全部离线测试：
 
 ```powershell
-& 'C:\Users\jerry\.codex\skills\mobile-harness\.venv\Scripts\python.exe' `
-  -m unittest discover -s 'C:\Users\jerry\Documents\Codex\2026-08-19\wo-c\fixed_runner' -p 'test_*.py'
+& '.\.venv\Scripts\python.exe' -m unittest discover -s '.\fixed_runner' -p 'test_*.py'
 ```
 
 ## 长驻 Worker 与任务队列
@@ -67,7 +64,9 @@
 - `pending`：等待执行；
 - `running`：已被某个 Worker 独占领取；
 - `completed`：动作和复核完成；
-- `failed`：安全停止，需要检查证据。
+- `failed`：异常失败，需要检查证据；
+- `stopped`：用户请求后在视频边界安全停止；
+- `cancelled`：等待中的任务被用户取消，未开始执行。
 
 Worker 被异常终止时，遗留的 `running` 任务会标为失败，不会自动重试。这样可以避免某次点赞或评论其实已经成功，却因重跑而反向取消或重复发送。
 
@@ -97,8 +96,7 @@ OpenRouter 是独立可选路线：先运行 `set-openrouter-key.cmd`，再运�
 命令行定时示例：
 
 ```powershell
-& 'C:\Users\jerry\.codex\skills\mobile-harness\.venv\Scripts\python.exe' `
-  '.\fixed_runner\worker.py' submit healthcheck --count 20 --interval-seconds 300
+& '.\.venv\Scripts\python.exe' '.\fixed_runner\worker.py' submit healthcheck --count 20 --interval-seconds 300
 ```
 
 互动按钮不再使用固定坐标。每次动作前都会从当前 UI 树取得“喜欢 / 收藏 / 评论”的可点击区域并点击中心，评论区使用语义“关闭”按钮退出；这可以适应不同视频导致的按钮上下偏移。颜色复核也跟随本次按钮区域。

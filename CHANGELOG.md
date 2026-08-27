@@ -4,7 +4,16 @@
 
 ## [Unreleased]
 
-暂无。
+### Added
+
+- 项目独立 `.venv`、首次安装与 doctor 自检入口。
+- 基于进程身份登记的安全启动、停止、重启和一键停机入口。
+- 运行任务安全停止、等待任务取消以及 `stopped/cancelled` 终态。
+
+### Changed
+
+- OpenRouter 本机密钥迁移到项目 `.secrets/`，继续使用 Windows 用户级加密。
+- 控制台明确区分暂停领取、安全停止、取消等待、精确重启 Worker 和清空历史。
 
 ## [riskflow-governance-v1] - 2026-08-26
 

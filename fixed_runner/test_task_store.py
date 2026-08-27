@@ -97,6 +97,57 @@ class TaskStoreTest(unittest.TestCase):
         assert claimed is not None
         self.assertEqual(claimed.id, task_id)
 
+    def test_stop_request_blocks_new_claims_without_changing_pause(self) -> None:
+        task_id = self.store.submit("healthcheck", "device-1")
+        self.assertEqual(self.store.request_stop(["device-1"]), 1)
+        self.assertTrue(self.store.is_stop_requested("device-1"))
+        self.assertFalse(self.store.is_paused())
+        self.assertFalse(self.store.has_ready("device-1"))
+        self.assertIsNone(self.store.claim_next("device-1", "worker-1"))
+        self.assertEqual(self.store.get(task_id).status, "pending")
+        self.assertEqual(self.store.clear_stop_requests(["device-1"]), 1)
+        self.assertIsNotNone(self.store.claim_next("device-1", "worker-1"))
+
+    def test_running_task_can_finish_as_stopped_terminal_state(self) -> None:
+        task_id = self.store.submit("healthcheck", "device-1")
+        self.store.claim_next("device-1", "worker-1")
+        self.store.finish(
+            task_id,
+            status="stopped",
+            run_dir="run/stopped",
+            result={"status": "stopped", "videos_seen": 3},
+            error="stopped_by_user",
+        )
+        task = self.store.get(task_id)
+        self.assertEqual(task.status, "stopped")
+        self.assertIsNotNone(task.finished_at)
+        self.assertEqual(task.result["videos_seen"], 3)
+
+    def test_cancel_pending_is_atomic_and_does_not_touch_running_task(self) -> None:
+        pending_id = self.store.submit("healthcheck", "device-1")
+        running_id = self.store.submit("healthcheck", "device-2")
+        self.store.claim_next("device-2", "worker-2")
+        self.assertEqual(self.store.cancel_pending(), 1)
+        cancelled = self.store.get(pending_id)
+        self.assertEqual(cancelled.status, "cancelled")
+        self.assertIsNotNone(cancelled.finished_at)
+        self.assertEqual(self.store.get(running_id).status, "running")
+
+    def test_cancel_pending_can_be_scoped_to_task_ids(self) -> None:
+        first = self.store.submit("healthcheck", "device-1")
+        second = self.store.submit("healthcheck", "device-1")
+        self.assertEqual(self.store.cancel_pending([first]), 1)
+        self.assertEqual(self.store.get(first).status, "cancelled")
+        self.assertEqual(self.store.get(second).status, "pending")
+
+    def test_running_count_can_be_scoped_to_devices(self) -> None:
+        self.store.submit("healthcheck", "device-1")
+        self.store.submit("healthcheck", "device-2")
+        self.store.claim_next("device-1", "worker-1")
+        self.assertEqual(self.store.running_count(), 1)
+        self.assertEqual(self.store.running_count(["device-1"]), 1)
+        self.assertEqual(self.store.running_count(["device-2"]), 0)
+
     def test_old_database_is_migrated_without_losing_tasks(self) -> None:
         old_path = Path(self.temp.name) / "old-tasks.db"
         connection = sqlite3.connect(old_path)
@@ -352,7 +403,14 @@ class TaskStoreTest(unittest.TestCase):
 
         self.assertEqual(
             self.store.task_status_counts(),
-            {"pending": 1, "running": 0, "completed": 1, "failed": 0},
+            {
+                "pending": 1,
+                "running": 0,
+                "completed": 1,
+                "failed": 0,
+                "stopped": 0,
+                "cancelled": 0,
+            },
         )
 
 

@@ -8,9 +8,10 @@ if (-not (Get-Command ConvertTo-SecureString -ErrorAction SilentlyContinue)) {
     $securityModule = Join-Path $env:windir 'System32\WindowsPowerShell\v1.0\Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1'
     Import-Module -Name $securityModule -Force
 }
-$python = 'C:\Users\jerry\.codex\skills\mobile-harness\.venv\Scripts\python.exe'
+$projectRoot = Split-Path $PSScriptRoot -Parent
+$python = Join-Path $projectRoot '.venv\Scripts\python.exe'
 $worker = Join-Path $PSScriptRoot 'worker.py'
-$savedKeyPath = 'C:\Users\jerry\Documents\Codex\Tools\Open-AutoGLM\.secrets\openrouter-api-key.dpapi'
+$savedKeyPath = Join-Path $projectRoot '.secrets\openrouter-api-key.dpapi'
 
 if (-not (Test-Path -LiteralPath $python)) {
     throw "Python environment not found: $python"

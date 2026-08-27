@@ -16,6 +16,13 @@ from urllib.parse import parse_qs, urlparse
 from task_store import TaskStore
 from worker import DEFAULT_ARTIFACTS, DEFAULT_DB, DEFAULT_DEVICE_ID
 from device_profiles import enrich_device_statuses
+from runtime_control import (
+    PROJECT_PYTHON,
+    RuntimeControl,
+    SECRET_PATH,
+    worker_role,
+    worker_spec,
+)
 
 
 HOST = "127.0.0.1"
@@ -25,9 +32,7 @@ PRESET_PREFIX = "preset:"
 RUNTIME_ROOT = Path(__file__).resolve().parent / "runtime"
 WORKER_PID = RUNTIME_ROOT / "control-worker.pid"
 WORKER_LOG = RUNTIME_ROOT / "control-worker.log"
-OPENROUTER_KEY_PATH = Path(
-    r"C:\Users\jerry\Documents\Codex\Tools\Open-AutoGLM\.secrets\openrouter-api-key.dpapi"
-)
+OPENROUTER_KEY_PATH = SECRET_PATH
 OPENROUTER_KEY_STDIN_SCRIPT = Path(__file__).resolve().parent / "set-openrouter-key-from-stdin.ps1"
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -385,51 +390,33 @@ def _worker_pid_path(device_id: str) -> Path:
 
 
 def worker_status(device_id: str) -> dict[str, Any]:
-    pid_path = _worker_pid_path(device_id)
-    if not pid_path.exists() and device_id == DEFAULT_DEVICE_ID:
-        pid_path = WORKER_PID
-    try:
-        pid = int(pid_path.read_text(encoding="ascii").strip())
-    except (OSError, ValueError):
-        return {"device_id": device_id, "running": False, "pid": None}
-    running = _pid_is_running(pid)
-    if running and os.name == "nt":
-        running = _process_image_name(pid) in {"powershell.exe", "pwsh.exe"}
-    return {"device_id": device_id, "running": running, "pid": pid}
+    status = RuntimeControl().status(worker_role(device_id))
+    return {"device_id": device_id, **status}
 
 
 def ensure_worker(device_id: str) -> dict[str, Any]:
     status = worker_status(device_id)
     if status["running"]:
         return status
-    script = Path(__file__).resolve().parent / "run-worker-openrouter-secure.ps1"
-    RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
-    log_path = RUNTIME_ROOT / f"control-worker-{_safe_device_name(device_id)}.log"
-    log = log_path.open("ab", buffering=0)
-    worker_env = os.environ.copy()
-    windows_modules = str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "Modules")
-    current_module_path = worker_env.get("PSModulePath", "")
-    if windows_modules.lower() not in current_module_path.lower():
-        worker_env["PSModulePath"] = windows_modules + os.pathsep + current_module_path
-    powershell = Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-    process = subprocess.Popen(
-        [
-            str(powershell),
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(script),
-            "worker",
-            "--device-id",
-            device_id,
-        ],
-        cwd=str(script.parent), stdin=subprocess.DEVNULL, stdout=log,
-        stderr=subprocess.STDOUT, env=worker_env,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-    _worker_pid_path(device_id).write_text(str(process.pid), encoding="ascii")
-    return {"device_id": device_id, "running": True, "pid": process.pid}
+    if not PROJECT_PYTHON.is_file():
+        raise RuntimeError("RiskFlow 独立 Python 环境尚未安装")
+    started = RuntimeControl().start(worker_spec(device_id))
+    return {"device_id": device_id, **started}
+
+
+def stop_worker(store: TaskStore, device_id: str) -> dict[str, Any]:
+    if store.running_count([device_id]):
+        raise ValueError("该设备仍有任务正在执行，请先请求安全停止并等待任务结束")
+    stopped = RuntimeControl().stop(worker_role(device_id))
+    return {"device_id": device_id, **stopped}
+
+
+def restart_worker(store: TaskStore, device_id: str) -> dict[str, Any]:
+    if store.running_count([device_id]):
+        raise ValueError("该设备仍有任务正在执行，不能重启 Worker")
+    RuntimeControl().stop(worker_role(device_id))
+    store.clear_stop_requests([device_id])
+    return ensure_worker(device_id)
 
 
 def ensure_workers(device_ids: list[str]) -> list[dict[str, Any]]:
@@ -477,6 +464,10 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         "worker": workers[0],
         "workers": workers,
         "paused": store.is_paused(),
+        "stop_requested_device_ids": [
+            device_id for device_id in config["device_ids"]
+            if store.is_stop_requested(device_id)
+        ],
         "reconciled_tasks": reconciled_tasks,
         "task_summary": store.task_status_counts(),
         "tasks": [asdict(task) for task in store.list(5)],
@@ -658,7 +649,43 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/resume":
                 self.store.set_paused(False)
-                self._json({"ok": True, "paused": False})
+                cleared = self.store.clear_stop_requests()
+                self._json({"ok": True, "paused": False, "stop_requests_cleared": cleared})
+                return
+            if path == "/api/tasks/stop":
+                device_ids = body.get("device_ids")
+                if not isinstance(device_ids, list) or not device_ids:
+                    raise ValueError("请选择需要安全停止的设备")
+                changed = self.store.request_stop(device_ids)
+                self._json(
+                    {
+                        "ok": True,
+                        "requested": changed,
+                        "device_ids": list(dict.fromkeys(str(value) for value in device_ids)),
+                        "running": self.store.running_count(device_ids),
+                    },
+                    202,
+                )
+                return
+            if path == "/api/tasks/cancel-pending":
+                if body.get("confirmation") != "CANCEL_PENDING_TASKS":
+                    raise ValueError("请确认取消全部等待任务")
+                task_ids = body.get("task_ids")
+                device_ids = body.get("device_ids")
+                if task_ids is not None and not isinstance(task_ids, list):
+                    raise ValueError("task_ids 格式无效")
+                if device_ids is not None and not isinstance(device_ids, list):
+                    raise ValueError("device_ids 格式无效")
+                cancelled = self.store.cancel_pending(task_ids, device_ids=device_ids)
+                self._json({"ok": True, "cancelled": cancelled})
+                return
+            if path in {"/api/workers/stop", "/api/workers/restart"}:
+                device_ids = body.get("device_ids")
+                if not isinstance(device_ids, list) or not device_ids:
+                    raise ValueError("请选择设备")
+                operation = stop_worker if path.endswith("/stop") else restart_worker
+                results = [operation(self.store, str(device_id)) for device_id in device_ids]
+                self._json({"ok": True, "workers": results})
                 return
             if path == "/api/tasks/clear":
                 if body.get("confirmation") != "CLEAR_ALL_TASKS":

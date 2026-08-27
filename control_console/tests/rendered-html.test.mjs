@@ -28,7 +28,9 @@ test("server-renders the RiskFlow control console", async () => {
   assert.match(html, /匹配主题内容/);
   assert.match(html, /其他安全内容/);
   assert.match(html, /匹配必须带画面证据/);
-  assert.match(html, /暂停所有任务/);
+  assert.match(html, /暂停领取新任务/);
+  assert.match(html, /安全停止已选设备/);
+  assert.match(html, /取消 0 个等待任务/);
   assert.match(html, /检索所有可用设备/);
   assert.match(html, /清空全部任务/);
   assert.match(html, /首页固定显示最近 5 条/);
@@ -81,6 +83,11 @@ test("homepage uses probability-only actions and links to complete records", asy
   assert.match(source, /\/records#tasks/);
   assert.match(source, /\/records#incidents/);
   assert.doesNotMatch(source, /主题判断阈值/);
+  assert.match(source, /\/api\/tasks\/stop/);
+  assert.match(source, /\/api\/tasks\/cancel-pending/);
+  assert.match(source, /\/api\/workers\/restart/);
+  assert.match(source, /已结束 · 安全停止/);
+  assert.match(source, /已结束 · 已取消/);
 });
 
 test("server-renders the complete task and correction records page", async () => {

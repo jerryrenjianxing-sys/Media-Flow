@@ -24,6 +24,7 @@
 **/.mypy_cache/
 **/.ruff_cache/
 **/.venv/
+/.secrets/
 
 # Frontend dependencies and generated output
 /control_console/node_modules/

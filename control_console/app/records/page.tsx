@@ -1,19 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import type { MouseEvent } from "react";
 
 const API = "http://127.0.0.1:48138";
 const PAGE_SIZE = 50;
 const SUMMARY_SIZE = 5;
 
-type Task = { id: string; device_id: string; task_type: string; status: "pending"|"running"|"completed"|"failed"; created_at: string; started_at?: string|null; finished_at?: string|null; result?: Record<string, unknown>|null; error?: string|null };
+type Task = { id: string; device_id: string; task_type: string; status: "pending"|"running"|"completed"|"failed"|"stopped"|"cancelled"; created_at: string; started_at?: string|null; finished_at?: string|null; result?: Record<string, unknown>|null; error?: string|null };
 type Incident = { id: string; device_id: string; video_index: number|null; stage: string; error_type: string; error_message: string; outcome: "recovered"|"skipped"|"device_fatal"; screenshot_path?: string|null; created_at: string };
 type Page<T> = { items: T[]; total: number; limit: number; offset: number };
 type CommentScreenshot = { video_index: number };
 
 const emptyPage = <T,>(): Page<T> => ({ items: [], total: 0, limit: PAGE_SIZE, offset: 0 });
-const statusText = (task: Task) => task.status === "pending" ? "等待执行" : task.status === "running" ? "正在执行" : task.status === "completed" ? "已结束 · 成功" : task.error?.includes("worker_interrupted") ? "已结束 · 中断" : "已结束 · 失败";
+const statusText = (task: Task) => task.status === "pending" ? "等待执行" : task.status === "running" ? "正在执行" : task.status === "completed" ? "已结束 · 成功" : task.status === "stopped" ? "已结束 · 安全停止" : task.status === "cancelled" ? "已结束 · 已取消" : task.error?.includes("worker_interrupted") ? "已结束 · 中断" : "已结束 · 失败";
 const incidentOutcome = (value: Incident["outcome"]) => ({ recovered: "已恢复", skipped: "已跳过", device_fatal: "需处理" })[value];
 const commentScreenshots = (task: Task): CommentScreenshot[] => Array.isArray(task.result?.comment_screenshots) ? task.result.comment_screenshots.filter((item): item is CommentScreenshot => Boolean(item && typeof item === "object" && Number.isInteger((item as Record<string, unknown>).video_index))) : [];
 
@@ -34,6 +34,10 @@ export default function RecordsPage() {
   const [incidentsExpanded, setIncidentsExpanded] = useState(false);
   const [now, setNow] = useState(0);
   const [notice, setNotice] = useState("正在读取本机记录…");
+  const goHome = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    window.location.assign("/");
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -56,9 +60,9 @@ export default function RecordsPage() {
   }, [refresh]);
 
   return <main className="app-shell records-page">
-    <header className="topbar"><Link className="brand" href="/"><span className="brand-mark">R</span><div><strong>RiskFlow</strong><small>CONTROL LAB</small></div></Link><nav aria-label="页面导航"><Link href="/">策略控制台</Link><a className="active" href="/records">运行记录</a></nav><div className="system-status"><span className="dot online"/><span>{notice}</span></div><span className="environment">本机 · 内部测试</span></header>
+    <header className="topbar"><a className="brand" href="/" onClick={goHome}><span className="brand-mark">R</span><div><strong>RiskFlow</strong><small>CONTROL LAB</small></div></a><nav aria-label="页面导航"><a href="/" onClick={goHome}>策略控制台</a><a className="active" href="/records">运行记录</a></nav><div className="system-status"><span className="dot online"/><span>{notice}</span></div><span className="environment">本机 · 内部测试</span></header>
     <div className="page-shell">
-      <section className="records-hero"><div><p className="eyebrow">AUDIT &amp; RECOVERY</p><h1>全部任务与纠错记录</h1><p>任务与纠错默认各显示最近 5 条，需要时可分别展开完整记录。</p></div><Link className="secondary back-link" href="/">返回策略控制台</Link></section>
+      <section className="records-hero"><div><p className="eyebrow">AUDIT &amp; RECOVERY</p><h1>全部任务与纠错记录</h1><p>任务与纠错默认各显示最近 5 条，需要时可分别展开完整记录。</p></div><a className="secondary back-link" href="/" onClick={goHome}>返回策略控制台</a></section>
 
       <section id="tasks" className="panel records-full-panel"><div className="panel-heading"><div><p className="section-index">ALL TASKS</p><h2>全部任务</h2><small className="section-note">共 {tasks.total} 条{tasksExpanded ? ` · 第 ${taskPage + 1} 页` : " · 当前显示 5 条"}</small></div><button type="button" className="secondary record-expand" onClick={() => { setTaskPage(0); setTasksExpanded((value) => !value); }}>{tasksExpanded ? "收起" : "展开全部"}</button></div><div className="task-list">{tasks.items.map((task) => <article key={task.id}><span className={`task-dot ${task.status}`}/><div><strong>{task.task_type === "douyin_topic_session" ? "内容策略测试" : task.task_type}</strong><small>{task.id.slice(0, 8)} · 设备 {task.device_id.slice(-6)} · {new Date(task.created_at).toLocaleString("zh-CN", { hour12: false })}</small><small className="task-duration">{taskDuration(task, now)}</small>{Number(task.result?.video_errors || 0) > 0 && <small className="task-correction">纠错 {String(task.result?.video_errors)} 条 · 恢复 {String(task.result?.recovered_videos || 0)} 条</small>}{commentScreenshots(task).length > 0 && <span className="task-evidence">{commentScreenshots(task).map((evidence) => <a key={evidence.video_index} href={`${API}/api/comment-image?task_id=${encodeURIComponent(task.id)}&video=${evidence.video_index}`} target="_blank" rel="noreferrer">评论截图 · 第 {evidence.video_index} 条</a>)}</span>}{task.error && <em>{task.error}</em>}</div><b className={`task-status ${task.status}`}>{statusText(task)}</b></article>)}{!tasks.items.length && <p className="empty">暂无任务记录。</p>}</div>{tasksExpanded && <Pagination page={taskPage} total={tasks.total} onChange={setTaskPage}/>}</section>
 

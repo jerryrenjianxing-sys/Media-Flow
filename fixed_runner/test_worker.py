@@ -235,6 +235,87 @@ class WorkerSupportTest(unittest.TestCase):
         self.assertEqual(result["action_control"], "probability_only")
         self.assertNotIn("action_caps", result)
 
+    def test_topic_session_stops_at_next_video_checkpoint(self) -> None:
+        class CheckpointRunner:
+            def __init__(self, *args, **kwargs): pass
+            def ensure_app_ready(self): pass
+            def ensure_profile(self, image): pass
+            def require_main_feed(self, image, stage): pass
+            def swipe_next(self, from_video, to_video): pass
+            def watch(self, video, dwell): pass
+            def capture_gate(self, video, action):
+                return Image.new("RGB", (1080, 2400), "black"), GateDecision(True, (), ())
+
+        class SafeTopic:
+            matches = False
+            raw_response = "{}"
+            safe = True
+            def public_dict(self):
+                return {"matches": False, "topic": "", "reason": "unrelated", "confidence": 1.0, "safe": True}
+
+        config = {
+            "seed": 1, "video_count": 5, "dwell_min": 0, "dwell_max": 0,
+            "max_gate_skips": 3, "preview_only": True,
+            "topic_filter_enabled": False, "topic_prompt": "不限主题",
+            "like_probability": 0, "favorite_probability": 0, "comment_probability": 0,
+        }
+        checks = iter([False, True])
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = Uia2RunRecorder(Path(directory), "device-1")
+            with (
+                patch("worker.Uia2DouyinRunner", CheckpointRunner),
+                patch("worker.analyze_topic", return_value=SafeTopic()),
+            ):
+                result = topic_session(
+                    FakeDevice(),
+                    recorder,
+                    config=config,
+                    stop_checker=lambda: next(checks),
+                )
+        self.assertEqual(result["status"], "stopped")
+        self.assertTrue(result["stopped_by_user"])
+        self.assertEqual(result["videos_seen"], 1)
+
+    def test_worker_finishes_claimed_topic_task_as_stopped(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = TaskStore(root / "tasks.db")
+            payload = {
+                "seed": 1, "video_count": 2, "round_count": 1,
+                "round_interval_minutes": 0, "dwell_min": 0, "dwell_max": 0,
+                "max_gate_skips": 3, "preview_only": True,
+                "topic_filter_enabled": False, "topic_prompt": "不限主题",
+                "engagement_requires_topic": False, "comment_requires_topic": False,
+                "like_probability": 0, "favorite_probability": 0, "comment_probability": 0,
+                "matched_like_probability": 0, "matched_favorite_probability": 0,
+                "matched_comment_probability": 0,
+            }
+            task_id = store.submit("douyin_topic_session", "device-1", payload)
+            healthy = FakeDevice()
+
+            def stop_during_task(*args, **kwargs):
+                store.request_stop(["device-1"])
+                return {"status": "stopped", "stopped_by_user": True, "videos_seen": 1}
+
+            with (
+                patch("worker.DeviceLock", return_value=nullcontext()),
+                patch("worker.connect_with_retry", return_value=healthy),
+                patch("worker.execute_task", side_effect=stop_during_task),
+            ):
+                run_worker(
+                    store=store,
+                    device_id="device-1",
+                    artifacts_root=root / "artifacts",
+                    poll_seconds=0.01,
+                    max_tasks=2,
+                    connect_attempts=1,
+                    reconnect_delay_seconds=0,
+                    offline_wait_seconds=0,
+                )
+            task = store.get(task_id)
+            self.assertEqual(task.status, "stopped")
+            self.assertEqual(task.error, "stopped_by_user")
+
     def test_topic_session_stops_after_consecutive_anomaly_threshold(self) -> None:
         class BlockedRunner:
             def __init__(self, *args, **kwargs): pass
@@ -384,6 +465,14 @@ class WorkerSupportTest(unittest.TestCase):
         with patch("worker.time.sleep", return_value=None) as sleep:
             wait_while_paused(store, 0.01)
         self.assertEqual(sleep.call_count, 2)
+
+    def test_stop_request_interrupts_pause_wait_without_resuming_pool(self) -> None:
+        store = unittest.mock.Mock()
+        store.is_paused.return_value = True
+        store.is_stop_requested.return_value = True
+        with patch("worker.time.sleep", return_value=None) as sleep:
+            wait_while_paused(store, 0.01, device_id="device-1")
+        sleep.assert_not_called()
 
     def test_wake_and_unlock_turns_on_non_secure_device(self) -> None:
         class SleepingDevice:

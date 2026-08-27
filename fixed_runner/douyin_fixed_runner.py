@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image
-from mobilerun_core import Mobilerun
 
 
 DOUYIN_PACKAGE = "com.ss.android.ugc.aweme"
@@ -337,6 +336,8 @@ def main() -> int:
     try:
         with DeviceLock(RUNTIME_ROOT, args.device_id):
             recorder.emit("run_start", device_id=args.device_id, dwell=args.dwell)
+            from mobilerun_core import Mobilerun
+
             device = Mobilerun().connect(args.device_id, backend="local-android-adb")
             FixedDouyinRunner(device, recorder, PROFILE).run(args.dwell)
         return 0
