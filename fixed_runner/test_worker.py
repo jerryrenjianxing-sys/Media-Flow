@@ -226,8 +226,8 @@ class WorkerSupportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             recorder = Uia2RunRecorder(Path(directory), "device-1")
             with (
-                patch("worker.Uia2DouyinRunner", ProbabilityRunner),
-                patch("worker.analyze_topic", return_value=SafeTopic()),
+                patch("execution_tasks.Uia2DouyinRunner", ProbabilityRunner),
+                patch("execution_tasks.analyze_topic", return_value=SafeTopic()),
             ):
                 result = topic_session(FakeDevice(), recorder, config=config)
         self.assertEqual(result["likes"], 2)
@@ -263,8 +263,8 @@ class WorkerSupportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             recorder = Uia2RunRecorder(Path(directory), "device-1")
             with (
-                patch("worker.Uia2DouyinRunner", CheckpointRunner),
-                patch("worker.analyze_topic", return_value=SafeTopic()),
+                patch("execution_tasks.Uia2DouyinRunner", CheckpointRunner),
+                patch("execution_tasks.analyze_topic", return_value=SafeTopic()),
             ):
                 result = topic_session(
                     FakeDevice(),
@@ -339,7 +339,7 @@ class WorkerSupportTest(unittest.TestCase):
         incidents = []
         with tempfile.TemporaryDirectory() as directory:
             recorder = Uia2RunRecorder(Path(directory), "device-1")
-            with patch("worker.Uia2DouyinRunner", BlockedRunner):
+            with patch("execution_tasks.Uia2DouyinRunner", BlockedRunner):
                 with self.assertRaisesRegex(DeviceFatalError, "连续异常页面达到 2 条"):
                     topic_session(FakeDevice(), recorder, config=config, incident_sink=incidents.append)
         self.assertEqual(len(incidents), 1)
@@ -375,8 +375,8 @@ class WorkerSupportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             recorder = Uia2RunRecorder(Path(directory), "device-1")
             with (
-                patch("worker.Uia2DouyinRunner", MixedRunner),
-                patch("worker.analyze_topic", return_value=SafeTopic()),
+                patch("execution_tasks.Uia2DouyinRunner", MixedRunner),
+                patch("execution_tasks.analyze_topic", return_value=SafeTopic()),
             ):
                 result = topic_session(FakeDevice(), recorder, config=config)
         self.assertEqual(result["status"], "passed")
@@ -436,8 +436,8 @@ class WorkerSupportTest(unittest.TestCase):
             device = FakeDevice()
             device.dump_hierarchy = unittest.mock.Mock(return_value="<hierarchy />")
             with (
-                patch("worker.Uia2DouyinRunner", ResilientRunner),
-                patch("worker.analyze_topic", return_value=TopicDecision()),
+                patch("execution_tasks.Uia2DouyinRunner", ResilientRunner),
+                patch("execution_tasks.analyze_topic", return_value=TopicDecision()),
             ):
                 result = topic_session(
                     device,
@@ -462,7 +462,7 @@ class WorkerSupportTest(unittest.TestCase):
     def test_wait_while_paused_returns_after_resume(self) -> None:
         store = unittest.mock.Mock()
         store.is_paused.side_effect = [True, True, False]
-        with patch("worker.time.sleep", return_value=None) as sleep:
+        with patch("worker_runtime.time.sleep", return_value=None) as sleep:
             wait_while_paused(store, 0.01)
         self.assertEqual(sleep.call_count, 2)
 
@@ -470,7 +470,7 @@ class WorkerSupportTest(unittest.TestCase):
         store = unittest.mock.Mock()
         store.is_paused.return_value = True
         store.is_stop_requested.return_value = True
-        with patch("worker.time.sleep", return_value=None) as sleep:
+        with patch("worker_runtime.time.sleep", return_value=None) as sleep:
             wait_while_paused(store, 0.01, device_id="device-1")
         sleep.assert_not_called()
 
@@ -490,7 +490,7 @@ class WorkerSupportTest(unittest.TestCase):
                 self.unlock_calls += 1
 
         device = SleepingDevice()
-        with patch("worker.time.sleep", return_value=None):
+        with patch("worker_runtime.time.sleep", return_value=None):
             self.assertTrue(wake_and_unlock(device))
         self.assertEqual(device.screen_on_calls, 1)
         self.assertEqual(device.unlock_calls, 1)
@@ -504,7 +504,7 @@ class WorkerSupportTest(unittest.TestCase):
 
     def test_connect_retries_then_succeeds(self) -> None:
         device = FakeDevice()
-        with patch("worker.u2.connect", side_effect=[RuntimeError("offline"), device]):
+        with patch("worker_runtime.u2.connect", side_effect=[RuntimeError("offline"), device]):
             connected = connect_with_retry("device-1", attempts=2, delay_seconds=0)
         self.assertIs(connected, device)
 
