@@ -319,6 +319,74 @@ class TaskStoreTest(unittest.TestCase):
         )
         self.assertEqual([item.id for item in self.store.list_incidents(2)], [second, first])
 
+    def test_incident_analysis_claim_is_atomic_and_preserves_task_status(self) -> None:
+        task_id = self.store.submit("healthcheck", "device-1")
+        incident_id = self.store.record_incident(
+            task_id=task_id,
+            device_id="device-1",
+            video_index=1,
+            stage="comment",
+            error_type="RuntimeError",
+            error_message="empty comment panel",
+            outcome="skipped",
+            recovery_action="continue",
+        )
+
+        claimed = self.store.claim_incident_for_analysis()
+        self.assertIsNotNone(claimed)
+        self.assertEqual(claimed.id, incident_id)
+        self.assertEqual(claimed.analysis_status, "analyzing")
+        self.assertIsNone(self.store.claim_incident_for_analysis())
+
+        finished = self.store.finish_incident_analysis(
+            incident_id,
+            status="completed",
+            analysis={"summary": "空评论区", "auto_applicable": False},
+        )
+        self.assertEqual(finished.analysis_status, "completed")
+        self.assertFalse(finished.analysis["auto_applicable"])
+        self.assertEqual(self.store.get(task_id).status, "pending")
+        self.assertEqual(self.store.incident_statistics()["analysis_completed"], 1)
+
+    def test_interrupted_incident_analysis_can_be_requeued(self) -> None:
+        task_id = self.store.submit("healthcheck", "device-1")
+        incident_id = self.store.record_incident(
+            task_id=task_id,
+            device_id="device-1",
+            video_index=1,
+            stage="task",
+            error_type="RuntimeError",
+            error_message="synthetic",
+            outcome="skipped",
+            recovery_action="continue",
+        )
+        self.store.claim_incident_for_analysis()
+        self.assertEqual(self.store.requeue_interrupted_incident_analyses(), 1)
+        self.assertEqual(self.store.get_incident(incident_id).analysis_status, "queued")
+
+    def test_failed_incident_analysis_retry_is_explicit(self) -> None:
+        task_id = self.store.submit("healthcheck", "device-1")
+        incident_id = self.store.record_incident(
+            task_id=task_id,
+            device_id="device-1",
+            video_index=1,
+            stage="task",
+            error_type="RuntimeError",
+            error_message="synthetic",
+            outcome="skipped",
+            recovery_action="continue",
+        )
+        self.store.claim_incident_for_analysis()
+        self.store.finish_incident_analysis(
+            incident_id,
+            status="failed",
+            analysis={"summary": "provider unavailable", "auto_applicable": False},
+        )
+        self.assertEqual(self.store.retry_failed_incident_analyses(), 1)
+        retried = self.store.get_incident(incident_id)
+        self.assertEqual(retried.analysis_status, "queued")
+        self.assertIsNone(retried.analysis)
+
     def test_tasks_and_incidents_support_stable_pagination(self) -> None:
         task_ids = []
         incident_ids = []

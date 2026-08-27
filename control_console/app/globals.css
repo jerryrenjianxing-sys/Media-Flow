@@ -287,6 +287,9 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .incident-actions b.skipped { color: #e1b66d; }
 .incident-actions b.device_fatal { color: #e98484; }
 .incident-actions a { color: var(--primary-hover); font-size: 9px; text-decoration: none; }
+.incident-list .incident-analysis { color: var(--primary-hover); }
+.incident-list .incident-analysis.failed { color: var(--warning); }
+.incident-list .incident-rule { max-width: 620px; color: var(--ink-muted); line-height: 1.45; white-space: normal; }
 .empty { margin: 0; padding: 28px 0; color: var(--ink-subtle); font-size: 10px; text-align: center; }
 footer { padding: 24px 0 34px; display: flex; justify-content: space-between; color: var(--ink-subtle); font-size: 9px; }
 

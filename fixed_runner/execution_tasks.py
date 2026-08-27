@@ -285,6 +285,7 @@ def topic_session(
         "comments_sent": 0,
         "comment_screenshots": [],
         "blocked_pages": 0,
+        "visual_safety_blocks": 0,
         "video_errors": 0,
         "recovered_videos": 0,
         "skipped_videos": 0,
@@ -363,7 +364,26 @@ def topic_session(
                 probabilities=probabilities, **topic.public_dict(), random_draws=draws,
             )
 
-            safe_for_action = bool(getattr(topic, "safe", True))
+            safe_for_action = bool(getattr(topic, "safe", entry.get("safe", False)))
+            safety_reason = str(getattr(topic, "reason", entry.get("reason", "")))
+            safety_topic = str(getattr(topic, "topic", entry.get("topic", "")))
+            safety_evidence = list(
+                getattr(topic, "evidence", entry.get("evidence", ())) or ()
+            )
+            entry["visual_safety"] = {
+                "allowed": safe_for_action,
+                "reason": safety_reason,
+                "evidence": safety_evidence,
+            }
+            if not safe_for_action:
+                summary["visual_safety_blocks"] += 1
+                recorder.emit(
+                    "visual_safety_block",
+                    video=video,
+                    topic=safety_topic,
+                    reason=safety_reason,
+                    evidence=safety_evidence,
+                )
             if (
                 safe_for_action
                 and draws["like"] < probabilities["like"]

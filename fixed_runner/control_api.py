@@ -172,6 +172,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         "devices": devices,
         "worker": workers[0],
         "workers": workers,
+        "incident_analyzer": RuntimeControl().status("incident-analyzer"),
         "paused": store.is_paused(),
         "stop_requested_device_ids": [
             device_id for device_id in config["device_ids"]

@@ -383,6 +383,68 @@ class WorkerSupportTest(unittest.TestCase):
         self.assertEqual(result["blocked_pages"], 2)
         self.assertEqual(result["videos_seen"], 3)
 
+    def test_visual_safety_gate_blocks_all_interactions(self) -> None:
+        calls = {"like": 0, "favorite": 0, "comment_gate": 0}
+
+        class UnsafeRunner:
+            def __init__(self, *args, **kwargs): pass
+            def ensure_app_ready(self): pass
+            def ensure_profile(self, image): pass
+            def require_main_feed(self, image, stage): pass
+            def swipe_next(self, from_video, to_video): pass
+            def watch(self, video, dwell): pass
+            def capture_gate(self, video, action):
+                if action == "comment-preview":
+                    calls["comment_gate"] += 1
+                return Image.new("RGB", (1080, 2400), "black"), GateDecision(True, (), ())
+            def like_verified(self, video, frame):
+                calls["like"] += 1
+                return True
+            def favorite_verified(self, video, frame):
+                calls["favorite"] += 1
+                return True
+
+        class UnsafeTopic:
+            matches = False
+            relevance = "unrelated"
+            topic = "商业推广"
+            evidence = ("画面出现购买入口",)
+            reason = "广告或商业推广"
+            confidence = 1.0
+            raw_response = "{}"
+            safe = False
+            def public_dict(self):
+                return {
+                    "matches": False,
+                    "relevance": "unrelated",
+                    "topic": self.topic,
+                    "evidence": self.evidence,
+                    "reason": self.reason,
+                    "confidence": 1.0,
+                    "safe": False,
+                }
+
+        config = {
+            "seed": 1, "video_count": 1, "dwell_min": 0, "dwell_max": 0,
+            "max_gate_skips": 3, "preview_only": False, "topic_confidence": 0.7,
+            "topic_filter_enabled": False, "topic_prompt": "不限主题",
+            "engagement_requires_topic": False, "comment_requires_topic": False,
+            "like_probability": 1, "favorite_probability": 1, "comment_probability": 1,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = Uia2RunRecorder(Path(directory), "device-1")
+            with (
+                patch("execution_tasks.Uia2DouyinRunner", UnsafeRunner),
+                patch("execution_tasks.analyze_topic", return_value=UnsafeTopic()),
+            ):
+                result = topic_session(FakeDevice(), recorder, config=config)
+
+        self.assertEqual(result["visual_safety_blocks"], 1)
+        self.assertEqual(result["likes"], 0)
+        self.assertEqual(result["favorites"], 0)
+        self.assertEqual(result["comments_generated"], 0)
+        self.assertEqual(calls, {"like": 0, "favorite": 0, "comment_gate": 0})
+
     def test_topic_session_records_recoverable_video_error_and_continues(self) -> None:
         class ResilientRunner:
             def __init__(self, *args, **kwargs):

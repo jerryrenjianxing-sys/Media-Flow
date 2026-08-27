@@ -489,6 +489,30 @@ def ui_spec() -> ProcessSpec:
     )
 
 
+def analyzer_spec() -> ProcessSpec:
+    analyzer_env = os.environ.copy()
+    analyzer_env.update(
+        {
+            "PHONE_AGENT_API_KEY": load_openrouter_key(),
+            "PHONE_AGENT_BASE_URL": "https://openrouter.ai/api/v1",
+            "PHONE_AGENT_COMMENT_MODEL": "google/gemini-3.1-flash-lite",
+            "PHONE_AGENT_COMMENT_FALLBACK_MODELS": "openai/gpt-4.1-nano",
+        }
+    )
+    return ProcessSpec(
+        role="incident-analyzer",
+        command=(
+            str(PROJECT_PYTHON),
+            str(FIXED_RUNNER_ROOT / "incident_analyzer.py"),
+        ),
+        cwd=str(FIXED_RUNNER_ROOT),
+        log_path=str(RUNTIME_ROOT / "incident-analyzer.log"),
+        expected_executable=str(project_python_executable()),
+        required_markers=("incident_analyzer.py",),
+        env=analyzer_env,
+    )
+
+
 def worker_role(device_id: str) -> str:
     return f"worker-{safe_role_name(device_id)}"
 
@@ -553,7 +577,7 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["ok"] else 2
     control = RuntimeControl()
-    specs = (api_spec(), ui_spec())
+    specs = (api_spec(), analyzer_spec(), ui_spec())
     if args.action == "status":
         roles = list(dict.fromkeys([spec.role for spec in specs] + control.roles()))
         result = [control.status(role) for role in roles]

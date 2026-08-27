@@ -241,12 +241,83 @@ class TaskStore:
             rows = connection.execute(
                 "SELECT outcome, COUNT(*) AS count FROM incidents GROUP BY outcome"
             ).fetchall()
-            queued = connection.execute(
-                "SELECT COUNT(*) AS count FROM incidents WHERE analysis_status='queued'"
-            ).fetchone()
-        result = {"total": sum(int(row["count"]) for row in rows), "queued": int(queued["count"])}
+            analysis_rows = connection.execute(
+                "SELECT analysis_status, COUNT(*) AS count FROM incidents "
+                "GROUP BY analysis_status"
+            ).fetchall()
+        result = {"total": sum(int(row["count"]) for row in rows)}
         result.update({row["outcome"]: int(row["count"]) for row in rows})
+        result.update(
+            {
+                f"analysis_{row['analysis_status']}": int(row["count"])
+                for row in analysis_rows
+            }
+        )
+        result["queued"] = result.get("analysis_queued", 0)
         return result
+
+    def claim_incident_for_analysis(self) -> IncidentRecord | None:
+        """Atomically claim the oldest queued incident for read-only analysis."""
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM incidents WHERE analysis_status='queued' "
+                "ORDER BY created_at, id LIMIT 1"
+            ).fetchone()
+            if row is None:
+                return None
+            updated = connection.execute(
+                "UPDATE incidents SET analysis_status='analyzing' "
+                "WHERE id=? AND analysis_status='queued'",
+                (row["id"],),
+            )
+            if updated.rowcount != 1:
+                return None
+            claimed = connection.execute(
+                "SELECT * FROM incidents WHERE id=?", (row["id"],)
+            ).fetchone()
+        return self._incident_record(claimed)
+
+    def finish_incident_analysis(
+        self,
+        incident_id: str,
+        *,
+        status: str,
+        analysis: dict[str, Any],
+    ) -> IncidentRecord:
+        if status not in {"completed", "failed"}:
+            raise ValueError(f"Unsupported incident analysis status: {status}")
+        with self.connection() as connection:
+            updated = connection.execute(
+                "UPDATE incidents SET analysis_status=?, analysis_json=? "
+                "WHERE id=? AND analysis_status='analyzing'",
+                (
+                    status,
+                    json.dumps(analysis, ensure_ascii=False),
+                    incident_id,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise ValueError("Incident is not currently being analyzed")
+        return self.get_incident(incident_id)
+
+    def requeue_interrupted_incident_analyses(self) -> int:
+        """Recover claims left behind when the single analyzer process exited."""
+        with self.connection() as connection:
+            updated = connection.execute(
+                "UPDATE incidents SET analysis_status='queued' "
+                "WHERE analysis_status='analyzing'"
+            )
+        return updated.rowcount
+
+    def retry_failed_incident_analyses(self) -> int:
+        """Explicitly retry failed read-only analyses after a model/parser repair."""
+        with self.connection() as connection:
+            updated = connection.execute(
+                "UPDATE incidents SET analysis_status='queued', analysis_json=NULL "
+                "WHERE analysis_status='failed'"
+            )
+        return updated.rowcount
 
     @staticmethod
     def validate_payload(task_type: str, payload: dict[str, Any]) -> None:

@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from incident_analysis import IncidentAdvice
+from incident_analyzer import process_one
+from task_store import TaskStore
+
+
+class IncidentAnalyzerTests(unittest.TestCase):
+    def test_process_one_writes_advice_without_changing_task(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            task_id = store.submit("healthcheck", "device-1")
+            incident_id = store.record_incident(
+                task_id=task_id,
+                device_id="device-1",
+                video_index=1,
+                stage="comment",
+                error_type="RuntimeError",
+                error_message="empty panel",
+                outcome="skipped",
+                recovery_action="continue",
+            )
+            with patch(
+                "incident_analyzer.analyze_incident",
+                return_value=IncidentAdvice(
+                    "empty_content",
+                    "评论区为空",
+                    "识别空态后跳过本条",
+                    0.95,
+                    "low",
+                ),
+            ):
+                self.assertTrue(process_one(store))
+
+            incident = store.get_incident(incident_id)
+            self.assertEqual(incident.analysis_status, "completed")
+            self.assertFalse(incident.analysis["auto_applicable"])
+            self.assertEqual(store.get(task_id).status, "pending")
+
+    def test_process_one_contains_model_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            task_id = store.submit("healthcheck", "device-1")
+            incident_id = store.record_incident(
+                task_id=task_id,
+                device_id="device-1",
+                video_index=1,
+                stage="swipe",
+                error_type="RuntimeError",
+                error_message="navigation changed",
+                outcome="recovered",
+                recovery_action="back_to_feed",
+            )
+            with patch(
+                "incident_analyzer.analyze_incident",
+                side_effect=RuntimeError("provider unavailable"),
+            ):
+                self.assertTrue(process_one(store))
+
+            incident = store.get_incident(incident_id)
+            self.assertEqual(incident.analysis_status, "failed")
+            self.assertIn("provider unavailable", incident.analysis["error_message"])
+            self.assertEqual(store.get(task_id).status, "pending")
+
+
+if __name__ == "__main__":
+    unittest.main()
