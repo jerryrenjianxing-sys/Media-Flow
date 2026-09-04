@@ -478,6 +478,52 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
         self.assertEqual(reconciled["standard_status"], "standard")
         self.assertIsNone(reconciled["standard_message"])
 
+    def test_reconcile_treats_auto_rotate_as_advisory_not_a_task_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            self._save_stopped(store)
+            provider = FakeMuMuProvider(
+                [
+                    {
+                        "provider_instance_id": "1",
+                        "name": "MediaFlow虚拟机1",
+                        "state": "stopped",
+                        "android_version": "15",
+                    }
+                ]
+            )
+            provider.settings["window_auto_rotate"] = "true"
+            reconciled = VirtualDeviceInventory(
+                store,
+                manager_resolver=lambda _path: Path(directory) / "MuMuManager.exe",
+                provider_factory=lambda _manager: provider,
+            ).reconcile()["devices"][0]
+        self.assertEqual(reconciled["standard_status"], "standard")
+        self.assertIsNone(reconciled["standard_message"])
+
+    def test_reconcile_still_requires_root_for_task_eligibility(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            self._save_stopped(store)
+            provider = FakeMuMuProvider(
+                [
+                    {
+                        "provider_instance_id": "1",
+                        "name": "MediaFlow虚拟机1",
+                        "state": "stopped",
+                        "android_version": "15",
+                    }
+                ]
+            )
+            provider.settings["root_permission"] = "false"
+            reconciled = VirtualDeviceInventory(
+                store,
+                manager_resolver=lambda _path: Path(directory) / "MuMuManager.exe",
+                provider_factory=lambda _manager: provider,
+            ).reconcile()["devices"][0]
+        self.assertEqual(reconciled["standard_status"], "nonstandard")
+        self.assertIn("root_permission=false", reconciled["standard_message"])
+
     def test_reconcile_never_replaces_the_allocated_name_with_provider_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")

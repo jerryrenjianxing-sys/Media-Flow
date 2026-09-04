@@ -20,9 +20,8 @@ STANDARD_LOCKED_SETTINGS = {
     "height": STANDARD_RECIPE["height"],
     "dpi": STANDARD_RECIPE["dpi"],
     "root": STANDARD_RECIPE["root"],
-    "auto_rotate": STANDARD_RECIPE["auto_rotate"],
 }
-STANDARD_MUTABLE_SETTINGS = {"cpu", "memory_gb", "fps", "muted"}
+STANDARD_MUTABLE_SETTINGS = {"cpu", "memory_gb", "fps", "muted", "auto_rotate"}
 
 
 def _now_iso() -> str:
@@ -835,8 +834,8 @@ class VirtualDeviceInventory:
         forbidden = sorted(set(settings) - STANDARD_MUTABLE_SETTINGS)
         if forbidden:
             raise ValueError(
-                "分辨率、DPI、方向、Root、导航、输入方式和名称由MediaFlow锁定；"
-                "只能修改CPU、内存、帧率和静音"
+                "分辨率、DPI、竖屏方向、Root、导航、输入方式和名称由MediaFlow锁定；"
+                "只能修改CPU、内存、帧率、静音和自动旋转"
             )
         _, provider = self._provider(custom_path)
         self.store.update_virtual_operation(
