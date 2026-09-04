@@ -545,8 +545,9 @@ class TaskStore:
                         f"ALTER TABLE virtual_device_operations ADD COLUMN {column} {declaration}"
                     )
             connection.execute(
-                "UPDATE virtual_devices SET managed=0 "
-                "WHERE discovery_source='provider_discovery'"
+                "UPDATE virtual_devices SET managed=1 "
+                "WHERE discovery_source IN ('provider_discovery','provider_auto_discovery') "
+                "AND state!='retired'"
             )
             connection.execute(
                 """
@@ -854,7 +855,12 @@ class TaskStore:
         discovery_source = str(payload.get("discovery_source") or "mediaflow_created")
         managed = payload.get("managed")
         if managed is None:
-            managed = discovery_source in {"mediaflow_created", "mediaflow_adopted"}
+            managed = discovery_source in {
+                "mediaflow_created",
+                "mediaflow_adopted",
+                "provider_discovery",
+                "provider_auto_discovery",
+            }
         with self.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
@@ -1857,12 +1863,18 @@ class TaskStore:
                     raise ValueError(
                         f"inspection_calibration is required for {workflow_version} inspection"
                     )
-                if calibration.get("device_id") != payload.get("device_id"):
+                if (
+                    workflow_version == "v2"
+                    and calibration.get("device_id") != payload.get("device_id")
+                ):
                     raise ValueError("inspection_calibration device_id must match task device_id")
                 if (
-                    calibration.get("app_version") != payload.get("expected_app_version")
-                    or calibration.get("display_signature")
-                    != payload.get("expected_display_signature")
+                    workflow_version == "v2"
+                    and (
+                        calibration.get("app_version") != payload.get("expected_app_version")
+                        or calibration.get("display_signature")
+                        != payload.get("expected_display_signature")
+                    )
                 ):
                     raise ValueError(
                         f"inspection_calibration signature must match frozen {workflow_version} fields"
@@ -1879,7 +1891,10 @@ class TaskStore:
                     raise ValueError("inspection_calibration must be a stable three-pass calibration")
                 if workflow_version == "v3":
                     controls = calibration.get("controls") or {}
-                    if "互动消息" not in list(controls.get("aggregate") or []):
+                    if not any(
+                        any(alias in str(label) for alias in ("互动消息", "互动通知", "全部互动", "全部消息", "赞评收藏"))
+                        for label in list(controls.get("aggregate") or [])
+                    ):
                         raise ValueError(
                             "v3 inspection calibration must identify the unified activity entry"
                         )

@@ -144,6 +144,46 @@ class RunPlanningTests(unittest.TestCase):
         )
         self.assertTrue(ready["ready"])
 
+    def test_task_preflight_uses_only_capabilities_required_by_the_draft(self) -> None:
+        capabilities = {
+            "browse_home": {"status": "ready", "reason": "可用"},
+            "search_input": {"status": "unavailable", "reason": "中文输入组件尚未验证"},
+            "engagement_v3": {"status": "unavailable", "reason": "互动规则尚未复验"},
+            "topic_analysis": {"status": "unavailable", "reason": "模型尚未验证"},
+            "like_favorite": {"status": "unavailable", "reason": "模型尚未验证"},
+            "comment_preview": {"status": "unavailable", "reason": "评论面板尚未验证"},
+            "comment_send": {"status": "unavailable", "reason": "评论发送尚未验证"},
+        }
+        device = {**self.devices[0], "capabilities": capabilities}
+        observe_config = {
+            **base_config(),
+            "comment_probability": 0,
+            "like_probability": 0,
+            "favorite_probability": 0,
+        }
+        observe = build_preview(
+            self.store,
+            get_or_create_draft(self.store, observe_config),
+            devices=[device],
+            paused=False,
+            model_status={"model_ready": False},
+        )
+        self.assertTrue(observe["ready"])
+        search_draft = save_draft(
+            self.store,
+            {**observe_config, "content_mode": "search", "search_query": "测试"},
+            expected_revision=observe["draft_revision"],
+        )
+        search = build_preview(
+            self.store,
+            search_draft,
+            devices=[device],
+            paused=False,
+            model_status={"model_ready": True},
+        )
+        self.assertFalse(search["ready"])
+        self.assertIn("中文输入组件", search["devices"][0]["reason"])
+
     def test_non_hybrid_preview_ignores_stale_segment_values(self) -> None:
         draft = get_or_create_draft(
             self.store,

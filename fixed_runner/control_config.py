@@ -101,11 +101,43 @@ def inspection_profiles_for_store(store: TaskStore) -> dict[str, dict[str, Any]]
     planning cannot silently treat a standard VM as a legacy v1 device.
     """
     profiles = load_device_profile_payloads()
+    promoted_calibration = next(
+        (
+            dict(calibration)
+            for profile in profiles.values()
+            for calibration in [profile.get("engagement_calibration")]
+            if isinstance(calibration, Mapping)
+            and int(calibration.get("passes") or 0) >= 3
+            and calibration.get("later_passes_semantically_equal") is True
+            and any(
+                any(alias in str(label) for alias in ("互动消息", "互动通知", "全部互动", "全部消息", "赞评收藏"))
+                for label in list((calibration.get("controls") or {}).get("aggregate") or [])
+            )
+        ),
+        None,
+    )
+    if promoted_calibration is not None:
+        promoted_calibration.update(
+            shared_rule_promoted=True,
+            profile_bundle_id="mediaflow-mumu-900x1600-320-v1",
+            ui_compatibility_id="douyin-semantic-v3",
+        )
     for virtual_device in store.list_managed_virtual_devices():
         endpoint = str(virtual_device.get("adb_endpoint") or "").strip()
         if not endpoint:
             continue
         current = dict(profiles.get(endpoint) or {})
+        if not isinstance(current.get("engagement_calibration"), Mapping) and promoted_calibration:
+            current["engagement_calibration"] = dict(promoted_calibration)
+            current["engagement_inspection_version"] = "v3"
+            current["engagement_app_version"] = str(
+                current.get("app_version") or promoted_calibration.get("app_version") or ""
+            )
+            current["engagement_display_signature"] = str(
+                current.get("display_signature")
+                or promoted_calibration.get("display_signature")
+                or "900x1600x320x0xunknown"
+            )
         current.update(
             device_kind="virtual",
             managed_standard=(virtual_device.get("standard_status") == "standard"),
@@ -519,11 +551,13 @@ def build_scheduled_plan(
                         or calibration.get("later_passes_semantically_equal") is not True
                         or (
                             workflow_version == "v3"
-                            and "互动消息"
-                            not in list(
-                                (calibration.get("controls") or {}).get("aggregate")
-                                if isinstance(calibration.get("controls"), Mapping)
-                                else []
+                            and not any(
+                                any(alias in str(label) for alias in ("互动消息", "互动通知", "全部互动", "全部消息", "赞评收藏"))
+                                for label in list(
+                                    (calibration.get("controls") or {}).get("aggregate")
+                                    if isinstance(calibration.get("controls"), Mapping)
+                                    else []
+                                )
                             )
                         )
                     ):

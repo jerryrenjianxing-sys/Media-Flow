@@ -13,6 +13,7 @@ from adb_runtime import connect_loopback_adb, resolve_adb_executable
 from task_store import TaskStore
 from runtime_layout import DATA_ROOT
 from virtual_devices import STANDARD_RECIPE, MuMuProvider, resolve_mumu_manager
+from virtual_device_qualification import assess_environment
 
 
 BACKUP_ROOT = DATA_ROOT / "virtual-device-backups"
@@ -20,9 +21,8 @@ STANDARD_LOCKED_SETTINGS = {
     "width": STANDARD_RECIPE["width"],
     "height": STANDARD_RECIPE["height"],
     "dpi": STANDARD_RECIPE["dpi"],
-    "root": STANDARD_RECIPE["root"],
 }
-STANDARD_MUTABLE_SETTINGS = {"cpu", "memory_gb", "fps", "muted", "auto_rotate"}
+STANDARD_MUTABLE_SETTINGS = {"cpu", "memory_gb", "fps", "muted", "auto_rotate", "root"}
 
 
 def _now_iso() -> str:
@@ -30,8 +30,9 @@ def _now_iso() -> str:
 
 
 def manager_identity(path: Path) -> str:
-    normalized = str(path.resolve()).casefold().encode("utf-8")
-    return hashlib.sha256(normalized).hexdigest()[:24]
+    # The installation directory is not a machine identity.  Users can move or
+    # reinstall MuMu without creating a second MediaFlow inventory.
+    return "mumu-local-provider-v1"
 
 
 def _instance_name(instance: dict[str, Any]) -> str:
@@ -154,30 +155,15 @@ class VirtualDeviceInventory:
         virtual_device: dict[str, Any],
         provider: MuMuProvider,
     ) -> tuple[str, str | None, dict[str, str] | None]:
-        canonical_name = self._canonical_name(virtual_device)
-        if not canonical_name or str(virtual_device.get("name") or "") != canonical_name:
-            return "nonstandard", "名称不符合MediaFlow永久编号规则", None
-        recipe = virtual_device.get("recipe") or {}
-        provider_snapshot = virtual_device.get("provider_snapshot") or {}
-        android_version = (
-            recipe.get("android_version")
-            or provider_snapshot.get("android_version")
-        )
-        if self._normalized_version(android_version) != self._normalized_version(
-            STANDARD_RECIPE["android_version"]
-        ):
-            return "nonstandard", "Android镜像不是MediaFlow Android 15标准", None
         try:
             actual = provider.read_settings(str(virtual_device["provider_instance_id"]))
-            expected = {
-                provider.SETTING_KEYS[key]: provider._setting_value(key, value)
-                for key, value in STANDARD_LOCKED_SETTINGS.items()
-            }
-            mismatches = provider._settings_mismatches(actual, expected)
         except (AttributeError, OSError, RuntimeError, ValueError) as exc:
             return "requires_verification", f"暂时无法回读标准配置：{exc}", None
-        if mismatches:
-            return "nonstandard", "配置不符合MediaFlow标准：" + "；".join(mismatches[:5]), actual
+        assessment = assess_environment(actual)
+        if assessment["environment_status"] == "needs_display_fix":
+            return "nonstandard", str(assessment["message"]), actual
+        if assessment["environment_status"] != "standard":
+            return "requires_verification", str(assessment["message"]), actual
         return "standard", None, actual
 
     @staticmethod
@@ -241,27 +227,45 @@ class VirtualDeviceInventory:
         install_id = manager_identity(manager)
         stored_by_instance = {
             str(item["provider_instance_id"]): item
-            for item in self.store.list_managed_virtual_devices()
-            if item.get("provider") == "mumu"
+            for item in self.store.list_virtual_devices()
+            if item.get("provider") == "mumu" and item.get("state") != "retired"
         }
         seen: set[str] = set()
         unmanaged_instances: list[dict[str, Any]] = []
         online = online_adb_ids or set()
         for instance in instances:
-            instance_id = str(instance.get("provider_instance_id") or "")
-            if not instance_id:
+            raw_instance_id = instance.get("provider_instance_id")
+            instance_id = "" if raw_instance_id is None else str(raw_instance_id).strip()
+            if instance_id == "":
                 continue
             seen.add(instance_id)
             stored = stored_by_instance.get(instance_id)
             if stored is None:
-                unmanaged_instances.append(
+                stored = self.store.save_virtual_device(
                     {
-                        **instance,
-                        "managed": False,
-                        "management_status": "unmanaged",
+                        "virtual_device_id": uuid.uuid4().hex,
+                        "provider": "mumu",
+                        "provider_instance_id": instance_id,
+                        "name": _instance_name(instance),
+                        "state": str(instance.get("state") or "stopped"),
+                        "recipe": {},
+                        "provider_snapshot": instance,
+                        "adb_endpoint": None,
+                        "last_adb_endpoint": None,
+                        "android_identity": None,
+                        "discovery_source": "provider_auto_discovery",
+                        "provider_install_id": install_id,
+                        "presence_status": "present",
+                        "profile_status": "requires_verification",
+                        "standard_status": "requires_verification",
+                        "standard_message": "已自动发现，正在核对显示环境",
+                        "managed": True,
+                        "display_index": None,
+                        "last_seen_at": now,
+                        "last_connected_at": None,
+                        "last_error": None,
                     }
                 )
-                continue
             if stored and stored.get("state") == "retired":
                 self.store.save_virtual_device(
                     {
@@ -303,6 +307,15 @@ class VirtualDeviceInventory:
                         endpoint_online = True
                         connected_during_reconcile = True
                         break
+                if not endpoint_online and hasattr(provider, "resolve_adb_endpoint"):
+                    try:
+                        recovered_endpoint = provider.resolve_adb_endpoint(
+                            instance_id, timeout_seconds=4
+                        )
+                        endpoint_online = bool(recovered_endpoint)
+                        connected_during_reconcile = endpoint_online
+                    except (OSError, RuntimeError, ValueError):
+                        pass
             profile_status = str((stored or {}).get("profile_status") or "requires_verification")
             android_identity = stored.get("android_identity")
             identity_conflict = False
@@ -316,11 +329,11 @@ class VirtualDeviceInventory:
                     recovered_endpoint = ""
                     identity_error = "ADB已在线，但暂时无法核对Android身份；请稍后重试连接"
                 elif android_identity and android_identity != observed_identity:
-                    endpoint_online = False
-                    recovered_endpoint = ""
-                    identity_conflict = True
+                    # Identity drift invalidates account/calibration state, but
+                    # the verified ADB transport and read-only screen stay usable.
                     profile_status = "requires_verification"
-                    identity_error = "设备身份与原记录不一致，需要确认后重新复验"
+                    android_identity = observed_identity
+                    identity_error = "Android身份已变化；ADB和看屏可用，业务能力需要快速复验"
                 else:
                     android_identity = observed_identity
             if identity_conflict:
@@ -354,7 +367,8 @@ class VirtualDeviceInventory:
                 "name": (
                     f"MediaFlow虚拟机{int(stored['display_index'])}"
                     if stored.get("display_index") is not None
-                    else str(stored.get("name") or _instance_name(instance))
+                    and str(stored.get("discovery_source") or "") == "mediaflow_created"
+                    else _instance_name(instance)
                 ),
                 "state": state,
                 "recipe": stored.get("recipe") or {},
@@ -364,7 +378,7 @@ class VirtualDeviceInventory:
                 "android_identity": android_identity,
                 "discovery_source": stored.get("discovery_source") or "mediaflow_created",
                 "provider_install_id": install_id,
-                "presence_status": "identity_conflict" if identity_conflict else "present",
+                "presence_status": "present",
                 "profile_status": profile_status,
                 "managed": True,
                 "display_index": stored.get("display_index"),
@@ -751,32 +765,34 @@ class VirtualDeviceInventory:
                 time.sleep(self._identity_interval_seconds)
         previous_identity = str(virtual_device.get("android_identity") or "")
         if not identity or (previous_identity and identity != previous_identity):
-            conflict_message = (
-                "暂时无法读取Android身份，需要人工确认；旧档案没有启用"
+            verification_message = (
+                "暂时无法读取Android身份；ADB和看屏可用，业务能力需要复验"
                 if not identity
-                else "Android身份与原记录不一致，需要人工确认；旧档案没有启用"
+                else "Android身份已变化；ADB和看屏可用，账号与业务能力需要复验"
             )
-            conflicted = self.store.save_virtual_device(
+            connected_unverified = self.store.save_virtual_device(
                 {
                     **virtual_device,
-                    "state": "degraded",
-                    "presence_status": "identity_conflict",
-                    "adb_endpoint": None,
+                    "state": "adb_ready",
+                    "presence_status": "present",
+                    "adb_endpoint": endpoint,
                     "last_adb_endpoint": endpoint,
+                    "android_identity": identity or None,
                     "profile_status": "requires_verification",
                     "last_seen_at": _now_iso(),
-                    "last_error": conflict_message,
+                    "last_connected_at": _now_iso(),
+                    "last_error": verification_message,
                 }
             )
             self.store.update_virtual_operation(
                 operation_id,
-                status="waiting_user",
-                stage="identity_conflict",
-                progress=70,
-                result=conflicted,
-                error=conflicted["last_error"],
+                status="completed",
+                stage="adb_ready_requires_verification",
+                progress=100,
+                result=connected_unverified,
+                message=verification_message,
             )
-            return conflicted
+            return connected_unverified
         connected = self.store.save_virtual_device(
             {
                 **virtual_device,
@@ -851,8 +867,8 @@ class VirtualDeviceInventory:
         forbidden = sorted(set(settings) - STANDARD_MUTABLE_SETTINGS)
         if forbidden:
             raise ValueError(
-                "分辨率、DPI、竖屏方向、Root、导航、输入方式和名称由MediaFlow锁定；"
-                "只能修改CPU、内存、帧率、静音和自动旋转"
+                "900×1600分辨率和320 DPI由MediaFlow锁定；"
+                "可以修改CPU、内存、帧率、静音、自动旋转和Root"
             )
         _, provider = self._provider(custom_path)
         self.store.update_virtual_operation(
@@ -889,20 +905,15 @@ class VirtualDeviceInventory:
         if virtual_device.get("state") != "stopped":
             raise ValueError("修复标准配置前必须先停止虚拟机")
         _, provider = self._provider(custom_path)
-        canonical_name = self._canonical_name(virtual_device)
-        if not canonical_name:
-            raise ValueError("虚拟机缺少MediaFlow永久编号")
         self.store.update_virtual_operation(
             operation_id, status="running", stage="applying_settings", progress=35
         )
-        provider.rename(str(virtual_device["provider_instance_id"]), canonical_name)
         actual = provider.apply_settings(
             str(virtual_device["provider_instance_id"]), STANDARD_LOCKED_SETTINGS
         )
         return self.store.save_virtual_device(
             {
                 **virtual_device,
-                "name": canonical_name,
                 "recipe": {**STANDARD_RECIPE, **{
                     key: (virtual_device.get("recipe") or {}).get(key, STANDARD_RECIPE[key])
                     for key in STANDARD_MUTABLE_SETTINGS

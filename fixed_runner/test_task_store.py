@@ -606,6 +606,33 @@ class TaskStoreTest(unittest.TestCase):
             self.store.cancel_superseded_virtual_engagement_inspections(), 0
         )
 
+    def test_v3_shared_calibration_is_not_bound_to_source_device_or_app_minor(self) -> None:
+        payload = {
+            "submission_id": "shared-rule",
+            "device_id": "127.0.0.1:16512",
+            "inspection_index": 1,
+            "after_round_index": 1,
+            "inspection_every_rounds": 1,
+            "max_items_per_section": 100,
+            "inspection_workflow_version": "v3",
+            "expected_app_version": "40.4.0",
+            "expected_display_signature": "900x1600x320x0x2",
+            "inspection_calibration": {
+                "profile_version": "mediaflow-engagement-v3-r1",
+                "device_id": "127.0.0.1:16416",
+                "app_version": "40.3.0",
+                "display_signature": "900x1600x320x0x100",
+                "passes": 3,
+                "later_passes_semantically_equal": True,
+                "controls": {"aggregate": ["赞评收藏"]},
+                "sections": {},
+            },
+        }
+        task_id = self.store.submit(
+            "douyin_engagement_inspection", "127.0.0.1:16512", payload
+        )
+        self.assertEqual(self.store.get(task_id).status, "pending")
+
     def test_interrupted_engagement_inspection_is_not_replayed(self) -> None:
         payload = {
             "submission_id": "submission-interrupted",

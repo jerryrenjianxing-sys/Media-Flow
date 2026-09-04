@@ -134,14 +134,18 @@ def merge_device_probe(
     *,
     ordinal: int = 1,
     observed_at: str | None = None,
+    portable_virtual: bool = False,
 ) -> dict[str, Any]:
     """Merge read-only ADB facts without silently trusting stale coordinates."""
     prior = dict(existing or {})
     display = dict(probe.get("display") or {})
     prior_display = dict(prior.get("display") or {})
+    signature_fields = ("width", "height", "density") if portable_virtual else (
+        "width", "height", "density", "navigation_mode"
+    )
     signature_changed = bool(prior_display) and any(
         prior_display.get(name) != display.get(name)
-        for name in ("width", "height", "density", "navigation_mode")
+        for name in signature_fields
     )
     manufacturer = str(probe.get("manufacturer") or prior.get("manufacturer") or "Android")
     model = str(probe.get("model") or prior.get("model") or "未知型号")

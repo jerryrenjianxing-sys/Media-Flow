@@ -140,7 +140,31 @@ def profile_matches_runtime(
     app_version: str,
     display: dict[str, Any],
     adapter_version: str = ADAPTER_VERSION,
+    portable_virtual: bool = False,
 ) -> bool:
+    if portable_virtual:
+        expected_display = profile.get("display") if profile else None
+        if not isinstance(expected_display, dict):
+            expected_signature = str((profile or {}).get("display_signature") or "")
+            parts = expected_signature.split("x")
+            expected_display = {
+                "width": int(parts[0]) if len(parts) > 0 and parts[0].isdigit() else None,
+                "height": int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None,
+                "density": int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else None,
+            }
+        return bool(
+            profile
+            and profile.get("status") == "ready"
+            and profile.get("adapter_version") == adapter_version
+            and all(
+                int(display.get(key) or 0) == wanted
+                for key, wanted in (("width", 900), ("height", 1600), ("density", 320))
+            )
+            and all(
+                expected_display.get(key) in {None, wanted}
+                for key, wanted in (("width", 900), ("height", 1600), ("density", 320))
+            )
+        )
     return bool(
         profile
         and profile.get("status") == "ready"

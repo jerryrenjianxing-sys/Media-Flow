@@ -359,13 +359,22 @@ def execute_initialization(
         checkpoint("device_probe", 2, "已读取设备与显示信息", probe=probe)
 
         original_ime = _preferred_original_ime(device)
-        input_state = _enable_fast_input(
-            device,
-            record.device_id,
-            original_ime=original_ime,
-        )
+        try:
+            input_state = _enable_fast_input(
+                device,
+                record.device_id,
+                original_ime=original_ime,
+            )
+        except InitializationWaitingForUser as exc:
+            input_state = {
+                "input_mode": "unavailable",
+                "chinese_input_verified": False,
+                "message": str(exc),
+            }
         input_message = (
-            "uiautomator2、截图和UI树已就绪，中文输入将在搜索框复验"
+            "uiautomator2、截图和UI树已就绪；中文输入暂不可用，不影响首页浏览"
+            if input_state.get("input_mode") == "unavailable"
+            else "uiautomator2、截图和UI树已就绪，中文输入将在搜索框复验"
             if input_state.get("input_mode") == "uiautomator_selector"
             else "uiautomator2、截图、UI树和中文输入已就绪"
         )
@@ -387,7 +396,12 @@ def execute_initialization(
         checkpoint("app_check", 4, "抖音已安装、可启动且账号页面可用", app_version=app_version)
 
         query = str(record.options.get("search_query") or "人工智能").strip()[:80]
-        calibration = adapter.calibrate_navigation(query)
+        calibration = (
+            adapter.calibrate_browsing()
+            if input_state.get("input_mode") == "unavailable"
+            and hasattr(adapter, "calibrate_browsing")
+            else adapter.calibrate_navigation(query)
+        )
         if input_state.get("input_mode") == "uiautomator_selector":
             # enter_topic_search only returns after set_text wrote the exact
             # Unicode query and get_text read the same value back.
@@ -399,12 +413,19 @@ def execute_initialization(
             "安全导航校准已完成",
             calibration=calibration_payload,
         )
-        if not all(calibration.capabilities.values()):
-            missing = [
-                name for name, passed in calibration.capabilities.items() if not passed
-            ]
+        missing = [
+            name for name, passed in calibration.capabilities.items() if not passed
+        ]
+        if not calibration.capabilities.get("main_feed"):
             raise InitializationWaitingForUser(
-                "部分控件尚未通过固定程序复验：" + "、".join(missing)
+                "首页浏览尚未通过固定程序复验：" + "、".join(missing)
+            )
+        if missing:
+            checkpoint(
+                "capability_summary",
+                5,
+                "首页浏览已可用；部分附加能力需要按任务继续复验",
+                unavailable_capabilities=missing,
             )
 
         write_result: dict[str, Any] | None = None
@@ -425,6 +446,7 @@ def execute_initialization(
             probe,
             existing=load_device_profile_payloads().get(record.device_id),
             observed_at=observed_at,
+            portable_virtual=bool(record.options.get("auto_onboarding")),
         )
         device_profile.update(
             verified=True,
@@ -435,7 +457,8 @@ def execute_initialization(
                 "ui_tree": True,
                 "click": True,
                 "swipe": True,
-                "chinese_input": True,
+                "chinese_input": bool(input_state.get("chinese_input_verified")),
+                **dict(calibration.capabilities),
             },
         )
         if bool(record.options.get("auto_onboarding")):
@@ -451,22 +474,32 @@ def execute_initialization(
                     origin_id=record.id,
                 )
             except RuntimeError as exc:
-                raise InitializationWaitingForUser(
-                    "互动巡检v3三次只读复验未通过，请打开画面确认消息页和互动消息入口后继续："
-                    + str(exc)
-                ) from exc
-            device_profile.update(
-                engagement_app_version=app_version,
-                engagement_display_signature=engagement_signature,
-                engagement_inspection_version="v3",
-                engagement_calibration=engagement_calibration,
-            )
-            checkpoint(
-                "engagement_calibration",
-                7,
-                "互动消息聚合页已完成三次只读语义复验",
-                engagement_calibration=engagement_calibration,
-            )
+                device_profile["capabilities"]["engagement_v3"] = False
+                device_profile.update(
+                    engagement_inspection_version="v3",
+                    engagement_status="requires_verification",
+                    engagement_error=str(exc),
+                )
+                checkpoint(
+                    "engagement_calibration",
+                    7,
+                    "首页浏览已保留；互动巡检v3需要单独复验",
+                    engagement_error=str(exc),
+                )
+            else:
+                device_profile["capabilities"]["engagement_v3"] = True
+                device_profile.update(
+                    engagement_app_version=app_version,
+                    engagement_display_signature=engagement_signature,
+                    engagement_inspection_version="v3",
+                    engagement_calibration=engagement_calibration,
+                )
+                checkpoint(
+                    "engagement_calibration",
+                    7,
+                    "互动消息聚合页已完成三次只读语义复验",
+                    engagement_calibration=engagement_calibration,
+                )
         else:
             checkpoint(
                 "engagement_calibration", 7, "真机暂不启用标准虚拟机互动巡检v3档案"

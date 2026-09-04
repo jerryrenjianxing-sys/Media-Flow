@@ -29,6 +29,21 @@ class DeviceProfileTest(unittest.TestCase):
         self.assertFalse(merged["verified"])
         self.assertIsNone(merged["home_fallback"])
 
+    def test_virtual_navigation_change_keeps_portable_display_profile(self) -> None:
+        existing = {
+            "display": {"width": 900, "height": 1600, "density": 320, "navigation_mode": "100"},
+            "verified": True,
+            "home_fallback": [0.1, 0.91],
+        }
+        merged = merge_device_probe(
+            "127.0.0.1:16416",
+            {"display": {"width": 900, "height": 1600, "density": 320, "navigation_mode": "2"}},
+            existing,
+            portable_virtual=True,
+        )
+        self.assertTrue(merged["verified"])
+        self.assertEqual(merged["home_fallback"], [0.1, 0.91])
+
     def write_profile(self, directory: str, *, width: int = 1080) -> Path:
         path = Path(directory) / "devices.json"
         path.write_text(

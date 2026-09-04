@@ -187,6 +187,62 @@ class DouyinAdapter:
         warnings.append("home_video_supply_insufficient_during_calibration")
         return image, source, source_path
 
+    def calibrate_browsing(self) -> CalibrationResult:
+        """Verify the read-only home-feed plane without requiring text input."""
+        self.ensure_ready()
+        image = self.recorder.screenshot(self.device, "initialization-main-feed")
+        self.runner.ensure_profile(image)
+        width, height = image.size
+        source = self.device.dump_hierarchy(compressed=True, pretty=False)
+        source_path = self.recorder.run_dir / "initialization-main-feed.xml"
+        source_path.write_text(source, encoding="utf-8")
+        warnings: list[str] = []
+        evidence = [
+            str(source_path),
+            str(self.recorder.run_dir / "initialization-main-feed.png"),
+        ]
+        image, source, source_path = self._seek_home_video_for_calibration(
+            image,
+            source,
+            warnings=warnings,
+            evidence=evidence,
+        )
+        width, height = image.size
+        controls: dict[str, dict[str, Any]] = {}
+        home = self._semantic_control(
+            "home",
+            find_bottom_navigation_bounds(source, "首页", width, height),
+            rule={"kind": "bottom_navigation", "label": "首页"},
+            evidence=str(source_path),
+        )
+        if home:
+            controls["home"] = home
+        for name, keyword in CONTROL_KEYWORDS.items():
+            _before, gate = self.runner.capture_gate(0, name)
+            bounds = self.runner.control_bounds.get(name) if gate.allowed else None
+            control = self._semantic_control(
+                name,
+                bounds,
+                rule={"kind": "content_description", "contains": keyword, "button": True},
+                evidence=str(self.recorder.run_dir / f"video-0-{name}-before.png"),
+            )
+            if control:
+                controls[name] = control
+        return CalibrationResult(
+            page_type="home_feed",
+            controls=controls,
+            capabilities={
+                "main_feed": "home" in controls,
+                "search": False,
+                "like": "like" in controls,
+                "favorite": "favorite" in controls,
+                "comment": False,
+                "search_feed": False,
+            },
+            evidence=evidence,
+            warnings=warnings + ["input_component_unavailable:search_and_comment_not_verified"],
+        )
+
     def calibrate_navigation(self, search_query: str) -> CalibrationResult:
         self.ensure_ready()
         image = self.recorder.screenshot(self.device, "initialization-main-feed")

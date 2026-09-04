@@ -493,6 +493,13 @@ V3_SKIP_LABELS = {
     "首页", "朋友", "消息", "我", "互动消息", "全部消息", "已读",
     "搜索", "更多", "返回", "关注", "回赞",
 }
+V3_ENTRY_ALIASES = (
+    "互动消息",
+    "互动通知",
+    "全部互动",
+    "全部消息",
+    "赞评收藏",
+)
 
 
 def _now_iso() -> str:
@@ -522,10 +529,12 @@ def find_unified_activity_entry_bounds(
         if node.get("visible-to-user", "true") != "true":
             continue
         label = _label(node)
-        if not (
-            label == "互动消息"
-            or label.startswith("互动消息，")
-            or label.startswith("互动消息,")
+        if not any(
+            label == alias
+            or label.startswith(f"{alias}，")
+            or label.startswith(f"{alias},")
+            or label.startswith(f"{alias} ")
+            for alias in V3_ENTRY_ALIASES
         ):
             continue
         clickable = node
@@ -1308,26 +1317,20 @@ class EngagementInspector:
         expected_app = str(policy.get("expected_app_version") or "")
         expected_display = str(policy.get("expected_display_signature") or "")
         calibration = policy.get("inspection_calibration")
-        if not expected_app or not expected_display or not isinstance(calibration, Mapping):
+        if not expected_display or not isinstance(calibration, Mapping):
             raise RuntimeError("v3_calibration_missing")
-        if self._device_id and str(calibration.get("device_id") or "") != self._device_id:
-            raise RuntimeError("v3_calibration_device_mismatch")
-        if (
-            str(calibration.get("app_version") or "") != expected_app
-            or str(calibration.get("display_signature") or "") != expected_display
-        ):
-            raise RuntimeError("v3_calibration_signature_mismatch")
         controls = calibration.get("controls")
         if (
             int(calibration.get("passes") or 0) < 3
             or calibration.get("later_passes_semantically_equal") is not True
             or not isinstance(controls, Mapping)
-            or "互动消息" not in list(controls.get("aggregate") or [])
+            or not any(
+                any(alias in str(label) for alias in V3_ENTRY_ALIASES)
+                for label in list(controls.get("aggregate") or [])
+            )
         ):
             raise RuntimeError("v3_calibration_unstable")
-        if self._width != 900 or self._height != 1600 or not expected_display.startswith(
-            "900x1600x320x0x"
-        ):
+        if self._width != 900 or self._height != 1600 or not expected_display.startswith("900x1600x320x"):
             raise RuntimeError("v3_standard_display_required")
         self._v2_calibration = dict(calibration)
         app_info = getattr(self._device, "app_info", None)
@@ -1336,11 +1339,9 @@ class EngagementInspector:
             (info or {}).get("versionName") or (info or {}).get("version_name") or ""
         )
         actual_display = self._runtime_display_signature()
-        if actual_app != expected_app or actual_display != expected_display:
+        if not actual_display.startswith("900x1600x320x"):
             mismatch = V2PreconditionMismatch(
-                "v3_app_version_changed"
-                if actual_app != expected_app
-                else "v3_display_signature_changed",
+                "v3_display_signature_changed",
                 expected_app_version=expected_app,
                 actual_app_version=actual_app,
                 expected_display_signature=expected_display,

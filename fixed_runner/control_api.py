@@ -41,9 +41,10 @@ from engagement_preflight import (
     acknowledge_visitor_reminder,
     visitor_reminder_status,
 )
-from device_profiles import enrich_device_statuses, load_device_profiles
+from device_profiles import enrich_device_statuses, load_device_profile_payloads, load_device_profiles
 from platform_profiles import latest_device_platform_profile, profile_matches_runtime
 from profile_resolution import resolve_execution_profile
+from virtual_device_qualification import qualify_virtual_device
 from evidence_governance import EvidenceGovernance
 from runtime_control import (
     BACKGROUND_HEARTBEAT_PATH,
@@ -362,6 +363,8 @@ def initialization_runtime_status(
     stored_status: str,
     profile: dict[str, Any] | None,
     runtime: dict[str, Any] | None,
+    *,
+    is_virtual: bool = False,
 ) -> str:
     if stored_status != "ready" or runtime is None:
         return stored_status
@@ -369,6 +372,7 @@ def initialization_runtime_status(
         profile,
         app_version=str(runtime.get("app_version") or ""),
         display=dict(runtime.get("display") or {}),
+        portable_virtual=is_virtual,
     ):
         return "ready"
     return "stale"
@@ -1323,6 +1327,13 @@ def _virtual_device_guidance(
     )
     initialization_running = initialization_status in {"queued", "running"}
     standard = str(virtual_device.get("standard_status") or "requires_verification")
+    capabilities = dict(virtual_device.get("capabilities") or {})
+
+    def capability_ready(name: str) -> bool:
+        return str((capabilities.get(name) or {}).get("status") or "") == "ready"
+
+    def capability_reason(name: str) -> str:
+        return str((capabilities.get(name) or {}).get("reason") or "尚未复验")
 
     if presence == "identity_conflict":
         reason_code = "android_identity_changed"
@@ -1346,7 +1357,7 @@ def _virtual_device_guidance(
             virtual_device.get("standard_message")
             or "虚拟机配置不符合MediaFlow标准"
         )
-        suggested_action = "停止虚拟机后恢复900×1600、320 DPI和标准显示配置"
+        suggested_action = "停止虚拟机后恢复900×1600、320 DPI"
         available_actions = (
             ["stop", "repair_standard"]
             if state != "stopped"
@@ -1387,20 +1398,29 @@ def _virtual_device_guidance(
         user_message = "设备已连接，正在执行固定程序初始化"
         suggested_action = "等待当前步骤完成"
         available_actions = ["open_screen"]
-    elif not profile_ready:
+    elif not capability_ready("browse_home"):
         reason_code = "profile_verification_required"
         issue_status = "partially_available"
         blocking_scope = "onboarding"
-        user_message = "设备可以打开画面，但控制档案尚未复验"
-        suggested_action = "点击继续复验，完成后才能加入任务"
+        user_message = "ADB和看屏可用，首页浏览还需要一次只读复验"
+        suggested_action = capability_reason("browse_home")
         available_actions = ["open_screen", "continue_initialization"]
-    elif not model_ready:
-        reason_code = "model_not_ready"
+    elif not all(
+        capability_ready(name)
+        for name in ("search_input", "engagement_v3", "topic_analysis", "like_favorite", "comment_preview", "comment_send")
+    ):
+        reason_code = "optional_capabilities_pending"
         issue_status = "partially_available"
-        blocking_scope = "model"
-        user_message = "设备已经就绪；需要模型的任务暂不可用"
-        suggested_action = "前往资产与设置，完成模型鉴权和测试"
-        available_actions = ["open_screen", "manual_control", "configure_model"]
+        blocking_scope = "capability"
+        missing_count = sum(
+            not capability_ready(name)
+            for name in ("search_input", "engagement_v3", "topic_analysis", "like_favorite", "comment_preview", "comment_send")
+        )
+        user_message = f"设备可看屏和浏览；另有 {missing_count} 项按需能力尚未就绪"
+        suggested_action = "展开能力清单，按准备执行的任务补齐对应能力"
+        available_actions = ["open_screen", "manual_control", "add_to_draft", "continue_initialization"]
+        if not model_ready:
+            available_actions.append("configure_model")
     else:
         reason_code = "ready"
         issue_status = "normal"
@@ -1417,14 +1437,15 @@ def _virtual_device_guidance(
         _readiness_step("android", "Android系统", "ready" if connected else "waiting", "Android已响应" if connected else "等待Android和ADB响应"),
         _readiness_step("adb", "ADB连接", "ready" if connected else "blocked", "ADB已连接" if connected else "ADB尚未连接"),
         _readiness_step("identity", "设备身份", "ready" if connected and virtual_device.get("android_identity") else "waiting", "Android身份已核对" if connected and virtual_device.get("android_identity") else "等待核对Android身份"),
-        _readiness_step("standard", "标准配置", "ready" if standard == "standard" else "blocked", "900×1600、320 DPI及标准显示配置已确认" if standard == "standard" else str(virtual_device.get("standard_message") or "配置不符合MediaFlow标准")),
+        _readiness_step("standard", "显示环境", "ready" if standard == "standard" else "blocked", "900×1600、320 DPI已确认" if standard == "standard" else str(virtual_device.get("standard_message") or "显示环境不符合MediaFlow标准")),
         _readiness_step("douyin", "抖音安装", "ready" if app_ready else "waiting", "抖音安装检查已通过" if app_ready else "等待安装抖音"),
         _readiness_step("login", "抖音登录", "ready" if login_ready else "waiting", "账号页面已通过检查" if login_ready else "初始化时检查登录状态"),
-        _readiness_step("controls", "输入与控制", "ready" if profile_ready else "pending", "固定控件已验证" if profile_ready else "等待固定程序校准"),
-        _readiness_step("profile", "设备档案", "ready" if profile_ready else "pending", "档案已复验" if profile_ready else "档案待复验"),
-        _readiness_step("model", "视觉模型", "ready" if model_ready else "optional", "当前模型已鉴权并测试" if model_ready else "未配置或尚未测试；不影响ADB和看屏"),
-        _readiness_step("smoke_test", "零写入自检", "ready" if profile_ready else "pending", "初始化验收已完成" if profile_ready else "档案复验后执行"),
-        _readiness_step("task", "加入任务", "ready" if profile_ready and connected and standard == "standard" else "blocked", "设备可加入任务" if profile_ready and connected and standard == "standard" else "等待标准配置、连接与档案复验"),
+        _readiness_step("browse", "首页浏览", "ready" if capability_ready("browse_home") else "pending", "首页只读流程已验证" if capability_ready("browse_home") else capability_reason("browse_home")),
+        _readiness_step("input", "搜索与中文输入", "ready" if capability_ready("search_input") else "optional", "搜索和中文输入已验证" if capability_ready("search_input") else capability_reason("search_input")),
+        _readiness_step("engagement", "互动消息巡检", "ready" if capability_ready("engagement_v3") else "optional", "v3共享规则已快速复验" if capability_ready("engagement_v3") else capability_reason("engagement_v3")),
+        _readiness_step("model", "视觉模型", "ready" if model_ready else "optional", "当前模型已鉴权并测试" if model_ready else "未配置或尚未测试；不影响ADB、看屏、首页浏览和互动巡检"),
+        _readiness_step("writes", "写入能力", "ready" if capability_ready("like_favorite") and capability_ready("comment_send") else "optional", "点赞、收藏和评论发送已验证" if capability_ready("like_favorite") and capability_ready("comment_send") else "只在需要真实互动时补齐，不影响只读任务"),
+        _readiness_step("task", "加入任务", "ready" if capability_ready("browse_home") else "blocked", "可加入草稿；提交时按任务逐项预检" if capability_ready("browse_home") else "首页浏览复验后可加入草稿"),
     ]
     diagnostic_seed = ":".join(
         (
@@ -1460,7 +1481,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
     managed_virtual_adb_ids = {
         str(item.get("adb_endpoint") or "")
         for item in managed_virtual_devices
-        if item.get("adb_endpoint") and item.get("standard_status") == "standard"
+        if item.get("adb_endpoint")
     }
     preferences = device_preferences(store)
     discovered_devices = device_statuses()
@@ -1486,6 +1507,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         for item in managed_virtual_devices
         if item.get("state") != "retired" and item.get("adb_endpoint")
     }
+    runtime_signatures: dict[str, dict[str, Any] | None] = {}
     for device in devices:
         device_id = str(device["device_id"])
         latest = store.latest_initialization(device_id)
@@ -1494,6 +1516,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         runtime_signature = (
             status_runtime_signature(device_id) if device.get("state") == "device" else None
         )
+        runtime_signatures[device_id] = runtime_signature
         device["profile_resolution"] = resolve_execution_profile(
             device_id=device_id,
             is_virtual=device_id in virtual_adb_ids or _is_virtual_adb_id(device_id),
@@ -1505,6 +1528,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
                 latest.status,
                 local_platform_profile,
                 runtime_signature,
+                is_virtual=device_id in virtual_adb_ids or _is_virtual_adb_id(device_id),
             )
         initialization_payload = _compact_initialization_payload(latest)
         if initialization_payload is not None and effective_status == "stale":
@@ -1558,6 +1582,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         if item.get("device_id")
     }
     model_status = openrouter_key_status()
+    device_profile_payloads = load_device_profile_payloads()
     for virtual_device in virtual_devices:
         active_operation = store.active_virtual_operation(
             virtual_device["virtual_device_id"]
@@ -1567,11 +1592,41 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         if latest and latest.status == "ready" and adb_endpoint in online_device_ids:
             virtual_device["state"] = "ready"
             virtual_device["profile_status"] = "ready"
+        runtime_display = dict((runtime_signatures.get(adb_endpoint) or {}).get("display") or {})
+        qualification_source = dict(virtual_device)
+        if runtime_display:
+            snapshot = dict(qualification_source.get("provider_snapshot") or {})
+            settings = dict(snapshot.get("settings") or {})
+            settings.update(
+                {
+                    "resolution_width.custom": runtime_display.get("width"),
+                    "resolution_height.custom": runtime_display.get("height"),
+                    "resolution_dpi.custom": runtime_display.get("density"),
+                }
+            )
+            qualification_source["provider_snapshot"] = {**snapshot, "settings": settings}
+        qualification = qualify_virtual_device(
+            qualification_source,
+            connected=adb_endpoint in online_device_ids,
+            initialization_status=str(latest.status if latest else ""),
+            model_ready=bool(model_status.get("model_ready")),
+            verified_capabilities=(
+                device_profile_payloads.get(adb_endpoint, {}).get("capabilities", {})
+                if adb_endpoint
+                else {}
+            ),
+        )
+        virtual_device.update(qualification)
+        virtual_device["standard_status"] = (
+            "standard"
+            if qualification["environment_status"] == "standard"
+            else "nonstandard"
+            if qualification["environment_status"] == "needs_display_fix"
+            else "requires_verification"
+        )
+        virtual_device["standard_message"] = qualification["message"]
         virtual_device["task_ready"] = bool(
-            adb_endpoint in online_device_ids
-            and virtual_device.get("profile_status") == "ready"
-            and virtual_device.get("standard_status") == "standard"
-            and virtual_device.get("presence_status") == "present"
+            qualification["task_eligibility"]["browse"]
         )
         virtual_device["management_status"] = (
             "identity_conflict"
@@ -1594,10 +1649,24 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         )
         connected_device = discovered_by_id.get(adb_endpoint)
         if connected_device is not None and connected_device.get("state") == "device":
+            connected_device.update(
+                environment_status=virtual_device.get("environment_status"),
+                environment_mismatches=virtual_device.get("environment_mismatches", []),
+                capabilities=virtual_device.get("capabilities", {}),
+                task_eligibility=virtual_device.get("task_eligibility", {}),
+                profile_bundle_id=virtual_device.get("profile_bundle_id"),
+                ui_compatibility_id=virtual_device.get("ui_compatibility_id"),
+            )
             connected_payload = dict(connected_device)
             connected_payload.update(
                 device_type="virtual",
                 friendly_name=virtual_device.get("name") or adb_endpoint,
+                environment_status=virtual_device.get("environment_status"),
+                environment_mismatches=virtual_device.get("environment_mismatches", []),
+                capabilities=virtual_device.get("capabilities", {}),
+                task_eligibility=virtual_device.get("task_eligibility", {}),
+                profile_bundle_id=virtual_device.get("profile_bundle_id"),
+                ui_compatibility_id=virtual_device.get("ui_compatibility_id"),
                 initialization=_compact_initialization_payload(latest),
                 initialization_status=(
                     latest.status

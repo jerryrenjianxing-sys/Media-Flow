@@ -44,6 +44,7 @@ def resolve_execution_profile(
         dict(local_profile) if local_profile else None,
         app_version=app_version,
         display=display,
+        portable_virtual=is_virtual,
     ):
         return {
             "status": "ready",
@@ -61,12 +62,14 @@ def resolve_execution_profile(
     for recipe in load_shared_virtual_recipes():
         signature = recipe.get("signature") if isinstance(recipe.get("signature"), dict) else {}
         display_expected = signature.get("display") if isinstance(signature.get("display"), dict) else {}
-        if any(display.get(name) != value for name, value in display_expected.items()):
+        portable_display = {
+            name: value
+            for name, value in display_expected.items()
+            if name in {"width", "height", "density"}
+        }
+        if any(display.get(name) != value for name, value in portable_display.items()):
             continue
         if str(signature.get("adapter_version") or ADAPTER_VERSION) != ADAPTER_VERSION:
-            continue
-        compatible_prefixes = signature.get("douyin_version_prefixes") or []
-        if compatible_prefixes and not any(app_version.startswith(str(prefix)) for prefix in compatible_prefixes):
             continue
         return {
             "status": "requires_verification",

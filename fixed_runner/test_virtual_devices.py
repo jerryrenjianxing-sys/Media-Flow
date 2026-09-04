@@ -107,6 +107,22 @@ class VirtualDeviceProviderTests(unittest.TestCase):
         )
         self.assertEqual(payload["2"]["name"], "测试机")
 
+    def test_list_instances_keeps_numeric_zero_and_accepts_list_payload(self) -> None:
+        provider = MuMuProvider(Path("MuMuManager.exe"))
+        with patch.object(
+            provider,
+            "_run",
+            return_value=CommandResult(
+                ["info", "-v", "all"],
+                0,
+                '[{"index":0,"name":"MuMu安卓设备","status":"online"}]',
+                "",
+            ),
+        ):
+            instances = provider.list_instances()
+        self.assertEqual(instances[0]["provider_instance_id"], "0")
+        self.assertEqual(instances[0]["state"], "running")
+
     def test_missing_custom_directory_never_becomes_executable(self) -> None:
         with patch("virtual_devices._registry_install_candidates", return_value=[]), patch(
             "virtual_devices._running_process_candidates", return_value=[]
@@ -429,7 +445,7 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
             }
         )
 
-    def test_reconcile_does_not_persist_unmanaged_provider_instance(self) -> None:
+    def test_reconcile_auto_manages_every_provider_instance_without_renaming(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
             provider = FakeMuMuProvider(
@@ -441,9 +457,11 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
                 provider_factory=lambda _manager: provider,
             )
             result = inventory.reconcile()
-            self.assertEqual(result["devices"], [])
-            self.assertEqual(store.list_managed_virtual_devices(), [])
-            self.assertEqual(result["unmanaged_instances"][0]["provider_instance_id"], "2")
+            self.assertEqual(len(result["devices"]), 1)
+            self.assertEqual(len(store.list_managed_virtual_devices()), 1)
+            self.assertEqual(result["devices"][0]["name"], "客户虚拟机")
+            self.assertEqual(result["devices"][0]["discovery_source"], "provider_auto_discovery")
+            self.assertEqual(result["unmanaged_instances"], [])
 
     def test_reconcile_keeps_an_explicitly_managed_stopped_instance(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -522,7 +540,7 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
         self.assertEqual(reconciled["standard_status"], "standard")
         self.assertIsNone(reconciled["standard_message"])
 
-    def test_reconcile_still_requires_root_for_task_eligibility(self) -> None:
+    def test_reconcile_root_is_advisory_not_a_machine_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
             self._save_stopped(store)
@@ -542,8 +560,8 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
                 manager_resolver=lambda _path: Path(directory) / "MuMuManager.exe",
                 provider_factory=lambda _manager: provider,
             ).reconcile()["devices"][0]
-        self.assertEqual(reconciled["standard_status"], "nonstandard")
-        self.assertIn("root_permission=false", reconciled["standard_message"])
+        self.assertEqual(reconciled["standard_status"], "standard")
+        self.assertIsNone(reconciled["standard_message"])
 
     def test_reconcile_never_replaces_the_allocated_name_with_provider_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -745,7 +763,7 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
         self.assertEqual(result["state"], "adb_ready")
         self.assertIsNone(result["last_error"])
 
-    def test_reconcile_never_rebinds_last_endpoint_to_a_different_android(self) -> None:
+    def test_reconcile_identity_change_keeps_adb_but_invalidates_profile(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
             store.save_virtual_device(
@@ -775,8 +793,8 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
                 provider_factory=lambda _manager: provider,
                 identity_reader=lambda _endpoint: "different-android",
             ).reconcile(online_adb_ids={"127.0.0.1:16416"})["devices"][0]
-        self.assertIsNone(result["adb_endpoint"])
-        self.assertEqual(result["presence_status"], "identity_conflict")
+        self.assertEqual(result["adb_endpoint"], "127.0.0.1:16416")
+        self.assertEqual(result["presence_status"], "present")
         self.assertEqual(result["profile_status"], "requires_verification")
 
     def test_start_rebinds_adb_without_changing_permanent_identity(self) -> None:
@@ -815,7 +833,7 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
         self.assertEqual(connected["adb_endpoint"], "127.0.0.1:16512")
         self.assertEqual(connected["last_adb_endpoint"], "127.0.0.1:16512")
 
-    def test_start_identity_conflict_never_activates_old_profile(self) -> None:
+    def test_start_identity_change_keeps_view_and_invalidates_old_profile(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
             store.save_virtual_device(
@@ -846,12 +864,13 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
                 identity_reader=lambda _endpoint: "new-android",
             ).start("virtual-1", operation["id"])
             updated_operation = store.get_virtual_operation(operation["id"])
-        self.assertEqual(conflicted["state"], "degraded")
-        self.assertEqual(conflicted["presence_status"], "identity_conflict")
-        self.assertIsNone(conflicted["adb_endpoint"])
-        self.assertEqual(updated_operation["status"], "waiting_user")
+        self.assertEqual(conflicted["state"], "adb_ready")
+        self.assertEqual(conflicted["presence_status"], "present")
+        self.assertEqual(conflicted["adb_endpoint"], "127.0.0.1:16416")
+        self.assertEqual(conflicted["profile_status"], "requires_verification")
+        self.assertEqual(updated_operation["status"], "completed")
 
-    def test_first_start_without_android_identity_waits_for_confirmation(self) -> None:
+    def test_first_start_without_android_identity_keeps_adb_view_available(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
             store.save_virtual_device(
@@ -883,11 +902,11 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
                 identity_interval_seconds=0,
             ).start("virtual-1", operation["id"])
             updated_operation = store.get_virtual_operation(operation["id"])
-        self.assertEqual(conflicted["state"], "degraded")
-        self.assertEqual(conflicted["presence_status"], "identity_conflict")
-        self.assertIsNone(conflicted["adb_endpoint"])
-        self.assertEqual(updated_operation["status"], "waiting_user")
-        self.assertIn("Android身份", updated_operation["error"])
+        self.assertEqual(conflicted["state"], "adb_ready")
+        self.assertEqual(conflicted["presence_status"], "present")
+        self.assertEqual(conflicted["adb_endpoint"], "127.0.0.1:16416")
+        self.assertEqual(updated_operation["status"], "completed")
+        self.assertIn("Android身份", updated_operation["message"])
 
     def test_operation_message_tracks_the_current_stage(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

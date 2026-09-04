@@ -57,7 +57,7 @@ test("renders the five-workspace shell and persisted presentation controls", asy
 
 test("task workbench follows the four decisions and server-owned planning contract", async () => {
   const page = await source("../app/page.tsx");
-  for (const text of ["从哪里开始", "关注什么", "如何运行", "在哪些标准虚拟机运行"]) assert.match(page, new RegExp(text));
+  for (const text of ["从哪里开始", "关注什么", "如何运行", "在哪些虚拟机运行"]) assert.match(page, new RegExp(text));
   for (const mode of ["搜索＋主页交替", "主页不限主题", "主页主题筛选", "搜索主题视频"]) assert.match(page, new RegExp(mode));
   for (const field of ["search_segment_min", "search_segment_max", "home_segment_min", "home_segment_max"]) assert.match(page, new RegExp(field));
   assert.match(page, /推荐主模式/);
@@ -213,7 +213,7 @@ test("device workspace defaults to the standard virtual pool and gates physical 
   const response = await render("/devices");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /标准虚拟机管理/);
+  assert.match(html, /MuMu虚拟机管理/);
   assert.match(html, /添加虚拟机/);
   assert.match(html, /刷新虚拟机/);
   assert.match(html, /一键配置标准虚拟机池/);

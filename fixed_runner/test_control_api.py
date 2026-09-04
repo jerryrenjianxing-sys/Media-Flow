@@ -1752,7 +1752,11 @@ class ControlApiTest(unittest.TestCase):
                 patch("control_api.openrouter_key_status", return_value={}),
             ):
                 payload = build_status_payload(store, normalized_config(DEFAULT_CONFIG))
-        self.assertEqual(payload["devices"], [])
+        self.assertEqual(
+            [item["device_id"] for item in payload["devices"]],
+            ["127.0.0.1:16512"],
+        )
+        self.assertFalse(payload["devices"][0]["task_eligibility"]["browse"])
         virtual_device = payload["virtualization"]["devices"][0]
         self.assertEqual(virtual_device["management_status"], "managed_nonstandard")
         self.assertFalse(virtual_device["task_ready"])

@@ -1,7 +1,7 @@
 # device-discovery Specification
 
 ## Purpose
-让 RiskFlow 控制台以本机实时 ADB 状态发现和选择设备，避免离线或未授权设备进入新任务配置。
+让 MediaFlow 控制台以本机实时 ADB 与MuMu Provider状态发现和选择设备，避免离线或能力不足的设备进入不匹配的任务配置。
 
 ## Requirements
 
@@ -56,15 +56,15 @@
 - **WHEN** 设备初始化状态为 `waiting_user`
 - **THEN** 设备页显示具体所需操作、最近证据和继续入口，不把设备显示为初始化失败
 
-### Requirement: 自动发现本机 Root 虚拟机
-系统 SHALL 在用户开启自动接管后周期性读取 MuMu 已启动实例与实时 ADB 状态，并且只把本机回环 ADB、Root、由模拟器管理器或标准模拟器序列号证明的设备作为候选。
+### Requirement: 自动发现本机 MuMu 虚拟机
+系统 SHALL 周期性读取MuMu全部实例与实时ADB状态，并自动登记由通过能力探测的MuMu Provider证明的本机实例。Root、实例名称和创建来源不得作为发现门槛；只有实际900×1600和320 DPI作为整机业务环境硬标准。
 
 #### Scenario: 新 MuMu 实例启动
-- **WHEN** MuMuManager 返回一个已启动、Root 且尚未登记 Android 身份的本机实例
-- **THEN** 系统连接其独立 ADB 端口、加入设备池并创建零写入初始化
+- **WHEN** MuMuManager 返回一个尚未登记的本机实例（包括默认实例0）
+- **THEN** 系统将其加入虚拟机库存；若实例已运行则解析动态ADB端口并核对Android身份，若已停止则保留可启动卡片
 
 #### Scenario: Root 真机在线
-- **WHEN** 在线设备虽然为 Root 但没有模拟器管理器或标准模拟器序列号证据
+- **WHEN** 在线设备虽然为 Root 但没有MuMu Provider实例证据
 - **THEN** 系统不得自动接管，设备继续使用现有人工流程
 
 ### Requirement: ADB 别名按设备身份去重

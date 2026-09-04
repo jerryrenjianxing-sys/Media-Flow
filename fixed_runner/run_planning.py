@@ -91,6 +91,7 @@ def _device_preview(
     store: TaskStore,
     selected_ids: Iterable[str],
     devices: Iterable[Mapping[str, Any]],
+    config: Mapping[str, Any],
 ) -> tuple[list[dict[str, Any]], list[str]]:
     by_id = {str(item.get("device_id") or ""): item for item in devices}
     rows: list[dict[str, Any]] = []
@@ -109,6 +110,31 @@ def _device_preview(
             profile_verified = bool(raw.get("profile_verified"))
             if initialization not in {"ready", "legacy"} and not profile_verified:
                 reason = "设备尚未初始化或需要复验"
+        capabilities = (raw or {}).get("capabilities")
+        if not reason and isinstance(capabilities, Mapping):
+            required = ["browse_home"]
+            mode = str(config.get("content_mode") or "general")
+            probabilities = _action_probabilities(config)
+            if mode in {"search", "mixed", "hybrid"}:
+                required.append("search_input")
+            if config.get("engagement_inspection_enabled"):
+                required.append("engagement_v3")
+            if mode != "general" or bool(config.get("topic_filter_enabled")):
+                required.append("topic_analysis")
+            if probabilities["like"] > 0 or probabilities["favorite"] > 0:
+                required.append("like_favorite")
+            if probabilities["comment"] > 0:
+                required.append(
+                    "comment_preview" if bool(config.get("preview_only", True)) else "comment_send"
+                )
+            missing = [
+                name
+                for name in dict.fromkeys(required)
+                if str((capabilities.get(name) or {}).get("status") or "") != "ready"
+            ]
+            if missing:
+                first = capabilities.get(missing[0]) or {}
+                reason = str(first.get("reason") or f"缺少任务能力：{missing[0]}")
         available = not reason
         if available:
             eligible.append(device_id)
@@ -147,7 +173,9 @@ def build_preview(
     model_status: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     config = normalized_config(dict(draft.get("config") or {}))
-    device_rows, eligible_ids = _device_preview(store, config["device_ids"], devices)
+    device_rows, eligible_ids = _device_preview(
+        store, config["device_ids"], devices, config
+    )
     blockers: list[str] = []
     warnings: list[str] = []
     unavailable = [item for item in device_rows if not item["available"]]
@@ -159,7 +187,14 @@ def build_preview(
         blockers.append("没有可执行设备，请检查设备在线、初始化和占用状态")
     if paused:
         warnings.append("任务领取当前已暂停；提交后任务会保持排队")
-    model_required = config.get("content_mode") != "general"
+    probabilities = _action_probabilities(config)
+    model_required = bool(
+        config.get("content_mode") != "general"
+        or config.get("topic_filter_enabled")
+        or probabilities["like"] > 0
+        or probabilities["favorite"] > 0
+        or probabilities["comment"] > 0
+    )
     if model_required and model_status is not None and not bool(model_status.get("model_ready")):
         blockers.append("当前内容模式需要视觉模型，请先完成 OpenRouter 鉴权并测试当前模型")
     inspection_profiles = inspection_profiles_for_store(store)
@@ -200,7 +235,6 @@ def build_preview(
             inspection_task_count = plan.inspection_task_count
             total_task_count = len(plan.tasks)
 
-    probabilities = _action_probabilities(config)
     write_actions: list[str] = []
     if probabilities["like"] > 0:
         write_actions.append("点赞")

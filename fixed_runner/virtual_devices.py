@@ -429,17 +429,44 @@ class MuMuProvider:
 
     def list_instances(self) -> list[dict[str, Any]]:
         payload = self._json(self._run("info", "-v", "all", timeout=12).stdout)
-        if not isinstance(payload, dict):
+        if not isinstance(payload, (dict, list)):
             raise RuntimeError("MuMu实例列表格式无效")
+        raw_items = list(payload.values()) if isinstance(payload, dict) else list(payload)
         instances: list[dict[str, Any]] = []
-        for raw in payload.values():
+        for position, raw in enumerate(raw_items):
             if not isinstance(raw, dict):
                 continue
             instance = dict(raw)
-            instance["provider_instance_id"] = str(raw.get("index") or "")
-            instance["state"] = "running" if raw.get("is_process_started") else "stopped"
+            raw_index = raw.get("index")
+            if raw_index is None or str(raw_index).strip() == "":
+                raw_index = raw.get("id")
+            if raw_index is None or str(raw_index).strip() == "":
+                raw_index = raw.get("vm_index")
+            if raw_index is None or str(raw_index).strip() == "":
+                raw_index = position
+            instance["provider_instance_id"] = str(raw_index).strip()
+            running_value = raw.get("is_process_started")
+            if running_value is None:
+                running_value = raw.get("is_android_started")
+            if running_value is None:
+                running_value = raw.get("state") or raw.get("status")
+            running = (
+                running_value is True
+                or running_value == 1
+                or str(running_value).strip().lower()
+                in {"1", "true", "running", "started", "booting", "online"}
+            )
+            instance["state"] = "running" if running else "stopped"
             instances.append(instance)
-        return sorted(instances, key=lambda item: int(item["provider_instance_id"]))
+        return sorted(
+            instances,
+            key=lambda item: (
+                0,
+                int(item["provider_instance_id"]),
+            )
+            if str(item["provider_instance_id"]).isdigit()
+            else (1, str(item["provider_instance_id"])),
+        )
 
     def read_settings(self, instance_id: str) -> dict[str, str]:
         payload = self._json(

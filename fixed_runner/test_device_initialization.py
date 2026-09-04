@@ -95,6 +95,15 @@ class FakeAdapter:
             warnings=[],
         )
 
+    def calibrate_browsing(self):
+        return CalibrationResult(
+            page_type="home_feed",
+            controls={"home": {}},
+            capabilities={"main_feed": True, "search": False, "like": False, "favorite": False, "comment": False, "search_feed": False},
+            evidence=[],
+            warnings=["input_component_unavailable"],
+        )
+
     def run_write_acceptance(self, _comment):
         type(self).write_calls += 1
         raise RuntimeError("unknown write result")
@@ -256,6 +265,33 @@ class DeviceInitializationTest(unittest.TestCase):
             self.assertEqual(FakeAdapter.write_calls, 1)
             self.assertEqual(store.get_initialization(record.id).status, "failed")
             self.assertEqual(device.current_ime(), "original/.Ime")
+
+    def test_missing_input_keeps_read_only_home_browsing_available(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = TaskStore(root / "tasks.db")
+            record = store.create_initialization("device-1")
+            claimed = store.claim_initialization("device-1", "worker-1")
+            assert claimed is not None
+            with patch(
+                "device_initialization._enable_fast_input",
+                side_effect=InitializationWaitingForUser("输入组件暂不可用"),
+            ), patch("device_initialization.upsert_device_profile") as save_device, patch(
+                "device_initialization.save_platform_profile"
+            ):
+                result = execute_initialization(
+                    FakeDevice(),
+                    claimed,
+                    store,
+                    artifacts_root=root / "artifacts",
+                    adapter_factory=FakeAdapter,
+                    vision_locator=None,
+                )
+            self.assertEqual(result["status"], "ready")
+            profile = save_device.call_args.args[1]
+            self.assertTrue(profile["capabilities"]["main_feed"])
+            self.assertFalse(profile["capabilities"]["search"])
+            self.assertFalse(profile["capabilities"]["chinese_input"])
 
     def test_virtual_onboarding_saves_verified_v3_inspection_profile(self):
         with tempfile.TemporaryDirectory() as directory:
