@@ -152,7 +152,7 @@ class WindowsEntrypointTests(unittest.TestCase):
         version = payload["version"]
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
         self.assertEqual(version, "0.4.1")
-        self.assertEqual(payload["development_iteration"], 5)
+        self.assertEqual(payload["development_iteration"], 6)
         installer = (PROJECT_ROOT / "installer" / "MediaFlowInstaller.cs").read_text(
             encoding="utf-8-sig"
         )
@@ -181,6 +181,9 @@ class WindowsEntrypointTests(unittest.TestCase):
         self.assertIn("distribution_label = if ($developmentBuild) { 'development-stage' }", build)
         self.assertIn("development_iteration = if ($developmentBuild)", build)
         self.assertIn("target_version = $Version", build)
+        self.assertIn("Get-FileHash -LiteralPath $installerPath -Algorithm SHA256", build)
+        self.assertIn("MediaFlow-Installer.exe.sha256", build)
+        self.assertIn("[System.IO.File]::WriteAllText", build)
 
         installer_build = (PROJECT_ROOT / "installer" / "build-installer.ps1").read_text(
             encoding="utf-8-sig"

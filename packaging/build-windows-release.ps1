@@ -345,6 +345,14 @@ if (-not $SkipVelopack) {
         -OutputPath (Join-Path $releases 'MediaFlow-Installer.exe') `
         -PackageVersion $packageVersion -SourceRevision $sourceRevision.Trim()
     if ($LASTEXITCODE -ne 0) { throw 'MediaFlow branded installer build failed.' }
+    $installerPath = Join-Path $releases 'MediaFlow-Installer.exe'
+    $installerChecksumPath = Join-Path $releases 'MediaFlow-Installer.exe.sha256'
+    $installerSha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    [System.IO.File]::WriteAllText(
+        $installerChecksumPath,
+        "$installerSha256  MediaFlow-Installer.exe`r`n",
+        [System.Text.UTF8Encoding]::new($false)
+    )
 }
 
 $stageSize = Get-ChildItem -LiteralPath $stage -Recurse -File | Measure-Object Length -Sum
