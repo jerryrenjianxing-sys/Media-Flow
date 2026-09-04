@@ -15,6 +15,14 @@ from virtual_devices import STANDARD_RECIPE, MuMuProvider, resolve_mumu_manager
 
 
 BACKUP_ROOT = DATA_ROOT / "virtual-device-backups"
+STANDARD_LOCKED_SETTINGS = {
+    "width": STANDARD_RECIPE["width"],
+    "height": STANDARD_RECIPE["height"],
+    "dpi": STANDARD_RECIPE["dpi"],
+    "root": STANDARD_RECIPE["root"],
+    "auto_rotate": STANDARD_RECIPE["auto_rotate"],
+}
+STANDARD_MUTABLE_SETTINGS = {"cpu", "memory_gb", "fps", "muted"}
 
 
 def _now_iso() -> str:
@@ -132,6 +140,72 @@ class VirtualDeviceInventory:
             raise RuntimeError(str(probe.get("message") or "MuMu不可用"))
         return manager, provider
 
+    @staticmethod
+    def _canonical_name(virtual_device: dict[str, Any]) -> str | None:
+        display_index = virtual_device.get("display_index")
+        if display_index is None:
+            return None
+        return f"MediaFlow虚拟机{int(display_index)}"
+
+    def _standard_assessment(
+        self,
+        virtual_device: dict[str, Any],
+        provider: MuMuProvider,
+    ) -> tuple[str, str | None, dict[str, str] | None]:
+        canonical_name = self._canonical_name(virtual_device)
+        if not canonical_name or str(virtual_device.get("name") or "") != canonical_name:
+            return "nonstandard", "名称不符合MediaFlow永久编号规则", None
+        recipe = virtual_device.get("recipe") or {}
+        provider_snapshot = virtual_device.get("provider_snapshot") or {}
+        android_version = (
+            recipe.get("android_version")
+            or provider_snapshot.get("android_version")
+        )
+        if self._normalized_version(android_version) != self._normalized_version(
+            STANDARD_RECIPE["android_version"]
+        ):
+            return "nonstandard", "Android镜像不是MediaFlow Android 15标准", None
+        try:
+            actual = provider.read_settings(str(virtual_device["provider_instance_id"]))
+            expected = {
+                provider.SETTING_KEYS[key]: provider._setting_value(key, value)
+                for key, value in STANDARD_LOCKED_SETTINGS.items()
+            }
+            mismatches = provider._settings_mismatches(actual, expected)
+        except (AttributeError, OSError, RuntimeError, ValueError) as exc:
+            return "requires_verification", f"暂时无法回读标准配置：{exc}", None
+        if mismatches:
+            return "nonstandard", "配置不符合MediaFlow标准：" + "；".join(mismatches[:5]), actual
+        return "standard", None, actual
+
+    @staticmethod
+    def _normalized_version(value: Any) -> tuple[int, ...] | None:
+        parts = str(value or "").strip().split(".")
+        if not parts or any(not part.isdigit() for part in parts):
+            return None
+        numbers = [int(part) for part in parts]
+        while len(numbers) > 1 and numbers[-1] == 0:
+            numbers.pop()
+        return tuple(numbers)
+
+    @staticmethod
+    def _management_status(virtual_device: dict[str, Any]) -> str:
+        if virtual_device.get("presence_status") == "identity_conflict":
+            return "identity_conflict"
+        if not virtual_device.get("managed"):
+            return "unmanaged"
+        return (
+            "managed_standard"
+            if virtual_device.get("standard_status") == "standard"
+            else "managed_nonstandard"
+        )
+
+    def _decorate(self, virtual_device: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **virtual_device,
+            "management_status": self._management_status(virtual_device),
+        }
+
     def reconcile(
         self,
         custom_path: str | None = None,
@@ -143,7 +217,7 @@ class VirtualDeviceInventory:
             self._save_unavailable("engine_unavailable", "MuMu管理命令不可用")
             return {
                 "provider": {"provider": "mumu", "status": "missing", "compatible": False},
-                "devices": self.store.list_managed_virtual_devices(),
+                "devices": [self._decorate(item) for item in self.store.list_managed_virtual_devices()],
                 "instances": [],
                 "unmanaged_instances": [],
                 "recipe": dict(STANDARD_RECIPE),
@@ -154,7 +228,7 @@ class VirtualDeviceInventory:
             self._save_unavailable("engine_unavailable", str(probe.get("message") or "MuMu不可用"))
             return {
                 "provider": probe,
-                "devices": self.store.list_managed_virtual_devices(),
+                "devices": [self._decorate(item) for item in self.store.list_managed_virtual_devices()],
                 "instances": [],
                 "unmanaged_instances": [],
                 "recipe": dict(STANDARD_RECIPE),
@@ -282,6 +356,18 @@ class VirtualDeviceInventory:
                 "last_connected_at": now if endpoint_online else stored.get("last_connected_at"),
                 "last_error": identity_error,
             }
+            standard_status, standard_message, actual_settings = self._standard_assessment(
+                payload, provider
+            )
+            payload["standard_status"] = standard_status
+            payload["standard_message"] = standard_message
+            if actual_settings is not None:
+                payload["provider_snapshot"] = {
+                    **instance,
+                    "settings": actual_settings,
+                }
+            if standard_status != "standard" and not identity_error:
+                payload["last_error"] = standard_message
             self.store.save_virtual_device(payload)
 
         for instance_id, stored in stored_by_instance.items():
@@ -298,7 +384,7 @@ class VirtualDeviceInventory:
             )
         return {
             "provider": probe,
-            "devices": self.store.list_managed_virtual_devices(),
+            "devices": [self._decorate(item) for item in self.store.list_managed_virtual_devices()],
             "instances": instances,
             "unmanaged_instances": unmanaged_instances,
             "recipe": dict(STANDARD_RECIPE),
@@ -380,6 +466,8 @@ class VirtualDeviceInventory:
                 "provider_install_id": manager_identity(manager),
                 "presence_status": "present",
                 "profile_status": "requires_verification",
+                "standard_status": "requires_verification",
+                "standard_message": "接管后必须应用标准配置并完成回读",
                 "managed": True,
                 "display_index": display_index,
                 "last_seen_at": _now_iso(),
@@ -744,6 +832,12 @@ class VirtualDeviceInventory:
         self.assert_idle(virtual_device, exclude_operation_id=operation_id)
         if virtual_device.get("state") != "stopped":
             raise ValueError("只有已停止的虚拟机可以修改资源配置")
+        forbidden = sorted(set(settings) - STANDARD_MUTABLE_SETTINGS)
+        if forbidden:
+            raise ValueError(
+                "分辨率、DPI、方向、Root、导航、输入方式和名称由MediaFlow锁定；"
+                "只能修改CPU、内存、帧率和静音"
+            )
         _, provider = self._provider(custom_path)
         self.store.update_virtual_operation(
             operation_id, status="running", stage="applying_settings", progress=35
@@ -752,31 +846,113 @@ class VirtualDeviceInventory:
             str(virtual_device["provider_instance_id"]), settings
         )
         recipe = {**(virtual_device.get("recipe") or {}), **settings}
-        display_sensitive = bool(
-            set(settings) & {"width", "height", "dpi", "auto_rotate"}
-        )
         updated = self.store.save_virtual_device(
             {
                 **virtual_device,
-                "name": str(settings.get("name") or virtual_device["name"]),
+                "name": virtual_device["name"],
                 "recipe": recipe,
                 "provider_snapshot": {
                     **(virtual_device.get("provider_snapshot") or {}),
                     "settings": actual,
                 },
-                "profile_status": (
-                    "requires_verification"
-                    if display_sensitive
-                    else virtual_device.get("profile_status")
-                ),
-                "last_error": (
-                    "显示配置已变化，需要重新复验"
-                    if display_sensitive
-                    else None
-                ),
+                "profile_status": virtual_device.get("profile_status"),
+                "last_error": None,
             }
         )
         return updated
+
+    def repair_standard(
+        self,
+        virtual_device_id: str,
+        operation_id: str,
+        *,
+        custom_path: str | None = None,
+    ) -> dict[str, Any]:
+        virtual_device = self.store.get_virtual_device(virtual_device_id)
+        self.assert_idle(virtual_device, exclude_operation_id=operation_id)
+        if virtual_device.get("state") != "stopped":
+            raise ValueError("修复标准配置前必须先停止虚拟机")
+        _, provider = self._provider(custom_path)
+        canonical_name = self._canonical_name(virtual_device)
+        if not canonical_name:
+            raise ValueError("虚拟机缺少MediaFlow永久编号")
+        self.store.update_virtual_operation(
+            operation_id, status="running", stage="applying_settings", progress=35
+        )
+        provider.rename(str(virtual_device["provider_instance_id"]), canonical_name)
+        actual = provider.apply_settings(
+            str(virtual_device["provider_instance_id"]), STANDARD_LOCKED_SETTINGS
+        )
+        return self.store.save_virtual_device(
+            {
+                **virtual_device,
+                "name": canonical_name,
+                "recipe": {**STANDARD_RECIPE, **{
+                    key: (virtual_device.get("recipe") or {}).get(key, STANDARD_RECIPE[key])
+                    for key in STANDARD_MUTABLE_SETTINGS
+                }},
+                "provider_snapshot": {
+                    **(virtual_device.get("provider_snapshot") or {}),
+                    "settings": actual,
+                },
+                "standard_status": "standard",
+                "standard_message": None,
+                "profile_status": "requires_verification",
+                "last_error": "标准配置已修复，需要重新复验",
+            }
+        )
+
+    def pool_plan(
+        self,
+        mode: str,
+        target_count: int,
+        *,
+        custom_path: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_mode = str(mode or "").strip().lower()
+        if normalized_mode not in {"supplement", "reset"}:
+            raise ValueError("标准池模式必须是补齐或重建")
+        if not 1 <= int(target_count) <= 50:
+            raise ValueError("标准池目标数量必须是1到50台")
+        result = self.reconcile(custom_path)
+        all_instances = list(result.get("instances") or [])
+        standard_devices = [
+            item
+            for item in result.get("devices") or []
+            if item.get("management_status") == "managed_standard"
+            and item.get("presence_status") == "present"
+        ]
+        deletion_items = [
+            {
+                "provider_instance_id": str(item.get("provider_instance_id") or ""),
+                "name": _instance_name(item),
+                "state": str(item.get("state") or "unknown"),
+                "managed": any(
+                    str(device.get("provider_instance_id")) == str(item.get("provider_instance_id"))
+                    for device in result.get("devices") or []
+                ),
+            }
+            for item in all_instances
+        ] if normalized_mode == "reset" else []
+        create_count = (
+            int(target_count)
+            if normalized_mode == "reset"
+            else max(0, int(target_count) - len(standard_devices))
+        )
+        return {
+            "mode": normalized_mode,
+            "target_count": int(target_count),
+            "standard_count": len(standard_devices),
+            "create_count": create_count,
+            "deletion_items": deletion_items,
+            "confirmation_phrase": (
+                f"删除全部并重建{int(target_count)}台"
+                if normalized_mode == "reset"
+                else None
+            ),
+            "no_backup": normalized_mode == "reset",
+            "provider": result.get("provider"),
+        }
 
     def clone(
         self,

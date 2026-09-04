@@ -57,7 +57,7 @@ test("renders the five-workspace shell and persisted presentation controls", asy
 
 test("task workbench follows the four decisions and server-owned planning contract", async () => {
   const page = await source("../app/page.tsx");
-  for (const text of ["从哪里开始", "关注什么", "如何运行", "在哪些设备运行"]) assert.match(page, new RegExp(text));
+  for (const text of ["从哪里开始", "关注什么", "如何运行", "在哪些标准虚拟机运行"]) assert.match(page, new RegExp(text));
   for (const mode of ["搜索＋主页交替", "主页不限主题", "主页主题筛选", "搜索主题视频"]) assert.match(page, new RegExp(mode));
   for (const field of ["search_segment_min", "search_segment_max", "home_segment_min", "home_segment_max"]) assert.match(page, new RegExp(field));
   assert.match(page, /推荐主模式/);
@@ -192,13 +192,14 @@ test("task details retain verified action and recovery evidence", async () => {
   assert.doesNotMatch(groups, /href=\{[^\n]*screenshot_path/);
 });
 
-test("device workspace uses the shared physical and virtual onboarding entry", async () => {
+test("device workspace defaults to the standard virtual pool and gates physical devices", async () => {
   const response = await render("/devices");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /设备与实时画面/);
-  assert.match(html, /添加设备/);
-  assert.match(html, /检索已有设备/);
+  assert.match(html, /标准虚拟机管理/);
+  assert.match(html, /添加虚拟机/);
+  assert.match(html, /刷新虚拟机/);
+  assert.match(html, /一键配置标准虚拟机池/);
   assert.match(html, /返回任务台/);
   const page = await source("../app/devices/page.tsx");
   assert.match(page, /\/api\/device-image\?device_id=/);
@@ -216,10 +217,14 @@ test("device workspace uses the shared physical and virtual onboarding entry", a
   assert.match(page, /安装完成，继续检查/);
   assert.match(page, /查看就绪检查/);
   assert.match(page, /诊断编号/);
+  assert.match(page, /启用真机支持/);
+  assert.match(page, /physical_devices_enabled/);
+  assert.match(page, /900×1600/);
+  assert.match(page, /删除全部并重建/);
   assert.doesNotMatch(page, /\/api\/run/);
 });
 
-test("shared add-device dialog exposes physical guidance and MuMu handoff", async () => {
+test("shared add-device dialog gates physical guidance and exposes MuMu handoff", async () => {
   const dialog = await source("../app/components/device-onboarding-dialog.tsx");
   for (const label of ["连接真机", "或者", "添加虚拟机", "前往MuMu官方下载", "复制Agent初始化文档"]) {
     assert.match(dialog, new RegExp(label));
@@ -227,6 +232,8 @@ test("shared add-device dialog exposes physical guidance and MuMu handoff", asyn
   assert.match(dialog, /\/api\/device-onboarding\/scan/);
   assert.match(dialog, /\/api\/virtual-devices/);
   assert.match(dialog, /不会自动开始正式任务/);
+  assert.match(dialog, /physicalEnabled &&/);
+  assert.match(dialog, /添加标准虚拟机/);
   assert.match(dialog, /waitForVirtualOperation\(API, result\.operation/);
   assert.match(dialog, /waitForInitialization\(API, deviceId/);
 });

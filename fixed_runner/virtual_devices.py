@@ -567,8 +567,12 @@ class MuMuProvider:
         already_running: bool = False,
     ) -> str:
         if not already_running:
-            self._run("control", "-v", str(instance_id), "launch", timeout=30)
+            self.launch(instance_id)
         return self.resolve_adb_endpoint(instance_id, timeout_seconds=timeout_seconds)
+
+    def launch(self, instance_id: str) -> CommandResult:
+        """Start exactly one instance without opening MuMu's management hall."""
+        return self._run("control", "-v", str(instance_id), "launch", timeout=30)
 
     def rename(self, instance_id: str, name: str) -> CommandResult:
         return self._run("rename", "-v", str(instance_id), "-n", name, timeout=30)

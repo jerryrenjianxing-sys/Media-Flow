@@ -85,8 +85,11 @@ type TaskIncident = {
   outcome: "recovered" | "skipped" | "device_fatal" | "model_failed" | "model_circuit_open";
   context?: { model_error?: { kind?: string; retryable?: boolean; status_code?: number | null } };
   has_screenshot: boolean;
+  has_ui_tree?: boolean;
+  analysis_status?: string;
+  analysis?: { summary?: string; suggested_rule?: string; auto_applicable?: false } | null;
 };
-type TaskDetailRound = TaskRound & { images: EvidenceImage[]; evidence_groups: EvidenceGroups; action_routing: ActionRouting; incidents: TaskIncident[] };
+type TaskDetailRound = TaskRound & { images: EvidenceImage[]; evidence_groups: EvidenceGroups; action_routing: ActionRouting; incidents: TaskIncident[]; incident_evidence_status?: "available" | "not_captured_historical" | "not_required" };
 type InspectionEntry = { display_name?: string; time?: string; preview?: string; summary?: string; unread_count?: number | null };
 type InspectionSection = { status: "available" | "unavailable" | "failed"; count?: number | null; unread_count?: number | null; entries?: InspectionEntry[]; truncated?: boolean; reason?: string | null; scroll_count?: number; complete?: boolean; baseline_status?: string; entry_badge?: { has_unread?: boolean; unread_count?: number | null; indicator?: "number" | "dot" | "none" } };
 type InspectionResult = { status?: "completed" | "degraded" | "failed"; restored?: boolean; failure_reason?: string | null; failure_class?: "recoverable_precondition"; expected_app_version?: string; actual_app_version?: string; expected_display_signature?: string; actual_display_signature?: string; side_effect_notice?: string; sections?: Record<string, InspectionSection> };
@@ -172,6 +175,8 @@ function InspectionCard({ inspection, onRecover, recoveryBusy }: { inspection: T
       return <section key={key} className={`inspection-section ${section?.status || "failed"}`}><div><strong>{label}</strong><b>{inspectionSectionStatusText(section)}</b></div><p>{countText}</p>{unreadText && <small>{unreadText}</small>}{Array.isArray(section?.entries) && section.entries.length > 0 && <ul>{section.entries.map((entry, index) => <li key={`${entry.display_name || "entry"}-${index}`}><b>{entry.display_name || "未显示名称"}</b><span>{entry.time || entry.summary || entry.preview || "当前列表可见"}</span></li>)}</ul>}{section?.truncated && <small>只显示本地有限摘要，其余已截断。</small>}</section>;
     })}</div>
     {result.status === "failed" && <div className="task-round-error"><strong>{result.failure_class === "recoverable_precondition" ? "可恢复前置条件" : "未完成原因"}</strong><p>{inspectionReasonText(result.failure_reason)}</p>{result.expected_app_version && <small>抖音 {result.expected_app_version} → {result.actual_app_version || "未知"}</small>}{result.failure_class === "recoverable_precondition" && !inspection.recovery && <button type="button" className="secondary" disabled={recoveryBusy} onClick={() => onRecover(inspection)}>{recoveryBusy ? "正在安排…" : "开始只读自动复验"}</button>}</div>}
+    {inspection.incidents.length > 0 && <div className="task-round-incidents"><strong>纠错记录与异常现场</strong>{inspection.incidents.map((incident) => <div key={incident.id}><span>{incident.stage} · {incidentStatusText(incident)}</span><p>{incident.error_type}: {incident.error_message}</p>{incident.analysis?.summary && <small>只读建议：{incident.analysis.summary}</small>}{incident.analysis?.suggested_rule && <small>候选规则：{incident.analysis.suggested_rule}</small>}{incident.has_ui_tree && <small>UI结构已配对保存</small>}{incident.has_screenshot && <a href={`${API}/api/incident-image?id=${encodeURIComponent(incident.id)}`} target="_blank" rel="noreferrer">查看异常现场</a>}</div>)}</div>}
+    {inspection.incident_evidence_status === "not_captured_historical" && <div className="task-round-error"><strong>历史证据说明</strong><p>该历史运行未保存异常现场；系统不会补造截图或UI结构。</p></div>}
   </article>;
 }
 

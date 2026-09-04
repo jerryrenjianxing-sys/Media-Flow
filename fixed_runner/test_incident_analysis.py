@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -83,6 +84,39 @@ class IncidentAnalysisTests(unittest.TestCase):
         self.assertEqual(payload["reasoning"], {"effort": "high", "exclude": True})
         self.assertEqual(payload["max_tokens"], 1600)
         self.assertNotIn("temperature", payload)
+
+    def test_payload_includes_bounded_ui_semantics_without_raw_message_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ui_tree = root / "incident.xml"
+            ui_tree.write_text(
+                '<hierarchy><node text="消息" clickable="true" />'
+                '<node text="敏感昵称和私信正文" class="android.widget.TextView" /></hierarchy>',
+                encoding="utf-8",
+            )
+            store = TaskStore(root / "tasks.db")
+            task_id = store.submit("healthcheck", "device-1")
+            incident_id = store.record_incident(
+                task_id=task_id,
+                device_id="device-1",
+                video_index=None,
+                stage="engagement_section",
+                error_type="EngagementSectionError",
+                error_message="private_message_rows_ambiguous",
+                outcome="skipped",
+                recovery_action="calibrate_engagement_section",
+                ui_tree_path=str(ui_tree),
+            )
+            payload = build_incident_analysis_payload(
+                store.get_incident(incident_id),
+                model="google/gemini-3.1-flash-lite",
+                base_url="https://openrouter.ai/api/v1",
+            )
+        metadata_text = payload["messages"][1]["content"][0]["text"]
+        metadata = json.loads(metadata_text.split("\n", 1)[1])
+        self.assertEqual(metadata["ui_semantics"]["known_markers"], ["消息"])
+        self.assertEqual(metadata["ui_semantics"]["clickable_count"], 1)
+        self.assertNotIn("敏感昵称", metadata_text)
 
 
 if __name__ == "__main__":

@@ -63,6 +63,10 @@ VIRTUAL_OPERATION_TIMEOUT_SECONDS = {
     "adopt": 300,
     "show_window": 60,
     "hide_window": 60,
+    "configure_pool": 7200,
+    "unmanaged_start": 300,
+    "unmanaged_stop": 180,
+    "unmanaged_delete": 600,
 }
 VIRTUAL_OPERATION_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 VIRTUAL_OPERATION_WAITING_SAFE_ACTIONS = {"stop", "show_window", "hide_window"}
@@ -96,6 +100,11 @@ VIRTUAL_OPERATION_STAGE_MESSAGES = {
     "ready": "虚拟机已就绪",
     "completed": "操作已完成",
     "failed": "操作失败",
+    "planning_pool": "正在核对标准虚拟机池",
+    "deleting_pool": "正在清理旧虚拟机",
+    "verifying_pool_empty": "正在确认旧虚拟机已清理",
+    "creating_pool": "正在创建标准虚拟机",
+    "pool_waiting_onboarding": "标准虚拟机已创建，正在等待逐台接入",
 }
 
 
@@ -397,6 +406,8 @@ class TaskStore:
                     provider_install_id TEXT NOT NULL DEFAULT '',
                     presence_status TEXT NOT NULL DEFAULT 'present',
                     profile_status TEXT NOT NULL DEFAULT 'requires_verification',
+                    standard_status TEXT NOT NULL DEFAULT 'requires_verification',
+                    standard_message TEXT,
                     managed INTEGER NOT NULL DEFAULT 1,
                     display_index INTEGER,
                     last_seen_at TEXT,
@@ -502,6 +513,8 @@ class TaskStore:
                 "provider_install_id": "TEXT NOT NULL DEFAULT ''",
                 "presence_status": "TEXT NOT NULL DEFAULT 'present'",
                 "profile_status": "TEXT NOT NULL DEFAULT 'requires_verification'",
+                "standard_status": "TEXT NOT NULL DEFAULT 'requires_verification'",
+                "standard_message": "TEXT",
                 "managed": "INTEGER NOT NULL DEFAULT 1",
                 "display_index": "INTEGER",
                 "last_seen_at": "TEXT",
@@ -863,14 +876,14 @@ class TaskStore:
             connection.execute(
                 "INSERT INTO virtual_devices "
                 "(id, provider, provider_instance_id, name, state, recipe_json, provider_snapshot_json, adb_endpoint, last_adb_endpoint, android_identity, "
-                "discovery_source, provider_install_id, presence_status, profile_status, managed, display_index, last_seen_at, last_connected_at, last_error, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "discovery_source, provider_install_id, presence_status, profile_status, standard_status, standard_message, managed, display_index, last_seen_at, last_connected_at, last_error, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(provider, provider_instance_id) DO UPDATE SET "
                 "name=excluded.name, state=excluded.state, recipe_json=excluded.recipe_json, "
                 "provider_snapshot_json=excluded.provider_snapshot_json, adb_endpoint=excluded.adb_endpoint, "
                 "last_adb_endpoint=excluded.last_adb_endpoint, android_identity=excluded.android_identity, "
                 "discovery_source=excluded.discovery_source, provider_install_id=excluded.provider_install_id, "
-                "presence_status=excluded.presence_status, profile_status=excluded.profile_status, managed=excluded.managed, display_index=excluded.display_index, "
+                "presence_status=excluded.presence_status, profile_status=excluded.profile_status, standard_status=excluded.standard_status, standard_message=excluded.standard_message, managed=excluded.managed, display_index=excluded.display_index, "
                 "last_seen_at=excluded.last_seen_at, last_connected_at=excluded.last_connected_at, "
                 "last_error=excluded.last_error, updated_at=excluded.updated_at",
                 (
@@ -881,6 +894,7 @@ class TaskStore:
                     payload.get("adb_endpoint"), payload.get("last_adb_endpoint"), payload.get("android_identity"),
                     discovery_source, payload.get("provider_install_id", ""),
                     payload.get("presence_status", "present"), payload.get("profile_status", "requires_verification"),
+                    payload.get("standard_status", "requires_verification"), payload.get("standard_message"),
                     1 if managed else 0, payload.get("display_index"),
                     payload.get("last_seen_at"), payload.get("last_connected_at"), payload.get("last_error"),
                     timestamp, timestamp,
@@ -1329,6 +1343,8 @@ class TaskStore:
             "provider_install_id": row["provider_install_id"],
             "presence_status": row["presence_status"],
             "profile_status": row["profile_status"],
+            "standard_status": row["standard_status"],
+            "standard_message": row["standard_message"],
             "managed": bool(row["managed"]),
             "display_index": row["display_index"],
             "last_seen_at": row["last_seen_at"],

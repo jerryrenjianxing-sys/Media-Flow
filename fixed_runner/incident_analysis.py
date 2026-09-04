@@ -4,6 +4,8 @@ import json
 import os
 import re
 import time
+import gzip
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -33,6 +35,18 @@ CLASSIFICATIONS = {
     "unknown",
 }
 RISKS = {"low", "medium", "high"}
+UI_CONTROL_MARKERS = (
+    "首页",
+    "推荐",
+    "消息",
+    "互动消息",
+    "赞与收藏",
+    "收到的评论",
+    "收到的弹幕",
+    "主页访客",
+    "登录",
+    "验证",
+)
 
 
 @dataclass(frozen=True)
@@ -110,6 +124,7 @@ def build_incident_analysis_payload(
         "outcome": incident.outcome,
         "recovery_action": incident.recovery_action,
         "context": incident.context,
+        "ui_semantics": _bounded_ui_semantics(incident.ui_tree_path),
     }
     content: list[dict[str, Any]] = [
         {
@@ -172,6 +187,47 @@ def build_incident_analysis_payload(
         payload["model"] = model
         payload["response_format"] = {"type": "json_object"}
     return payload
+
+
+def _bounded_ui_semantics(path_value: str | None) -> dict[str, Any] | None:
+    """Extract only structural counts and allowlisted control markers."""
+    if not path_value:
+        return None
+    path = Path(path_value)
+    if not path.is_file() or path.stat().st_size > 5_000_000:
+        return None
+    try:
+        if path.suffix.lower() == ".gz":
+            with gzip.open(path, "rt", encoding="utf-8") as handle:
+                source = handle.read(5_000_001)
+        else:
+            source = path.read_text(encoding="utf-8")[:5_000_001]
+        if len(source) > 5_000_000:
+            return None
+        root = ET.fromstring(source)
+    except (OSError, UnicodeError, ET.ParseError):
+        return None
+    nodes = list(root.iter())
+    searchable = "\n".join(
+        " ".join(
+            str(node.attrib.get(key) or "")
+            for key in ("text", "content-desc", "resource-id")
+        )
+        for node in nodes
+    )
+    return {
+        "node_count": len(nodes),
+        "clickable_count": sum(
+            1 for node in nodes if node.attrib.get("clickable") == "true"
+        ),
+        "editable_count": sum(
+            1
+            for node in nodes
+            if node.attrib.get("class") == "android.widget.EditText"
+            or node.attrib.get("editable") == "true"
+        ),
+        "known_markers": [marker for marker in UI_CONTROL_MARKERS if marker in searchable],
+    }
 
 
 def analyze_incident(

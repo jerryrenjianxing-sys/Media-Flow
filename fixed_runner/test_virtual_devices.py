@@ -19,6 +19,10 @@ from virtual_device_inventory import VirtualDeviceInventory
 
 
 class FakeMuMuProvider:
+    SETTING_KEYS = MuMuProvider.SETTING_KEYS
+    _setting_value = staticmethod(MuMuProvider._setting_value)
+    _settings_mismatches = staticmethod(MuMuProvider._settings_mismatches)
+
     def __init__(self, instances: list[dict] | None = None, endpoint: str = "127.0.0.1:16416") -> None:
         self.instances = instances or []
         self.endpoint = endpoint
@@ -30,6 +34,11 @@ class FakeMuMuProvider:
         self.cloned: list[str] = []
         self.clone_result = {"provider_instance_id": "3", "name": "克隆", "state": "stopped"}
         self.import_result = {"provider_instance_id": "4", "name": "恢复", "state": "stopped"}
+        self.settings = {
+            MuMuProvider.SETTING_KEYS[key]: MuMuProvider._setting_value(key, value)
+            for key, value in STANDARD_RECIPE.items()
+            if key in MuMuProvider.SETTING_KEYS
+        }
 
     def probe(self, _custom_path=None) -> dict:
         return {"provider": "mumu", "status": "ready", "compatible": True}
@@ -41,8 +50,17 @@ class FakeMuMuProvider:
         self.started.append(instance_id)
         return self.endpoint
 
+    def launch(self, instance_id: str) -> None:
+        self.started.append(instance_id)
+        for instance in self.instances:
+            if str(instance.get("provider_instance_id")) == str(instance_id):
+                instance["state"] = "running"
+
     def stop(self, instance_id: str):
         self.stopped.append(instance_id)
+        for instance in self.instances:
+            if str(instance.get("provider_instance_id")) == str(instance_id):
+                instance["state"] = "stopped"
         return None
 
     def rename(self, instance_id: str, name: str):
@@ -51,7 +69,14 @@ class FakeMuMuProvider:
 
     def apply_settings(self, instance_id: str, settings: dict):
         self.settings_applied.append((instance_id, dict(settings)))
-        return {MuMuProvider.SETTING_KEYS[key]: str(value).lower() for key, value in settings.items()}
+        self.settings.update({
+            MuMuProvider.SETTING_KEYS[key]: MuMuProvider._setting_value(key, value)
+            for key, value in settings.items()
+        })
+        return dict(self.settings)
+
+    def read_settings(self, _instance_id: str) -> dict:
+        return dict(self.settings)
 
     def clone(self, _instance_id: str) -> dict:
         self.cloned.append(_instance_id)
@@ -68,6 +93,10 @@ class FakeMuMuProvider:
 
     def delete(self, instance_id: str) -> None:
         self.deleted.append(instance_id)
+        self.instances = [
+            item for item in self.instances
+            if str(item.get("provider_instance_id")) != str(instance_id)
+        ]
 
 
 class VirtualDeviceProviderTests(unittest.TestCase):
@@ -225,7 +254,7 @@ class VirtualOperationStoreTests(unittest.TestCase):
                     "provider_instance_id": "0",
                     "name": "MediaFlow虚拟机1",
                     "state": "retired",
-                    "recipe": {},
+                    "recipe": dict(STANDARD_RECIPE),
                     "provider_snapshot": {},
                     "managed": True,
                     "display_index": 1,
@@ -426,6 +455,29 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
         self.assertEqual(second["state"], "stopped")
         self.assertTrue(second["managed"])
 
+    def test_reconcile_accepts_mumu_android_15_point_zero_as_standard_android_15(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            stored = self._save_stopped(store)
+            store.save_virtual_device({**stored, "recipe": {}})
+            provider = FakeMuMuProvider(
+                [
+                    {
+                        "provider_instance_id": "1",
+                        "name": "MediaFlow虚拟机1",
+                        "state": "stopped",
+                        "android_version": "15.0",
+                    }
+                ]
+            )
+            reconciled = VirtualDeviceInventory(
+                store,
+                manager_resolver=lambda _path: Path(directory) / "MuMuManager.exe",
+                provider_factory=lambda _manager: provider,
+            ).reconcile()["devices"][0]
+        self.assertEqual(reconciled["standard_status"], "standard")
+        self.assertIsNone(reconciled["standard_message"])
+
     def test_reconcile_never_replaces_the_allocated_name_with_provider_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
@@ -547,7 +599,7 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
                     "provider_instance_id": "1",
                     "name": "MediaFlow虚拟机1",
                     "state": "running",
-                    "recipe": {},
+                    "recipe": dict(STANDARD_RECIPE),
                     "provider_snapshot": {},
                     "adb_endpoint": None,
                     "last_adb_endpoint": "127.0.0.1:16416",
@@ -894,7 +946,7 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
         self.assertFalse(updated["retryable"])
         self.assertEqual(provider.cloned, [])
 
-    def test_stopped_settings_are_verified_and_display_change_requires_reverification(self) -> None:
+    def test_locked_display_settings_are_rejected_but_performance_is_editable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
             self._save_stopped(store)
@@ -902,13 +954,49 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
                 "settings", {"virtual_device_id": "virtual-1"}, idempotency_key="settings-1"
             )
             provider = FakeMuMuProvider()
-            updated = VirtualDeviceInventory(
+            inventory = VirtualDeviceInventory(
                 store,
                 manager_resolver=lambda _path: Path(directory) / "MuMuManager.exe",
                 provider_factory=lambda _manager: provider,
-            ).apply_settings("virtual-1", operation["id"], {"width": 1080})
-        self.assertEqual(provider.settings_applied, [("1", {"width": 1080})])
-        self.assertEqual(updated["profile_status"], "requires_verification")
+            )
+            with self.assertRaisesRegex(ValueError, "MediaFlow"):
+                inventory.apply_settings("virtual-1", operation["id"], {"width": 1080})
+            updated = inventory.apply_settings("virtual-1", operation["id"], {"cpu": 4})
+        self.assertEqual(provider.settings_applied, [("1", {"cpu": 4})])
+        self.assertEqual(updated["profile_status"], "ready")
+
+    def test_pool_plan_supplements_only_missing_standard_devices(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            self._save_stopped(store)
+            provider = FakeMuMuProvider(
+                [{"provider_instance_id": "1", "name": "MediaFlow虚拟机1", "state": "stopped"}]
+            )
+            plan = VirtualDeviceInventory(
+                store,
+                manager_resolver=lambda _path: Path(directory) / "MuMuManager.exe",
+                provider_factory=lambda _manager: provider,
+            ).pool_plan("supplement", 3)
+        self.assertEqual(plan["standard_count"], 1)
+        self.assertEqual(plan["create_count"], 2)
+        self.assertEqual(plan["deletion_items"], [])
+
+    def test_pool_reset_lists_every_provider_instance_and_requires_exact_phrase(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            self._save_stopped(store)
+            provider = FakeMuMuProvider([
+                {"provider_instance_id": "0", "name": "MuMu安卓设备", "state": "stopped"},
+                {"provider_instance_id": "1", "name": "MediaFlow虚拟机1", "state": "stopped"},
+            ])
+            plan = VirtualDeviceInventory(
+                store,
+                manager_resolver=lambda _path: Path(directory) / "MuMuManager.exe",
+                provider_factory=lambda _manager: provider,
+            ).pool_plan("reset", 2)
+        self.assertEqual(len(plan["deletion_items"]), 2)
+        self.assertEqual(plan["confirmation_phrase"], "删除全部并重建2台")
+        self.assertTrue(plan["no_backup"])
 
     def test_backup_persists_sha256_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

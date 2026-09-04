@@ -19,6 +19,7 @@ from douyin_uia2_runner import (
     find_control_bounds,
     foreground_package,
 )
+from incident_evidence import IncidentSink, record_incident_evidence
 
 
 MAX_SECTION_ITEMS = 100
@@ -711,6 +712,7 @@ class EngagementInspector:
         store=None,
         device_id: str = "",
         task_id: str = "",
+        incident_sink: IncidentSink | None = None,
     ) -> None:
         self._device = device
         self._recorder = recorder
@@ -718,6 +720,8 @@ class EngagementInspector:
         self._store = store
         self._device_id = device_id
         self._task_id = task_id
+        self._incident_sink = incident_sink
+        self._recorded_incidents: set[tuple[str, str]] = set()
         self._v2_artifacts: list[Path] = []
         self._v2_evidence: list[dict[str, Any]] = []
         self._v2_image_hashes: set[str] = set()
@@ -751,6 +755,9 @@ class EngagementInspector:
                 "entry_badge": badge,
             }
             self._emit_section("private_messages", sections["private_messages"])
+            self._record_section_failure(
+                "private_messages", sections["private_messages"], message_source, "v1"
+            )
 
             likes_source = self._open_control(message_source, "互动消息")
             if likes_source is None:
@@ -760,6 +767,12 @@ class EngagementInspector:
             else:
                 sections["received_likes"] = parse_received_likes(likes_source, rules)
             self._emit_section("received_likes", sections["received_likes"])
+            self._record_section_failure(
+                "received_likes",
+                sections["received_likes"],
+                likes_source or message_source,
+                "v1",
+            )
 
             current = self._dump()
             current_visitors = parse_profile_visitors(current, rules)
@@ -777,6 +790,12 @@ class EngagementInspector:
                         visitor_source, rules
                     )
             self._emit_section("profile_visitors", sections["profile_visitors"])
+            self._record_section_failure(
+                "profile_visitors",
+                sections["profile_visitors"],
+                visitor_source if "visitor_source" in locals() else current,
+                "v1",
+            )
         except V2PreconditionMismatch as exc:
             self._v2_precondition = exc.as_dict()
             fatal_reason = exc.code
@@ -785,6 +804,15 @@ class EngagementInspector:
                 workflow_version="v2",
                 **self._v2_precondition,
             )
+            self._record_failure(
+                stage="engagement_precondition",
+                reason=fatal_reason,
+                error_type=type(exc).__name__,
+                section="navigation",
+                workflow_version="v1",
+                outcome="skipped",
+                recovery_action="revalidate_inspection_profile",
+            )
         except Exception as exc:
             fatal_reason = self._public_reason(exc)
             self._recorder.emit(
@@ -792,8 +820,27 @@ class EngagementInspector:
                 reason=fatal_reason,
                 error_type=type(exc).__name__,
             )
+            self._record_failure(
+                stage="engagement_navigation",
+                reason=fatal_reason,
+                error_type=type(exc).__name__,
+                section="navigation",
+                workflow_version="v1",
+                outcome="device_fatal",
+                recovery_action="restore_home_then_revalidate",
+            )
 
         restored = self._restore_home()
+        if not restored:
+            self._record_failure(
+                stage="engagement_restore",
+                reason="home_restore_failed",
+                error_type="EngagementRestoreError",
+                section="restore",
+                workflow_version="v1",
+                outcome="device_fatal",
+                recovery_action="restore_home_then_revalidate",
+            )
         statuses = [section["status"] for section in sections.values()]
         if fatal_reason or not restored:
             status = "failed"
@@ -896,6 +943,12 @@ class EngagementInspector:
                     "complete": False,
                 }
             self._emit_section("received_likes", sections["received_likes"])
+            self._record_section_failure(
+                "received_likes",
+                sections["received_likes"],
+                likes_source if likes_supported else aggregate_source,
+                "v2",
+            )
 
             if comments_supported:
                 comments_badge, comments_source = self._select_v2_filter(
@@ -911,6 +964,9 @@ class EngagementInspector:
                     section="received_comments",
                     policy=rules,
                     max_scrolls=10,
+                )
+                self._record_section_failure(
+                    "received_comments", comments, None, "v2"
                 )
             else:
                 comments_badge = {"has_unread": False, "unread_count": None, "indicator": "none"}
@@ -929,6 +985,9 @@ class EngagementInspector:
                     section="received_danmaku",
                     policy=rules,
                     max_scrolls=10,
+                )
+                self._record_section_failure(
+                    "received_danmaku", danmaku, None, "v2"
                 )
             else:
                 danmaku_badge = {"has_unread": False, "unread_count": None, "indicator": "none"}
@@ -1046,6 +1105,9 @@ class EngagementInspector:
                 "alert_source": "visitor_baseline" if comparison == "changed" else None,
             }
             self._emit_section("profile_visitors", sections["profile_visitors"])
+            self._record_section_failure(
+                "profile_visitors", sections["profile_visitors"], None, "v2"
+            )
         except V2PreconditionMismatch as exc:
             self._v2_precondition = exc.as_dict()
             fatal_reason = exc.code
@@ -1053,6 +1115,16 @@ class EngagementInspector:
                 "engagement_inspection_precondition_changed",
                 workflow_version="v2",
                 **self._v2_precondition,
+            )
+            self._record_failure(
+                stage="engagement_precondition",
+                reason=fatal_reason,
+                error_type=type(exc).__name__,
+                section="navigation",
+                workflow_version="v2",
+                outcome="skipped",
+                recovery_action="revalidate_inspection_profile",
+                context=self._v2_precondition,
             )
         except _SectionHandled:
             pass
@@ -1064,8 +1136,27 @@ class EngagementInspector:
                 reason=fatal_reason,
                 error_type=type(exc).__name__,
             )
+            self._record_failure(
+                stage="engagement_navigation",
+                reason=fatal_reason,
+                error_type=type(exc).__name__,
+                section="navigation",
+                workflow_version="v2",
+                outcome="device_fatal",
+                recovery_action="restore_home_then_revalidate",
+            )
         finally:
             restored = self._restore_home()
+            if not restored:
+                self._record_failure(
+                    stage="engagement_restore",
+                    reason="home_restore_failed",
+                    error_type="EngagementRestoreError",
+                    section="restore",
+                    workflow_version="v2",
+                    outcome="device_fatal",
+                    recovery_action="restore_home_then_revalidate",
+                )
 
         statuses = [section["status"] for section in sections.values()]
         if fatal_reason or not restored:
@@ -1831,6 +1922,62 @@ class EngagementInspector:
             status=section.get("status"),
             count=section.get("count"),
             reason=section.get("reason"),
+        )
+
+    def _record_section_failure(
+        self,
+        name: str,
+        section: Mapping[str, Any],
+        source: str | None,
+        workflow_version: str,
+    ) -> None:
+        if section.get("status") != "failed":
+            return
+        reason = str(section.get("reason") or f"{name}_not_recognized")
+        self._record_failure(
+            stage="engagement_section",
+            reason=reason,
+            error_type="EngagementSectionError",
+            section=name,
+            workflow_version=workflow_version,
+            outcome="skipped",
+            recovery_action="calibrate_engagement_section",
+            source=source,
+        )
+
+    def _record_failure(
+        self,
+        *,
+        stage: str,
+        reason: str,
+        error_type: str,
+        section: str,
+        workflow_version: str,
+        outcome: str,
+        recovery_action: str,
+        source: str | None = None,
+        context: Mapping[str, Any] | None = None,
+    ) -> None:
+        key = (section, reason)
+        if key in self._recorded_incidents:
+            return
+        self._recorded_incidents.add(key)
+        record_incident_evidence(
+            device=self._device,
+            recorder=self._recorder,
+            incident_sink=self._incident_sink,
+            stage=stage,
+            error_type=error_type,
+            error_message=reason,
+            outcome=outcome,
+            recovery_action=recovery_action,
+            source=source,
+            context={
+                "task_type": "douyin_engagement_inspection",
+                "workflow_version": workflow_version,
+                "inspection_section": section,
+                **dict(context or {}),
+            },
         )
 
     @staticmethod

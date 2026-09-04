@@ -32,6 +32,7 @@ type Provider = {
 
 type Snapshot = {
   physical_devices: PhysicalDevice[];
+  device_preferences?: { physical_devices_enabled: boolean };
   virtual_devices: Array<{
     virtual_device_id: string;
     adb_endpoint?: string;
@@ -151,6 +152,7 @@ export function DeviceOnboardingDialog({
   }, [open, operation?.status, scan]);
 
   const physical = snapshot?.physical_devices || [];
+  const physicalEnabled = Boolean(snapshot?.device_preferences?.physical_devices_enabled);
   const provider = snapshot?.mumu.provider;
   const busy = loading || virtualOperationIsActive(operation);
   const operationLabel = operation ? virtualOperationStageLabel(operation.stage) : "";
@@ -271,11 +273,11 @@ export function DeviceOnboardingDialog({
   return <div className="device-onboarding-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="device-onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="add-device-title" onMouseDown={(event) => event.stopPropagation()}>
       <header className="device-onboarding-head">
-        <div><p className="section-index">ADD DEVICE</p><h2 id="add-device-title">添加设备</h2><p>接入完成只会加入{source === "workbench" ? "当前任务草稿" : "设备列表"}，不会自动开始正式任务。</p></div>
+        <div><p className="section-index">ADD DEVICE</p><h2 id="add-device-title">{physicalEnabled ? "添加设备" : "添加标准虚拟机"}</h2><p>接入完成只会加入{source === "workbench" ? "当前任务草稿" : "设备列表"}，不会自动开始正式任务。</p></div>
         <button type="button" className="icon-button" aria-label="关闭" onClick={onClose}>×</button>
       </header>
-      <div className="device-onboarding-choices">
-        <article className="device-onboarding-choice">
+      <div className={`device-onboarding-choices ${physicalEnabled ? "" : "virtual-only"}`}>
+        {physicalEnabled && <article className="device-onboarding-choice">
           <span className="device-choice-icon">机</span><h3>连接真机</h3>
           <p>插入USB、解锁屏幕，并在对应手机上确认USB调试授权。</p>
           <ol><li>打开开发者选项和USB调试</li><li>保持屏幕解锁并确认授权</li><li>选择设备开始只读初始化</li></ol>
@@ -289,8 +291,8 @@ export function DeviceOnboardingDialog({
             {!physical.length && <p className="onboarding-empty">暂未检测到真机。插好后点击重新检测。</p>}
           </div>
           <div className="device-choice-actions"><button type="button" className="primary" disabled={loading} onClick={() => void scan(mumuPath)}>{loading ? "检测中…" : "开始检测真机"}</button><a className="secondary" href="/devices/guide">查看接入教程</a><button type="button" className="text-button" onClick={() => void copyAgentDocument()}>复制Agent初始化文档</button></div>
-        </article>
-        <div className="device-choice-or" aria-hidden="true"><span>或者</span></div>
+        </article>}
+        {physicalEnabled && <div className="device-choice-or" aria-hidden="true"><span>或者</span></div>}
         <article className="device-onboarding-choice virtual">
           <span className="device-choice-icon">虚</span><h3>添加虚拟机</h3>
           <p>MuMu安装和抖音登录需要你确认；创建、配置、ADB连接、初始化与自检由MediaFlow接手。</p>

@@ -12,11 +12,14 @@ export type WorkbenchConfig = {
   comment_policy_enabled: boolean; comment_policy_prompt: string; max_gate_skips: number; seed: number; [key: string]: unknown;
 };
 export type RunDraft = { name: string; revision: number; config: WorkbenchConfig; updated_at: string };
-export type DeviceStatus = { device_id: string; state: string; friendly_name?: string; model?: string; profile_verified?: boolean; initialization_status?: string };
+export type DeviceStatus = { device_id: string; state: string; device_type?: "physical" | "virtual"; friendly_name?: string; model?: string; profile_verified?: boolean; initialization_status?: string };
 export type VirtualDevice = {
   virtual_device_id: string; provider: string; provider_instance_id: string; name: string; state: string;
   adb_endpoint?: string | null; last_adb_endpoint?: string | null; discovery_source?: string;
   presence_status?: string; profile_status?: string; task_ready?: boolean; last_connected_at?: string | null; last_error?: string | null;
+  standard_status?: "standard" | "nonstandard" | "requires_verification"; standard_message?: string | null;
+  management_status?: "managed_standard" | "managed_nonstandard" | "unmanaged" | "identity_conflict";
+  connected_device?: DeviceStatus | null;
   managed?: boolean; display_index?: number | null; connection_status?: string; can_start?: boolean;
   onboarding_status?: string; issue_status?: string; blocking_scope?: string; reason_code?: string;
   user_message?: string; suggested_action?: string; available_actions?: string[]; retryable?: boolean; diagnostic_id?: string;
@@ -33,6 +36,6 @@ export type WorkbenchPreview = {
   requires_confirmation: boolean; warnings: string[]; blockers: string[];
 };
 export type VirtualDeviceIssue = Pick<VirtualDevice, "virtual_device_id" | "name" | "issue_status" | "blocking_scope" | "reason_code" | "user_message" | "suggested_action" | "available_actions" | "retryable" | "diagnostic_id"> & { updated_at?: string };
-export type StatusPayload = { paused: boolean; devices: DeviceStatus[]; task_summary: Record<string, number>; stop_requested_device_ids: string[]; virtualization?: { devices: VirtualDevice[]; issues?: VirtualDeviceIssue[]; device_count: number; ready_count: number; stopped_count?: number } };
+export type StatusPayload = { paused: boolean; devices: DeviceStatus[]; device_preferences?: { physical_devices_enabled: boolean }; task_summary: Record<string, number>; stop_requested_device_ids: string[]; virtualization?: { devices: VirtualDevice[]; issues?: VirtualDeviceIssue[]; device_count: number; ready_count: number; stopped_count?: number } };
 export type Preset = { name: string; builtin: boolean; config: Partial<WorkbenchConfig> };
 export type ContentPlan = { plan_id: string; revision_id: string; revision_number: number; document: { name: string; themes: { name: string; enabled: boolean }[] } };

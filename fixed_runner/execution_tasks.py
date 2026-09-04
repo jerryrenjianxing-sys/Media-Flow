@@ -1722,6 +1722,7 @@ def execute_task(
             store=task_store,
             device_id=getattr(task, "device_id", ""),
             task_id=task.id,
+            incident_sink=incident_sink,
         ).inspect(task.payload)
     else:
         raise ValueError(f"Unsupported task type: {task.task_type}")

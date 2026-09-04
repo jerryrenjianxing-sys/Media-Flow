@@ -63,6 +63,12 @@ from product_version import product_version
 HOST = "127.0.0.1"
 PORT = 48138
 PROFILE_NAME = "default"
+DEVICE_PREFERENCES_PROFILE = "device-preferences"
+
+
+def device_preferences(store: TaskStore) -> dict[str, bool]:
+    saved = store.get_profile(DEVICE_PREFERENCES_PROFILE) or {}
+    return {"physical_devices_enabled": bool(saved.get("physical_devices_enabled", False))}
 DOUYIN_PACKAGE = "com.ss.android.ugc.aweme"
 _RUNTIME_SIGNATURE_CACHE: dict[str, tuple[float, dict[str, Any] | None]] = {}
 _RUNTIME_SIGNATURE_LOCK = threading.Lock()
@@ -445,9 +451,15 @@ def build_device_onboarding_payload(
         virtual_device["initialization"] = public_initialization(latest) if latest else None
         if latest and latest.status == "ready":
             virtual_device["state"] = "ready"
+    preferences = device_preferences(store)
     return {
         "status": "ready",
-        "physical_devices": [item for item in devices if item["device_type"] == "physical"],
+        "physical_devices": (
+            [item for item in devices if item["device_type"] == "physical"]
+            if preferences["physical_devices_enabled"]
+            else []
+        ),
+        "device_preferences": preferences,
         "virtual_devices": stored_virtual_devices,
         "mumu": virtual,
         "agent_guide_url": "/devices/guide",
@@ -584,7 +596,7 @@ def _run_virtual_device_create(
             raise RuntimeError(str(probe.get("message") or "MuMu不可用"))
         created = provider.create_from_recipe(name)
         created.update(
-            state="starting",
+            state="stopped",
             discovery_source="mediaflow_created",
             managed=True,
             display_index=int(
@@ -595,17 +607,24 @@ def _run_virtual_device_create(
             ],
             presence_status="present",
             profile_status="requires_verification",
+            standard_status="standard",
+            standard_message=None,
         )
         store.save_virtual_device(created)
-        store.update_virtual_operation(operation_id, status="running", stage="booting", progress=50, result=created)
-        adb_endpoint = provider.start_and_resolve_adb(created["provider_instance_id"])
-        created.update(
-            adb_endpoint=adb_endpoint,
-            last_adb_endpoint=adb_endpoint,
-            state="waiting_app",
-            last_connected_at=datetime.now().astimezone().isoformat(timespec="milliseconds"),
+        store.update_virtual_operation(
+            operation_id,
+            status="running",
+            stage="starting_mumu",
+            progress=45,
+            result=created,
         )
-        store.save_virtual_device(created)
+        created = VirtualDeviceInventory(store).start(
+            str(created["virtual_device_id"]),
+            operation_id,
+            custom_path=custom_path,
+        )
+        if created.get("state") == "degraded":
+            return
         _queue_virtual_initialization(store, operation_id, created)
     except Exception as exc:
         store.update_virtual_operation(
@@ -796,6 +815,10 @@ def _run_virtual_device_extended_operation(
                 str(virtual_device_id), operation_id, dict(request.get("settings") or {}),
                 custom_path=custom_path,
             )
+        elif action == "repair_standard":
+            result = inventory.repair_standard(
+                str(virtual_device_id), operation_id, custom_path=custom_path
+            )
         elif action == "clone":
             result = inventory.clone(
                 str(virtual_device_id), operation_id,
@@ -850,6 +873,221 @@ def _run_virtual_device_extended_operation(
             stage="failed",
             progress=100,
             error=f"{type(exc).__name__}: {exc}",
+        )
+
+
+def _run_virtual_device_pool(
+    store: TaskStore,
+    operation_id: str,
+    *,
+    custom_path: str | None = None,
+) -> None:
+    """Apply a confirmed pool plan without replaying ambiguous destructive steps."""
+    inventory = VirtualDeviceInventory(store)
+    try:
+        operation = store.get_virtual_operation(operation_id)
+        request = operation.get("request") or {}
+        mode = str(request.get("mode") or "")
+        target_count = int(request.get("target_count") or 0)
+        store.update_virtual_operation(
+            operation_id, status="running", stage="planning_pool", progress=5
+        )
+        plan = inventory.pool_plan(mode, target_count, custom_path=custom_path)
+        other_operations = [
+            item
+            for item in store.list_active_virtual_operations()
+            if item["id"] != operation_id
+        ]
+        if other_operations:
+            raise ValueError("还有虚拟机生命周期操作未结束，暂时不能配置标准池")
+        if mode == "reset":
+            if store.list_active_tasks():
+                raise ValueError("还有运行或排队任务，不能重建标准池")
+            if store.device_view_session_summary().get("active_control", 0):
+                raise ValueError("还有人工控制会话，不能重建标准池")
+            if str(request.get("confirmation") or "") != plan["confirmation_phrase"]:
+                raise ValueError("重建确认文字不匹配")
+            manager = resolve_mumu_manager(custom_path)
+            if manager is None:
+                raise ValueError("MuMu管理命令不可用")
+            provider = MuMuProvider(manager)
+            deletion_items = list(plan["deletion_items"])
+            managed_by_instance = {
+                str(item["provider_instance_id"]): item
+                for item in store.list_managed_virtual_devices()
+            }
+            for index, item in enumerate(deletion_items, start=1):
+                instance_id = str(item["provider_instance_id"])
+                store.update_virtual_operation(
+                    operation_id,
+                    status="running",
+                    stage="deleting_pool",
+                    progress=5 + int(40 * index / max(1, len(deletion_items))),
+                    result={"plan": plan, "deleted": index - 1},
+                )
+                if item.get("state") != "stopped":
+                    provider.stop(instance_id)
+                    refreshed = None
+                    stop_deadline = time.monotonic() + 45
+                    while time.monotonic() < stop_deadline:
+                        refreshed = next(
+                            (
+                                candidate
+                                for candidate in provider.list_instances()
+                                if str(candidate.get("provider_instance_id")) == instance_id
+                            ),
+                            None,
+                        )
+                        if refreshed is not None and str(refreshed.get("state") or "") == "stopped":
+                            break
+                        time.sleep(1)
+                    if refreshed is None or str(refreshed.get("state") or "") != "stopped":
+                        raise RuntimeError(
+                            f"{item['name']}停止结果无法确认；没有继续删除或创建"
+                        )
+                provider.delete(instance_id)
+                managed = managed_by_instance.get(instance_id)
+                if managed:
+                    store.save_virtual_device(
+                        {
+                            **managed,
+                            "state": "retired",
+                            "presence_status": "retired",
+                            "adb_endpoint": None,
+                            "last_error": None,
+                        }
+                    )
+            store.update_virtual_operation(
+                operation_id,
+                status="running",
+                stage="verifying_pool_empty",
+                progress=48,
+                result={"plan": plan, "deleted": len(deletion_items)},
+            )
+            remaining = provider.list_instances()
+            if remaining:
+                raise RuntimeError("MuMu仍返回未删除实例；没有开始创建标准虚拟机")
+
+        create_count = int(plan["create_count"])
+        child_operations: list[dict[str, Any]] = []
+        manager = resolve_mumu_manager(custom_path)
+        if manager is None:
+            raise ValueError("MuMu管理命令不可用")
+        install_id = manager_identity(manager)
+        for index in range(create_count):
+            progress = 50 + int(45 * index / max(1, create_count))
+            store.update_virtual_operation(
+                operation_id,
+                status="running",
+                stage="creating_pool",
+                progress=progress,
+                result={"plan": plan, "children": child_operations},
+            )
+            child, created = store.create_numbered_virtual_operation(
+                "create",
+                {
+                    "provider": "mumu",
+                    "provider_install_id": install_id,
+                    "mumu_path": custom_path,
+                    "pool_operation_id": operation_id,
+                },
+                idempotency_key=f"pool:{operation_id}:create:{index + 1}",
+            )
+            if created:
+                _run_virtual_device_create(
+                    store,
+                    child["id"],
+                    name=str(child["request"]["name"]),
+                    custom_path=custom_path,
+                )
+                child = store.get_virtual_operation(child["id"])
+            child_operations.append(child)
+            if child["status"] == "failed":
+                raise RuntimeError(
+                    f"{child['request'].get('name', '虚拟机')}创建失败：{child.get('error') or '未知错误'}"
+                )
+        store.update_virtual_operation(
+            operation_id,
+            status="completed",
+            stage="pool_waiting_onboarding" if child_operations else "completed",
+            progress=100,
+            result={"plan": plan, "children": child_operations},
+            error=None,
+            message=(
+                "标准虚拟机已创建；请按卡片提示完成登录、复验和零写入自检"
+                if child_operations
+                else "标准池数量已满足，没有创建或删除虚拟机"
+            ),
+        )
+    except Exception as exc:
+        store.update_virtual_operation(
+            operation_id,
+            status="failed",
+            stage="failed",
+            progress=100,
+            error=f"{type(exc).__name__}: {exc}",
+            message=str(exc),
+            retryable=False,
+        )
+
+
+def _run_unmanaged_virtual_operation(
+    store: TaskStore,
+    operation_id: str,
+    *,
+    provider_instance_id: str,
+    action: str,
+    custom_path: str | None = None,
+) -> None:
+    try:
+        manager = resolve_mumu_manager(custom_path)
+        if manager is None:
+            raise ValueError("MuMu管理命令不可用")
+        provider = MuMuProvider(manager)
+        candidates = {
+            str(item.get("provider_instance_id")): item
+            for item in VirtualDeviceInventory(store).unmanaged_candidates(custom_path)["instances"]
+        }
+        candidate = candidates.get(str(provider_instance_id))
+        if candidate is None:
+            raise ValueError("该实例已被接管或不再存在")
+        store.update_virtual_operation(
+            operation_id, status="running", stage=f"unmanaged_{action}", progress=30
+        )
+        if action == "start":
+            provider.launch(provider_instance_id)
+        elif action == "stop":
+            provider.stop(provider_instance_id)
+        elif action == "delete":
+            expected = str((store.get_virtual_operation(operation_id).get("request") or {}).get("confirmation_name") or "")
+            candidate_name = str(
+                candidate.get("name")
+                or candidate.get("player_name")
+                or f"MuMu 虚拟机 {provider_instance_id}"
+            ).strip()
+            if expected != candidate_name:
+                raise ValueError("请输入完整虚拟机名称以确认删除")
+            if str(candidate.get("state") or "") != "stopped":
+                raise ValueError("删除前必须先停止虚拟机")
+            provider.delete(provider_instance_id)
+        else:
+            raise ValueError("未托管虚拟机操作无效")
+        store.update_virtual_operation(
+            operation_id,
+            status="completed",
+            stage="completed",
+            progress=100,
+            result={"provider_instance_id": provider_instance_id, "action": action},
+            error=None,
+        )
+    except Exception as exc:
+        store.update_virtual_operation(
+            operation_id,
+            status="failed",
+            stage="failed",
+            progress=100,
+            error=f"{type(exc).__name__}: {exc}",
+            message=str(exc),
         )
 def active_tasks_for_display(
     tasks: list[Any], configured_device_ids: list[str]
@@ -1060,6 +1298,7 @@ def _virtual_device_guidance(
         marker in initialization_message for marker in ("登录", "验证", "安全确认")
     )
     initialization_running = initialization_status in {"queued", "running"}
+    standard = str(virtual_device.get("standard_status") or "requires_verification")
 
     if presence == "identity_conflict":
         reason_code = "android_identity_changed"
@@ -1075,6 +1314,20 @@ def _virtual_device_guidance(
         user_message = "MediaFlow暂时无法找到这台MuMu虚拟机"
         suggested_action = "检查MuMu安装后重新检索设备"
         available_actions = ["reconcile"]
+    elif standard != "standard":
+        reason_code = "virtual_device_nonstandard"
+        issue_status = "partially_available"
+        blocking_scope = "configuration"
+        user_message = str(
+            virtual_device.get("standard_message")
+            or "虚拟机配置不符合MediaFlow标准"
+        )
+        suggested_action = "停止虚拟机后恢复900×1600、320 DPI和标准显示配置"
+        available_actions = (
+            ["stop", "repair_standard"]
+            if state != "stopped"
+            else ["repair_standard"]
+        )
     elif state == "stopped":
         reason_code = "virtual_device_stopped"
         issue_status = "waiting_user"
@@ -1140,13 +1393,14 @@ def _virtual_device_guidance(
         _readiness_step("android", "Android系统", "ready" if connected else "waiting", "Android已响应" if connected else "等待Android和ADB响应"),
         _readiness_step("adb", "ADB连接", "ready" if connected else "blocked", "ADB已连接" if connected else "ADB尚未连接"),
         _readiness_step("identity", "设备身份", "ready" if connected and virtual_device.get("android_identity") else "waiting", "Android身份已核对" if connected and virtual_device.get("android_identity") else "等待核对Android身份"),
+        _readiness_step("standard", "标准配置", "ready" if standard == "standard" else "blocked", "900×1600、320 DPI及标准显示配置已确认" if standard == "standard" else str(virtual_device.get("standard_message") or "配置不符合MediaFlow标准")),
         _readiness_step("douyin", "抖音安装", "ready" if app_ready else "waiting", "抖音安装检查已通过" if app_ready else "等待安装抖音"),
         _readiness_step("login", "抖音登录", "ready" if login_ready else "waiting", "账号页面已通过检查" if login_ready else "初始化时检查登录状态"),
         _readiness_step("controls", "输入与控制", "ready" if profile_ready else "pending", "固定控件已验证" if profile_ready else "等待固定程序校准"),
         _readiness_step("profile", "设备档案", "ready" if profile_ready else "pending", "档案已复验" if profile_ready else "档案待复验"),
         _readiness_step("model", "视觉模型", "ready" if model_ready else "optional", "当前模型已鉴权并测试" if model_ready else "未配置或尚未测试；不影响ADB和看屏"),
         _readiness_step("smoke_test", "零写入自检", "ready" if profile_ready else "pending", "初始化验收已完成" if profile_ready else "档案复验后执行"),
-        _readiness_step("task", "加入任务", "ready" if profile_ready and connected else "blocked", "设备可加入任务" if profile_ready and connected else "等待连接与档案复验"),
+        _readiness_step("task", "加入任务", "ready" if profile_ready and connected and standard == "standard" else "blocked", "设备可加入任务" if profile_ready and connected and standard == "standard" else "等待标准配置、连接与档案复验"),
     ]
     diagnostic_seed = ":".join(
         (
@@ -1182,14 +1436,27 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
     managed_virtual_adb_ids = {
         str(item.get("adb_endpoint") or "")
         for item in managed_virtual_devices
-        if item.get("adb_endpoint")
+        if item.get("adb_endpoint") and item.get("standard_status") == "standard"
     }
+    preferences = device_preferences(store)
+    discovered_devices = device_statuses()
     devices = [
         item
-        for item in device_statuses()
-        if not _is_virtual_adb_id(str(item.get("device_id") or ""))
-        or str(item.get("device_id") or "") in managed_virtual_adb_ids
+        for item in discovered_devices
+        if (
+            str(item.get("device_id") or "") in managed_virtual_adb_ids
+            or (
+                preferences["physical_devices_enabled"]
+                and not _is_virtual_adb_id(str(item.get("device_id") or ""))
+            )
+        )
     ]
+    for device in devices:
+        device["device_type"] = (
+            "virtual"
+            if str(device.get("device_id") or "") in managed_virtual_adb_ids
+            else "physical"
+        )
     virtual_adb_ids = {
         str(item.get("adb_endpoint") or "")
         for item in managed_virtual_devices
@@ -1258,8 +1525,13 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
     virtual_devices = managed_virtual_devices
     online_device_ids = {
         str(item["device_id"])
-        for item in devices
+        for item in discovered_devices
         if item.get("state") == "device"
+    }
+    discovered_by_id = {
+        str(item.get("device_id") or ""): item
+        for item in discovered_devices
+        if item.get("device_id")
     }
     model_status = openrouter_key_status()
     for virtual_device in virtual_devices:
@@ -1274,7 +1546,15 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         virtual_device["task_ready"] = bool(
             adb_endpoint in online_device_ids
             and virtual_device.get("profile_status") == "ready"
+            and virtual_device.get("standard_status") == "standard"
             and virtual_device.get("presence_status") == "present"
+        )
+        virtual_device["management_status"] = (
+            "identity_conflict"
+            if virtual_device.get("presence_status") == "identity_conflict"
+            else "managed_standard"
+            if virtual_device.get("standard_status") == "standard"
+            else "managed_nonstandard"
         )
         virtual_device["active_operation"] = active_operation
         virtual_device["connection_status"] = (
@@ -1288,6 +1568,24 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
             if virtual_device.get("state") in {"running", "starting", "adb_ready"}
             else str(virtual_device.get("state") or "unavailable")
         )
+        connected_device = discovered_by_id.get(adb_endpoint)
+        if connected_device is not None and connected_device.get("state") == "device":
+            connected_payload = dict(connected_device)
+            connected_payload.update(
+                device_type="virtual",
+                friendly_name=virtual_device.get("name") or adb_endpoint,
+                initialization=_compact_initialization_payload(latest),
+                initialization_status=(
+                    latest.status
+                    if latest is not None
+                    else "legacy"
+                    if connected_device.get("profile_verified")
+                    else "uninitialized"
+                ),
+            )
+            virtual_device["connected_device"] = connected_payload
+        else:
+            virtual_device["connected_device"] = None
         virtual_device.update(
             _virtual_device_guidance(
                 virtual_device,
@@ -1312,6 +1610,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         "device_stream_host": RuntimeControl().status("device-stream-host"),
         "device_view_sessions": store.device_view_session_summary(),
         "paused": store.is_paused(),
+        "device_preferences": preferences,
         "stop_requested_device_ids": [
             device_id for device_id in config["device_ids"]
             if store.is_stop_requested(device_id)
@@ -1326,11 +1625,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         "task_groups": [_compact_group_payload(group) for group in task_groups],
         "task_group_total": store.task_group_count(),
         "incidents": [
-            {
-                key: value
-                for key, value in asdict(incident).items()
-                if key not in {"context", "analysis"}
-            }
+            _public_incident(incident, include_analysis=False)
             for incident in store.list_incidents(5)
         ],
         "incident_summary": incident_summary,
@@ -2269,10 +2564,7 @@ def task_detail_payload(store: TaskStore, task_ids: list[str]) -> dict[str, Any]
         task_id: [] for task_id in clean_ids
     }
     for incident in store.list_incidents_for_tasks(clean_ids):
-        item = asdict(incident)
-        item["has_screenshot"] = bool(incident.screenshot_path)
-        item.pop("screenshot_path", None)
-        item.pop("ui_tree_path", None)
+        item = _public_incident(incident)
         task = next((value for value in tasks if value.id == incident.task_id), None)
         if task is not None and task.task_type == "douyin_engagement_inspection":
             item = {
@@ -2288,6 +2580,9 @@ def task_detail_payload(store: TaskStore, task_ids: list[str]) -> dict[str, Any]
                     "outcome",
                     "recovery_action",
                     "has_screenshot",
+                    "has_ui_tree",
+                    "analysis_status",
+                    "analysis",
                     "created_at",
                 )
             }
@@ -2315,6 +2610,14 @@ def task_detail_payload(store: TaskStore, task_ids: list[str]) -> dict[str, Any]
                     else _task_action_routing(task)
                 ),
                 "incidents": incidents_by_task.get(task.id, []),
+                "incident_evidence_status": (
+                    "available"
+                    if incidents_by_task.get(task.id)
+                    else "not_captured_historical"
+                    if task.task_type == "douyin_engagement_inspection"
+                    and task.status in {"failed", "degraded"}
+                    else "not_required"
+                ),
             }
             for task in sorted(
                 tasks,
@@ -2331,6 +2634,19 @@ def task_detail_payload(store: TaskStore, task_ids: list[str]) -> dict[str, Any]
     }
 
 
+def _public_incident(incident, *, include_analysis: bool = True) -> dict[str, Any]:
+    """Return incident metadata without exposing local evidence paths or raw UI."""
+    item = asdict(incident)
+    item["has_screenshot"] = bool(incident.screenshot_path)
+    item["has_ui_tree"] = bool(incident.ui_tree_path)
+    item.pop("screenshot_path", None)
+    item.pop("ui_tree_path", None)
+    item.pop("context", None)
+    if not include_analysis:
+        item.pop("analysis", None)
+    return item
+
+
 def paged_records_payload(
     store: TaskStore, record_type: str, limit: int, offset: int
 ) -> dict[str, Any]:
@@ -2340,7 +2656,10 @@ def paged_records_payload(
         items = [asdict(task) for task in store.list(limit, offset)]
         total = sum(store.task_status_counts().values())
     elif record_type == "incidents":
-        items = [asdict(incident) for incident in store.list_incidents(limit, offset)]
+        items = [
+            _public_incident(incident)
+            for incident in store.list_incidents(limit, offset)
+        ]
         total = store.incident_statistics()["total"]
     else:
         raise ValueError("Unsupported record type")
@@ -2384,7 +2703,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:3000")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -2442,6 +2761,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/config":
             self._json(normalized_config(self.store.get_profile(PROFILE_NAME) or {}))
+            return
+        if path == "/api/device-preferences":
+            self._json(device_preferences(self.store))
             return
         if path == "/api/workbench/draft":
             fallback = normalized_config(self.store.get_profile(PROFILE_NAME) or {})
@@ -2897,6 +3219,9 @@ class Handler(BaseHTTPRequestHandler):
             virtual_adopt_match = re.fullmatch(
                 r"/api/virtual-devices/unmanaged/([^/]+)/adopt", path
             )
+            unmanaged_operation_match = re.fullmatch(
+                r"/api/virtual-devices/unmanaged/([^/]+)/operations", path
+            )
             create_view_session_match = re.fullmatch(
                 r"/api/devices/([^/]+)/view-sessions", path
             )
@@ -3040,6 +3365,22 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if create_initialization_match:
                 device_id = unquote(create_initialization_match.group(1))
+                managed_virtual = next(
+                    (
+                        item
+                        for item in self.store.list_managed_virtual_devices()
+                        if str(item.get("adb_endpoint") or "") == device_id
+                        and item.get("state") != "retired"
+                    ),
+                    None,
+                )
+                if _is_virtual_adb_id(device_id):
+                    if managed_virtual is None:
+                        raise ValueError("该虚拟机未由MediaFlow托管，不能开始初始化")
+                    if managed_virtual.get("standard_status") != "standard":
+                        raise ValueError("请先恢复900×1600标准配置，再开始初始化")
+                elif not device_preferences(self.store)["physical_devices_enabled"]:
+                    raise ValueError("真机支持尚未启用，请先在设备设置中开启")
                 states = adb_device_states()
                 if states.get(device_id) != "device":
                     raise ValueError("设备不在线、未授权或当前不可用")
@@ -3109,6 +3450,107 @@ class Handler(BaseHTTPRequestHandler):
                     custom_path, online_adb_ids=online_ids
                 )
                 self._json({"ok": True, **result})
+                return
+            if path == "/api/device-preferences":
+                enabled = body.get("physical_devices_enabled")
+                if not isinstance(enabled, bool):
+                    raise ValueError("真机支持开关格式无效")
+                preferences = {"physical_devices_enabled": enabled}
+                self.store.save_profile(DEVICE_PREFERENCES_PROFILE, preferences)
+                with _STATUS_PAYLOAD_LOCK:
+                    _STATUS_PAYLOAD_CACHE.clear()
+                self._json({"ok": True, **preferences})
+                return
+            if path == "/api/virtual-device-pools/preview":
+                target_count = int(body.get("target_count") or 0)
+                mode = str(body.get("mode") or "supplement")
+                custom_path = str(body.get("mumu_path") or "").strip() or None
+                plan = VirtualDeviceInventory(self.store).pool_plan(
+                    mode, target_count, custom_path=custom_path
+                )
+                self._json({"plan": plan})
+                return
+            if path == "/api/virtual-device-pools":
+                target_count = int(body.get("target_count") or 0)
+                mode = str(body.get("mode") or "supplement").strip().lower()
+                custom_path = str(body.get("mumu_path") or "").strip() or None
+                plan = VirtualDeviceInventory(self.store).pool_plan(
+                    mode, target_count, custom_path=custom_path
+                )
+                confirmation = str(body.get("confirmation") or "")
+                if mode == "reset" and confirmation != plan["confirmation_phrase"]:
+                    raise ValueError("请输入完整确认文字后再重建标准池")
+                key = str(body.get("idempotency_key") or "").strip()
+                if not key:
+                    raise ValueError("标准池操作缺少幂等键")
+                operation, created = self.store.create_virtual_operation(
+                    "configure_pool",
+                    {
+                        "mode": mode,
+                        "target_count": target_count,
+                        "confirmation": confirmation,
+                        "mumu_path": custom_path,
+                        "plan_snapshot": plan,
+                    },
+                    idempotency_key=key,
+                )
+                if created:
+                    threading.Thread(
+                        target=_run_virtual_device_pool,
+                        kwargs={
+                            "store": self.store,
+                            "operation_id": operation["id"],
+                            "custom_path": custom_path,
+                        },
+                        daemon=True,
+                        name=f"virtual-pool-{operation['id'][:8]}",
+                    ).start()
+                self._json(
+                    {"ok": True, "created": created, "operation": operation},
+                    202 if created else 200,
+                )
+                return
+            if unmanaged_operation_match:
+                provider_instance_id = unquote(unmanaged_operation_match.group(1))
+                action = str(body.get("action") or "").strip().lower()
+                if action not in {"start", "stop", "delete"}:
+                    raise ValueError("未托管虚拟机只支持启动、停止或删除")
+                key = str(body.get("idempotency_key") or "").strip()
+                if not key:
+                    raise ValueError("虚拟机操作缺少幂等键")
+                custom_path = str(body.get("mumu_path") or "").strip() or None
+                request = {
+                    "provider_instance_id": provider_instance_id,
+                    "action": action,
+                    "confirmation_name": str(body.get("confirmation_name") or ""),
+                    "mumu_path": custom_path,
+                }
+                if any(
+                    str((item.get("request") or {}).get("provider_instance_id") or "")
+                    == provider_instance_id
+                    for item in self.store.list_active_virtual_operations()
+                ):
+                    raise ValueError("该未托管虚拟机已有操作正在执行")
+                operation, created = self.store.create_virtual_operation(
+                    f"unmanaged_{action}", request, idempotency_key=key
+                )
+                if created:
+                    threading.Thread(
+                        target=_run_unmanaged_virtual_operation,
+                        kwargs={
+                            "store": self.store,
+                            "operation_id": operation["id"],
+                            "provider_instance_id": provider_instance_id,
+                            "action": action,
+                            "custom_path": custom_path,
+                        },
+                        daemon=True,
+                        name=f"unmanaged-{action}-{operation['id'][:8]}",
+                    ).start()
+                self._json(
+                    {"ok": True, "created": created, "operation": operation},
+                    202 if created else 200,
+                )
                 return
             if virtual_restore_match:
                 backup_id = unquote(virtual_restore_match.group(1))
@@ -3229,7 +3671,7 @@ class Handler(BaseHTTPRequestHandler):
             if virtual_lifecycle_match:
                 virtual_device_id = unquote(virtual_lifecycle_match.group(1))
                 action = str(body.get("action") or "").strip().lower()
-                if action not in {"start", "stop", "restart", "clone", "backup"}:
+                if action not in {"start", "stop", "restart", "clone", "backup", "repair_standard"}:
                     raise ValueError("虚拟机操作不受支持")
                 virtual_device = self.store.get_virtual_device(virtual_device_id)
                 # A stopped/failed setup can wait for human input indefinitely.
@@ -3405,6 +3847,20 @@ class Handler(BaseHTTPRequestHandler):
                     {"ok": True, "deleted": deleted, "presets": list_presets(self.store)}
                 )
                 return
+            if path == "/api/incidents/retry-analysis":
+                queued = self.store.retry_failed_incident_analyses()
+                self._json(
+                    {
+                        "ok": True,
+                        "queued": queued,
+                        "message": (
+                            f"已将 {queued} 条失败记录重新加入只读分析队列"
+                            if queued
+                            else "没有需要重试的纠错分析"
+                        ),
+                    }
+                )
+                return
             if path == "/api/model-key":
                 result = save_openrouter_key(body.get("api_key"))
                 self._json({"ok": bool(result.get("accepted")), **result})
@@ -3552,6 +4008,23 @@ class Handler(BaseHTTPRequestHandler):
                 config = normalized_config(
                     body if body else (self.store.get_profile(PROFILE_NAME) or {})
                 )
+                current_status = build_status_payload(self.store, config)
+                eligible_device_ids = {
+                    str(item.get("device_id") or "")
+                    for item in current_status.get("devices", [])
+                    if item.get("state") == "device"
+                }
+                ineligible = [
+                    device_id
+                    for device_id in config["device_ids"]
+                    if device_id not in eligible_device_ids
+                ]
+                if ineligible:
+                    raise ValueError(
+                        "以下设备当前不能执行任务："
+                        + "、".join(ineligible)
+                        + "。请使用已连接并达标的MediaFlow虚拟机；如需真机，请先在设备设置中启用真机支持。"
+                    )
                 controlled = [
                     device_id
                     for device_id in config["device_ids"]

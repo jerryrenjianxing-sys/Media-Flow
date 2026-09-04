@@ -51,13 +51,20 @@ def process_one(store: TaskStore) -> bool:
             analysis=analysis,
         )
     except Exception as exc:
+        no_key = isinstance(exc, RuntimeError) and "No cloud model API key" in str(exc)
         store.finish_incident_analysis(
             incident.id,
             status="failed",
             analysis={
-                "summary": "纠错分析暂时失败",
+                "summary": (
+                    "模型未配置；异常截图和UI结构已经保存。配置模型后可手动重试只读分析。"
+                    if no_key
+                    else "纠错分析暂时失败；异常证据已经保留，可稍后手动重试。"
+                ),
+                "error_code": "model_not_configured" if no_key else "analysis_failed",
                 "error_type": type(exc).__name__,
                 "error_message": str(exc)[:300],
+                "retryable": True,
                 "auto_applicable": False,
             },
         )

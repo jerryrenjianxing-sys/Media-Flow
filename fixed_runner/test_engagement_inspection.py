@@ -556,6 +556,45 @@ class EngagementInspectorTest(unittest.TestCase):
         self.assertEqual(result["sections"]["received_likes"]["status"], "available")
         self.assertEqual(result["sections"]["profile_visitors"]["status"], "available")
 
+    def test_single_section_failure_records_its_own_paired_evidence(self) -> None:
+        ambiguous_message = hierarchy(
+            node("消息"),
+            node(description="推荐卡片，小明"),
+            node(description="互动消息，按钮", bounds="[40,300][500,520]", clickable=True),
+            nav(),
+        )
+        incidents: list[dict] = []
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = V2Recorder(Path(directory))
+            result = EngagementInspector(
+                FakeDevice({"message": ambiguous_message}),
+                recorder,
+                sleep=lambda _value: None,
+                incident_sink=incidents.append,
+            ).inspect({"max_items_per_section": 20})
+        self.assertEqual(result["status"], "degraded")
+        self.assertEqual(len(incidents), 1)
+        self.assertEqual(incidents[0]["context"]["inspection_section"], "private_messages")
+        self.assertEqual(incidents[0]["error_message"], "private_message_rows_ambiguous")
+        self.assertTrue(incidents[0]["screenshot_path"])
+        self.assertTrue(incidents[0]["ui_tree_path"])
+
+    def test_multiple_section_failures_keep_separate_incident_contexts(self) -> None:
+        ambiguous_message = hierarchy(node("消息"), node(description="推荐卡片，小明"), nav())
+        incidents: list[dict] = []
+        with tempfile.TemporaryDirectory() as directory:
+            result = EngagementInspector(
+                FakeDevice({"message": ambiguous_message}),
+                V2Recorder(Path(directory)),
+                sleep=lambda _value: None,
+                incident_sink=incidents.append,
+            ).inspect({"max_items_per_section": 20})
+        self.assertEqual(result["status"], "degraded")
+        self.assertEqual(
+            {item["context"]["inspection_section"] for item in incidents},
+            {"private_messages", "received_likes"},
+        )
+
     def test_interaction_entry_can_be_clickable_without_button_word(self) -> None:
         message = hierarchy(
             node("消息"),
@@ -595,6 +634,18 @@ class EngagementInspectorTest(unittest.TestCase):
         )
         profile_clicks = [click for click in device.clicks if click[0] == "profile"]
         self.assertEqual(profile_clicks[0][2], 2300)
+
+    def test_explicitly_unavailable_visitor_entry_is_not_an_incident(self) -> None:
+        incidents: list[dict] = []
+        with tempfile.TemporaryDirectory() as directory:
+            result = EngagementInspector(
+                FakeDevice({"profile": hierarchy(node("我的主页"), nav())}),
+                V2Recorder(Path(directory)),
+                sleep=lambda _value: None,
+                incident_sink=incidents.append,
+            ).inspect({"max_items_per_section": 20})
+        self.assertEqual(result["sections"]["profile_visitors"]["status"], "unavailable")
+        self.assertEqual(incidents, [])
 
     def test_grey_visitor_entry_is_unavailable_and_not_clicked(self) -> None:
         profile = hierarchy(
@@ -694,8 +745,8 @@ class EngagementInspectorTest(unittest.TestCase):
         self.assertTrue(result["restored"])
 
     def test_login_page_returns_failed_without_unknown_clicks(self) -> None:
-        login = hierarchy(node("验证并登录"))
-        device = FakeDevice({"home": login})
+        unknown_page = hierarchy(node("隐私设置"))
+        device = FakeDevice({"home": unknown_page})
         result, _recorder = self.inspect(device)
         self.assertEqual(result["status"], "failed")
         self.assertEqual(device.clicks, [])
@@ -718,6 +769,34 @@ class EngagementInspectorTest(unittest.TestCase):
         result, _recorder = self.inspect(StuckDevice())
         self.assertEqual(result["status"], "failed")
         self.assertFalse(result["restored"])
+
+    def test_restore_failure_records_recovery_incident(self) -> None:
+        class StuckDevice(FakeDevice):
+            def click(self, x: int, y: int) -> None:
+                if self.state == "visitors" and y >= 2200 and x < 300:
+                    self.clicks.append((self.state, x, y))
+                    return
+                super().click(x, y)
+
+            def press(self, key: str) -> None:
+                return None
+
+            def app_start(self, package: str, stop=False, wait=True) -> None:
+                self.app_starts += 1
+                self.foreground = package
+
+        incidents: list[dict] = []
+        with tempfile.TemporaryDirectory() as directory:
+            result = EngagementInspector(
+                StuckDevice(),
+                V2Recorder(Path(directory)),
+                sleep=lambda _value: None,
+                incident_sink=incidents.append,
+            ).inspect({"max_items_per_section": 20})
+        self.assertEqual(result["status"], "failed")
+        restore = next(item for item in incidents if item["stage"] == "engagement_restore")
+        self.assertEqual(restore["error_message"], "home_restore_failed")
+        self.assertEqual(restore["context"]["inspection_section"], "restore")
 
     def test_result_contains_no_absolute_paths_and_no_model_events(self) -> None:
         result, recorder = self.inspect(FakeDevice())
@@ -749,6 +828,39 @@ class EngagementInspectorTest(unittest.TestCase):
         self.assertEqual(result["task_id"], "task-1")
         inspector.return_value.inspect.assert_called_once_with(task.payload)
         self.assertEqual(recorder.events[-1][0], "task_complete")
+
+    def test_fatal_inspection_records_paired_incident_evidence_before_restore(self) -> None:
+        unknown_page = hierarchy(node("隐私设置"))
+        device = FakeDevice({"home": unknown_page})
+        task = SimpleNamespace(
+            id="inspection-task-1",
+            device_id="device-1",
+            task_type="douyin_engagement_inspection",
+            payload={"max_items_per_section": 20},
+        )
+        incidents: list[dict] = []
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = V2Recorder(Path(directory))
+            result = execute_task(
+                device,
+                task,
+                recorder,
+                incident_sink=incidents.append,
+            )
+
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["failure_reason"], "main_feed_not_ready")
+            self.assertEqual(len(incidents), 2)
+            incident = next(
+                item for item in incidents if item["stage"] == "engagement_navigation"
+            )
+            self.assertEqual(incident["stage"], "engagement_navigation")
+            self.assertEqual(incident["error_message"], "main_feed_not_ready")
+            self.assertEqual(incident["context"]["workflow_version"], "v1")
+            self.assertEqual(incident["context"]["inspection_section"], "navigation")
+            self.assertTrue(Path(incident["screenshot_path"]).is_file())
+            self.assertTrue(Path(incident["ui_tree_path"]).is_file())
+            self.assertIn("隐私设置", Path(incident["ui_tree_path"]).read_text(encoding="utf-8"))
 
     def test_v2_runs_calibrated_path_and_keeps_deduplicated_local_evidence(self) -> None:
         def page(*items: str) -> str:

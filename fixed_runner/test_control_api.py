@@ -32,6 +32,7 @@ from control_api import (
     delete_preset,
     list_presets,
     normalized_config,
+    paged_records_payload,
     paged_task_groups_payload,
     save_preset,
     run_submission_payload,
@@ -51,6 +52,7 @@ from control_api import (
 )
 from control_config import build_scheduled_plan
 from task_store import TaskStore
+from virtual_devices import STANDARD_RECIPE
 
 
 class ControlApiTest(unittest.TestCase):
@@ -1137,6 +1139,12 @@ class ControlApiTest(unittest.TestCase):
                 with (
                     patch.object(Handler, "store", store),
                     patch(
+                        "control_api.device_statuses",
+                        return_value=[
+                            {"device_id": "isolated-device", "state": "device"}
+                        ],
+                    ),
+                    patch(
                         "control_api.ensure_workers",
                         return_value=[
                             {
@@ -1146,6 +1154,9 @@ class ControlApiTest(unittest.TestCase):
                         ],
                     ) as ensure,
                 ):
+                    store.save_profile(
+                        "device-preferences", {"physical_devices_enabled": True}
+                    )
                     thread.start()
                     submitted = request(
                         "/api/run",
@@ -1221,6 +1232,62 @@ class ControlApiTest(unittest.TestCase):
         self.assertEqual(len(detail["tasks"]), 1)
         self.assertEqual(len(detail["tasks"][0]["images"]), 2)
         self.assertEqual(len(detail["tasks"][0]["incidents"]), 1)
+
+    def test_public_incident_records_expose_capabilities_not_local_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = root / "incident.png"
+            tree = root / "incident.xml"
+            image.write_bytes(b"png")
+            tree.write_text("<hierarchy />", encoding="utf-8")
+            store = TaskStore(root / "tasks.db")
+            task_id = store.submit("healthcheck", "device-1")
+            store.record_incident(
+                task_id=task_id,
+                device_id="device-1",
+                video_index=None,
+                stage="engagement_navigation",
+                error_type="RuntimeError",
+                error_message="main_feed_not_ready",
+                outcome="device_fatal",
+                recovery_action="restore_home_then_revalidate",
+                screenshot_path=str(image),
+                ui_tree_path=str(tree),
+            )
+            item = paged_records_payload(store, "incidents", 10, 0)["items"][0]
+        self.assertTrue(item["has_screenshot"])
+        self.assertTrue(item["has_ui_tree"])
+        self.assertNotIn("screenshot_path", item)
+        self.assertNotIn("ui_tree_path", item)
+        self.assertNotIn(str(root), json.dumps(item, ensure_ascii=False))
+
+    def test_failed_historical_inspection_is_explicit_about_missing_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            task_id = store.submit(
+                "douyin_engagement_inspection",
+                "device-1",
+                {
+                    "submission_id": "submission-1",
+                    "max_items_per_section": 20,
+                    "inspection_workflow_version": "v1",
+                    "parent_task_id": "round-1",
+                    "inspection_index": 1,
+                    "after_round_index": 1,
+                    "inspection_every_rounds": 1,
+                },
+            )
+            store.claim_next("device-1", "worker-1")
+            store.finish(
+                task_id,
+                status="failed",
+                run_dir=None,
+                result={"status": "failed", "failure_reason": "main_feed_not_ready"},
+                error="main_feed_not_ready",
+            )
+            detail = task_detail_payload(store, [task_id])["tasks"][0]
+        self.assertEqual(detail["incidents"], [])
+        self.assertEqual(detail["incident_evidence_status"], "not_captured_historical")
 
     def test_task_detail_only_labels_registered_comment_screenshot_as_success(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1516,7 +1583,8 @@ class ControlApiTest(unittest.TestCase):
                 ],
             ), patch("control_api.worker_status", return_value={"running": False}):
                 payload = build_status_payload(store, normalized_config(DEFAULT_CONFIG))
-        self.assertEqual([item["device_id"] for item in payload["devices"]], ["physical-1"])
+        self.assertEqual([item["device_id"] for item in payload["devices"]], [])
+        self.assertFalse(payload["device_preferences"]["physical_devices_enabled"])
         self.assertEqual(payload["virtualization"]["devices"], [])
 
     def test_running_vm_without_active_operation_is_retryable_not_starting(self) -> None:
@@ -1536,6 +1604,8 @@ class ControlApiTest(unittest.TestCase):
                     "managed": True,
                     "display_index": 1,
                     "presence_status": "present",
+                    "standard_status": "standard",
+                    "recipe": dict(STANDARD_RECIPE),
                 }
             )
             with patch("control_api.device_statuses", return_value=[]):
@@ -1545,6 +1615,48 @@ class ControlApiTest(unittest.TestCase):
         self.assertEqual(device["connection_status"], "adb_unavailable")
         self.assertTrue(device["can_start"])
         self.assertEqual(payload["virtualization"]["starting_count"], 0)
+
+    def test_connected_nonstandard_vm_is_manageable_but_not_task_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            store.save_virtual_device(
+                {
+                    "virtual_device_id": "managed-nonstandard",
+                    "provider": "mumu",
+                    "provider_instance_id": "4",
+                    "name": "MediaFlow虚拟机4",
+                    "state": "running",
+                    "recipe": dict(STANDARD_RECIPE),
+                    "provider_snapshot": {"is_process_started": True},
+                    "adb_endpoint": "127.0.0.1:16512",
+                    "last_adb_endpoint": "127.0.0.1:16512",
+                    "discovery_source": "mediaflow_created",
+                    "managed": True,
+                    "display_index": 4,
+                    "presence_status": "present",
+                    "standard_status": "nonstandard",
+                    "standard_message": "分辨率不是900×1600",
+                }
+            )
+            with (
+                patch(
+                    "control_api.device_statuses",
+                    return_value=[
+                        {"device_id": "127.0.0.1:16512", "state": "device"}
+                    ],
+                ),
+                patch("control_api.openrouter_key_status", return_value={}),
+            ):
+                payload = build_status_payload(store, normalized_config(DEFAULT_CONFIG))
+        self.assertEqual(payload["devices"], [])
+        virtual_device = payload["virtualization"]["devices"][0]
+        self.assertEqual(virtual_device["management_status"], "managed_nonstandard")
+        self.assertFalse(virtual_device["task_ready"])
+        self.assertEqual(
+            virtual_device["connected_device"]["device_id"],
+            "127.0.0.1:16512",
+        )
+        self.assertIn("repair_standard", virtual_device["available_actions"])
 
     def test_virtual_device_issue_explains_missing_app_without_hiding_adb(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1565,6 +1677,7 @@ class ControlApiTest(unittest.TestCase):
                     "display_index": 1,
                     "presence_status": "present",
                     "profile_status": "requires_verification",
+                    "standard_status": "standard",
                 }
             )
             operation, _ = store.create_virtual_operation(
@@ -1608,6 +1721,9 @@ class ControlApiTest(unittest.TestCase):
     def test_status_payload_reports_runtime_stale_profile_without_rewriting_history(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
+            store.save_profile(
+                "device-preferences", {"physical_devices_enabled": True}
+            )
             record = store.create_initialization("device-1")
             store.claim_initialization("device-1", "worker-1")
             store.finish_initialization(

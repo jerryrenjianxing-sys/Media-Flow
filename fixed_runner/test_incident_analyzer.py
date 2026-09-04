@@ -101,6 +101,41 @@ class IncidentAnalyzerTests(unittest.TestCase):
             self.assertIn("provider unavailable", incident.analysis["error_message"])
             self.assertEqual(store.get(task_id).status, "pending")
 
+    def test_missing_model_key_preserves_evidence_and_waits_for_explicit_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            screenshot = root / "incident.png"
+            screenshot.write_bytes(b"png")
+            store = TaskStore(root / "tasks.db")
+            task_id = store.submit("healthcheck", "device-1")
+            incident_id = store.record_incident(
+                task_id=task_id,
+                device_id="device-1",
+                video_index=None,
+                stage="engagement_navigation",
+                error_type="RuntimeError",
+                error_message="main_feed_not_ready",
+                outcome="device_fatal",
+                recovery_action="restore_home_then_revalidate",
+                screenshot_path=str(screenshot),
+            )
+            with patch(
+                "incident_analyzer.analyze_incident",
+                side_effect=RuntimeError(
+                    "No cloud model API key is available in the environment"
+                ),
+            ):
+                self.assertTrue(process_one(store))
+                self.assertFalse(process_one(store))
+
+            incident = store.get_incident(incident_id)
+            self.assertEqual(incident.analysis_status, "failed")
+            self.assertEqual(incident.analysis["error_code"], "model_not_configured")
+            self.assertTrue(incident.analysis["retryable"])
+            self.assertEqual(incident.screenshot_path, str(screenshot))
+            self.assertEqual(store.retry_failed_incident_analyses(), 1)
+            self.assertEqual(store.get_incident(incident_id).analysis_status, "queued")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ from control_vision import VisionCandidateLocator
 from device_initialization import execute_initialization
 from engagement_recovery import recover_version_drift
 from engagement_inspection import EngagementInspector
+from incident_evidence import record_incident_evidence
 from execution_tasks import (
     ConsecutiveAnomalyLimitError,
     DeviceFatalError,
@@ -317,47 +318,30 @@ def run_worker(
                     completed += 1
                     break
             except Exception as exc:
-                task_screenshot_path: str | None = None
-                task_ui_tree_path: str | None = None
-                if not isinstance(exc, ModelChannelError):
-                    try:
-                        recorder.screenshot(device, "task-incident")
-                        task_screenshot_path = str(recorder.run_dir / "task-incident.png")
-                    except Exception:
-                        pass
-                    try:
-                        source = device.dump_hierarchy(compressed=True, pretty=False)
-                        ui_path = recorder.run_dir / "task-incident.xml"
-                        ui_path.write_text(str(source), encoding="utf-8")
-                        task_ui_tree_path = str(ui_path)
-                    except Exception:
-                        pass
                 device_healthy = device_preflight(device)
                 needs_reconnect = (
                     isinstance(exc, DeviceFatalError)
                     and not isinstance(exc, ModelChannelError)
                 ) or not device_healthy
                 if not isinstance(exc, (DeviceFatalError, ModelChannelError)):
-                    try:
-                        store.record_incident(
+                    record_incident_evidence(
+                        device=device,
+                        recorder=recorder,
+                        incident_sink=lambda incident: store.record_incident(
                             task_id=task.id,
                             device_id=task.device_id,
-                            video_index=None,
-                            stage="task",
-                            error_type=type(exc).__name__,
-                            error_message=str(exc),
-                            outcome="device_fatal" if needs_reconnect else "skipped",
-                            recovery_action="reconnect" if needs_reconnect else "device_still_healthy",
-                            screenshot_path=task_screenshot_path,
-                            ui_tree_path=task_ui_tree_path,
-                            context={"task_type": task.task_type},
-                        )
-                    except Exception as incident_error:
-                        recorder.emit(
-                            "incident_record_failed",
-                            error_type=type(incident_error).__name__,
-                            error=str(incident_error),
-                        )
+                            **incident,
+                        ),
+                        video_index=None,
+                        stage="task",
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                        outcome="device_fatal" if needs_reconnect else "skipped",
+                        recovery_action=(
+                            "reconnect" if needs_reconnect else "device_still_healthy"
+                        ),
+                        context={"task_type": task.task_type},
+                    )
                 store.finish(
                     task.id,
                     status="failed",
