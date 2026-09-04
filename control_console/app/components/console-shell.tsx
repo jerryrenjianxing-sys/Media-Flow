@@ -15,6 +15,7 @@ type StatusPayload = {
   devices?: { state?: string }[];
   task_summary?: { pending?: number; running?: number };
   product_version?: { channel?: "development" | "release"; display_version?: string };
+  virtualization?: { issues?: Array<{ diagnostic_id: string; issue_status: string }> };
 };
 
 export default function ConsoleShell({ children }: { children: React.ReactNode }) {
@@ -133,6 +134,7 @@ export default function ConsoleShell({ children }: { children: React.ReactNode }
   );
   const pending = status?.task_summary?.pending ?? 0;
   const running = status?.task_summary?.running ?? 0;
+  const issueCount = status?.virtualization?.issues?.length ?? 0;
   const currentRoute = workspaceRoutes.find((route) => route.href === pathname)
     ?? workspaceRoutes.find((route) => route.href !== "/" && pathname.startsWith(`${route.href}/`))
     ?? (pathname === "/interactions" ? workspaceRoutes.find((route) => route.href === "/records") : undefined)
@@ -191,8 +193,11 @@ export default function ConsoleShell({ children }: { children: React.ReactNode }
             <div><strong>{currentRoute.label}</strong><small>{currentRoute.description}</small></div>
           </div>
           <div className="workspace-topbar-actions" aria-live="polite">
-            <span className="workspace-status-pill"><i className={statusError ? "dot danger" : status && online ? "dot online" : "dot"}/>{deviceLabel}</span>
+            {statusError
+              ? <button type="button" className="workspace-status-pill issue danger" onClick={() => void refresh()}><i className="dot danger"/>本机服务未连接 · 点击重试</button>
+              : <span className="workspace-status-pill"><i className={status && online ? "dot online" : "dot"}/>{deviceLabel}</span>}
             <span className="workspace-status-pill queue">{queueLabel}</span>
+            {!statusError && issueCount > 0 && <a className="workspace-status-pill issue" href="/devices#device-issues"><i className="dot warning"/>{issueCount} 项问题待处理</a>}
             <span className="environment" title={status?.product_version?.channel === "development" ? "当前为源码开发运行，不是安装包" : "当前为安装发行版"}>{status?.product_version?.display_version ? `${status.product_version.channel === "development" ? "开发版" : "安装版"} ${status.product_version.display_version}` : "本机 · 内部安全测试"}</span>
             <button ref={themeButtonRef} type="button" className="theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}><span className={`theme-icon ${theme === "dark" ? "sun" : "moon"}`} aria-hidden="true"/></button>
           </div>

@@ -311,7 +311,7 @@ export default function DevicesPage() {
     <div className="page-shell">
       <section className="records-hero devices-hero"><div><p className="eyebrow">DEVICE WORKSPACE</p><h1>设备与实时画面</h1><p>检查设备健康、实时画面、初始化和档案；本轮任务设备统一在任务台选择。</p><p className="workspace-page-notice" role="status">{notice}</p></div><div className="hero-actions"><button type="button" className="primary" onClick={() => setAddDeviceOpen(true)}>添加设备</button><button type="button" className="secondary" disabled={scanning} onClick={() => void scan()}>{scanning ? "正在检索…" : "检索已有设备"}</button><button type="button" className="secondary" onClick={() => { setFailedImages(new Set()); setImageStamp(Date.now()); }}>刷新全部画面</button><a className="secondary" href="/">返回任务台</a></div></section>
 
-      {!!status?.virtualization?.issues?.length && <section className="panel device-issue-summary" aria-label="问题与待办">
+      {!!status?.virtualization?.issues?.length && <section id="device-issues" className="panel device-issue-summary" aria-label="问题与待办">
         <div><p className="section-index">ISSUES & NEXT STEPS</p><h2>问题与待办</h2><small>每一项都说明卡在哪里、为什么没有继续，以及下一步怎么处理。</small></div>
         <div>{status.virtualization.issues.map((issue) => <a key={`${issue.virtual_device_id}-${issue.reason_code}`} href={`#virtual-${issue.virtual_device_id}`} className={`device-issue ${issue.issue_status || "waiting_user"}`}><span><strong>{issue.name}</strong><em>{issue.user_message}</em></span><small>{issue.suggested_action}</small></a>)}</div>
       </section>}

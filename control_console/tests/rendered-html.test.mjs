@@ -50,6 +50,9 @@ test("renders the five-workspace shell and persisted presentation controls", asy
   assert.match(shell, /sidebarScrimRef\.current\?\.contains\(target\)/);
   assert.match(shell, /pathname === "\/interactions"/);
   assert.match(shell, /pathname === "\/governance"/);
+  assert.match(shell, /问题待处理/);
+  assert.match(shell, /本机服务未连接 · 点击重试/);
+  assert.match(shell, /\/devices#device-issues/);
 });
 
 test("task workbench follows the four decisions and server-owned planning contract", async () => {

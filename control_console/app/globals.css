@@ -60,6 +60,9 @@ a { color: inherit; }
 .workspace-topbar-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .workspace-status-pill { min-height: 30px; padding: 0 10px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--hairline); border-radius: 999px; color: var(--ink-muted); background: var(--surface-1); font-size: 12px; white-space: nowrap; }
 .workspace-status-pill.queue { color: var(--ink-subtle); background: transparent; }
+.workspace-status-pill.issue { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 34%, var(--hairline)); background: color-mix(in srgb, var(--warning) 7%, var(--surface-1)); font: inherit; text-decoration: none; cursor: pointer; }
+.workspace-status-pill.issue.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 34%, var(--hairline)); background: color-mix(in srgb, var(--danger) 7%, var(--surface-1)); }
+.workspace-status-pill .dot.warning { background: var(--warning); }
 .workspace-page-stage { min-width: 0; }
 .topbar { height: 64px; padding: 0 max(24px, calc((100vw - 1400px) / 2)); display: flex; align-items: center; gap: 30px; position: sticky; top: 0; z-index: 30; border-bottom: 1px solid var(--hairline); background: var(--topbar); backdrop-filter: blur(18px); }
 .brand { min-width: 190px; display: flex; align-items: center; gap: 11px; }
@@ -553,7 +556,7 @@ footer { padding: 24px 0 34px; display: flex; justify-content: space-between; co
 .device-page-actions .primary { flex: 1 1 100%; }
 .device-screen-section { min-width: 0; }
 .virtual-inventory-panel { margin-bottom: 18px; }
-.device-issue-summary { margin-bottom: 18px; display: grid; grid-template-columns: minmax(210px, .55fr) minmax(0, 1.45fr); gap: 22px; }
+.device-issue-summary { margin-bottom: 18px; display: grid; grid-template-columns: minmax(210px, .55fr) minmax(0, 1.45fr); gap: 22px; scroll-margin-top: 92px; }
 .device-issue-summary h2, .device-issue-summary p { margin: 0; }
 .device-issue-summary > div:first-child > small { display: block; margin-top: 6px; color: var(--ink-muted); font-size: 11px; line-height: 1.55; }
 .device-issue-summary > div:last-child { display: grid; gap: 8px; }
