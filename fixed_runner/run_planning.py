@@ -7,10 +7,11 @@ from typing import Any, Iterable, Mapping
 
 from control_config import (
     build_scheduled_plan,
+    inspection_profiles_for_store,
     normalized_config,
     submit_scheduled_rounds,
 )
-from device_profiles import load_device_profile_payloads
+from engagement_preflight import visitor_reminder_status
 from task_store import TaskStore
 
 
@@ -161,6 +162,24 @@ def build_preview(
     model_required = config.get("content_mode") != "general"
     if model_required and model_status is not None and not bool(model_status.get("model_ready")):
         blockers.append("当前内容模式需要视觉模型，请先完成 OpenRouter 鉴权并测试当前模型")
+    inspection_profiles = inspection_profiles_for_store(store)
+    if config.get("engagement_inspection_enabled") and eligible_ids:
+        unsupported = [
+            device_id
+            for device_id in eligible_ids
+            if not (
+                inspection_profiles.get(device_id, {}).get("device_kind") == "virtual"
+                and inspection_profiles.get(device_id, {}).get("managed_standard") is True
+            )
+        ]
+        if unsupported:
+            blockers.append("互动巡检 v3 仅支持已复验的900×1600标准虚拟机")
+        else:
+            reminder = visitor_reminder_status(store, eligible_ids)
+            if reminder["required"]:
+                blockers.append(
+                    "互动巡检前请确认：已在抖音隐私设置中打开访客记录"
+                )
 
     video_task_count = 0
     inspection_task_count = 0
@@ -168,14 +187,18 @@ def build_preview(
     content_revision = _content_plan_revision(store, config)
     if eligible_ids:
         executable = {**config, "device_ids": eligible_ids, "device_id": eligible_ids[0]}
-        plan = build_scheduled_plan(
-            executable,
-            plan_revision=content_revision,
-            inspection_profiles=load_device_profile_payloads(),
-        )
-        video_task_count = plan.video_task_count
-        inspection_task_count = plan.inspection_task_count
-        total_task_count = len(plan.tasks)
+        try:
+            plan = build_scheduled_plan(
+                executable,
+                plan_revision=content_revision,
+                inspection_profiles=inspection_profiles,
+            )
+        except ValueError as exc:
+            blockers.append(str(exc))
+        else:
+            video_task_count = plan.video_task_count
+            inspection_task_count = plan.inspection_task_count
+            total_task_count = len(plan.tasks)
 
     probabilities = _action_probabilities(config)
     write_actions: list[str] = []

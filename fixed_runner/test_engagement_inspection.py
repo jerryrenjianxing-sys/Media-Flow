@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import engagement_inspection as engagement_module  # noqa: E402
 from douyin_fixed_runner import DOUYIN_PACKAGE  # noqa: E402
 from engagement_inspection import (  # noqa: E402
     EngagementInspector,
@@ -163,7 +164,190 @@ class FakeDevice:
         self.state = "home"
 
 
+def v3_nav() -> str:
+    return "".join(
+        (
+            node(description="首页，按钮", bounds="[0,1450][220,1600]", clickable=True),
+            node(description="朋友，按钮", bounds="[220,1450][440,1600]", clickable=True),
+            node(description="消息，按钮", bounds="[650,1450][900,1600]", clickable=True),
+        )
+    )
+
+
+def v3_page(*children: str) -> str:
+    return hierarchy(*children, v3_nav())
+
+
+def v3_policy() -> dict[str, object]:
+    calibration = {
+        "profile_version": "mediaflow-engagement-v3-r1",
+        "device_id": "device-v3",
+        "app_version": "35.8.0",
+        "display_signature": "900x1600x320x0x100",
+        "passes": 3,
+        "later_passes_semantically_equal": True,
+        "controls": {"aggregate": ["互动消息"]},
+        "sections": {
+            "received_likes": True,
+            "comment_danmaku": True,
+            "profile_visitors": True,
+        },
+    }
+    return {
+        "inspection_workflow_version": "v3",
+        "expected_app_version": "35.8.0",
+        "expected_display_signature": "900x1600x320x0x100",
+        "inspection_calibration": calibration,
+        "max_items_per_section": 100,
+    }
+
+
+class V3Device(FakeDevice):
+    riskflow_display_signature = "900x1600x320x0x100"
+    info = {"displayRotation": 0}
+
+    def __init__(self, activity_pages: list[str]) -> None:
+        message = v3_page(
+            node("消息", bounds="[380,40][520,130]"),
+            (
+                f'<node package="{DOUYIN_PACKAGE}" visible-to-user="true" '
+                'text="" content-desc="" clickable="true" bounds="[0,280][900,450]">'
+                + node("互动消息", bounds="[120,320][350,390]")
+                + "</node>"
+            ),
+        )
+        super().__init__(
+            {
+                "home": v3_page(node("推荐", bounds="[380,40][520,130]")),
+                "message": message,
+                **{
+                    f"activity-{index}": page
+                    for index, page in enumerate(activity_pages)
+                },
+            }
+        )
+        self.activity_pages = activity_pages
+        self.activity_index = 0
+        self.swipes = 0
+
+    def window_size(self):
+        return 900, 1600
+
+    def app_info(self, _package):
+        return {"versionName": "35.8.0"}
+
+    def click(self, x: int, y: int) -> None:
+        self.clicks.append((self.state, x, y))
+        if y >= 1450 and x < 220:
+            self.state = "home"
+        elif y >= 1450 and x >= 650:
+            self.state = "message"
+        elif self.state == "message":
+            self.state = "activity-0"
+        else:
+            raise AssertionError(f"unexpected click from {self.state}: {(x, y)}")
+
+    def swipe(self, *_args, **_kwargs):
+        self.swipes += 1
+        if self.state.startswith("activity-"):
+            self.activity_index = min(
+                self.activity_index + 1, len(self.activity_pages) - 1
+            )
+            self.state = f"activity-{self.activity_index}"
+
+    def press(self, key: str) -> None:
+        if key != "back":
+            raise AssertionError(key)
+        self.state = "home"
+
+
 class EngagementParsingTest(unittest.TestCase):
+    def test_v3_finds_moved_interaction_entry_through_clickable_parent(self) -> None:
+        source = hierarchy(
+            node("消息"),
+            (
+                f'<node package="{DOUYIN_PACKAGE}" visible-to-user="true" '
+                'text="" content-desc="" clickable="true" bounds="[0,560][900,720]">'
+                + node("互动消息", bounds="[142,590][330,650]")
+                + "</node>"
+            ),
+        )
+        self.assertEqual(
+            engagement_module.find_unified_activity_entry_bounds(source, 900, 1600),
+            (0, 560, 900, 720),
+        )
+
+    def test_v3_rejects_ambiguous_interaction_entries(self) -> None:
+        source = hierarchy(
+            node(description="互动消息，按钮", bounds="[0,320][900,470]", clickable=True),
+            node(description="互动消息，按钮", bounds="[0,620][900,770]", clickable=True),
+        )
+        with self.assertRaisesRegex(ValueError, "interaction_entry_ambiguous"):
+            engagement_module.find_unified_activity_entry_bounds(source, 900, 1600)
+
+    def test_v3_read_boundary_keeps_only_unread_rows_above_it(self) -> None:
+        source = hierarchy(
+            node("互动消息", bounds="[300,60][600,150]"),
+            node(description="Alice赞了你的作品，2小时前", bounds="[30,220][870,360]", clickable=True),
+            node(description="Bob评论了你的作品，1小时前", bounds="[30,370][870,510]", clickable=True),
+            node(description="Carol近期访问过你的主页，30分钟前", bounds="[30,520][870,660]", clickable=True),
+            node("已读", bounds="[400,700][500,750]"),
+            node(description="Old赞了你的作品，昨天", bounds="[30,780][870,920]", clickable=True),
+        )
+        result = engagement_module.parse_unified_activity_viewport(
+            source, InspectionPolicy(), width=900, height=1600
+        )
+        self.assertEqual(result["boundary"], "read")
+        self.assertEqual(len(result["items"]), 3)
+        self.assertEqual(
+            result["categories"],
+            ["received_likes", "comment_danmaku", "profile_visitors"],
+        )
+        self.assertNotIn("Old", json.dumps(result, ensure_ascii=False))
+
+    def test_v3_explicit_empty_is_complete_without_private_message_guessing(self) -> None:
+        source = hierarchy(
+            node("互动消息", bounds="[300,60][600,150]"),
+            node("暂无互动消息", bounds="[300,600][600,680]"),
+        )
+        result = engagement_module.parse_unified_activity_viewport(
+            source, InspectionPolicy(), width=900, height=1600
+        )
+        self.assertEqual(result["boundary"], "explicit_empty")
+        self.assertEqual(result["items"], [])
+
+    def test_v3_groups_empty_clickable_parent_and_child_labels_into_one_item(self) -> None:
+        source = hierarchy(
+            node("互动消息", bounds="[300,60][600,150]"),
+            (
+                f'<node package="{DOUYIN_PACKAGE}" visible-to-user="true" '
+                'text="" content-desc="" clickable="true" bounds="[20,220][880,420]">'
+                + node("Alice", bounds="[130,245][330,300]")
+                + node("赞了你的作品", bounds="[130,305][620,360]")
+                + node("2小时前", bounds="[690,245][850,300]")
+                + "</node>"
+            ),
+            node("已读", bounds="[410,500][490,560]"),
+        )
+        result = engagement_module.parse_unified_activity_viewport(
+            source, InspectionPolicy(), width=900, height=1600
+        )
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["items"][0]["display_name"], "Alice")
+        self.assertEqual(result["items"][0]["category"], "received_likes")
+
+    def test_v3_visitor_disabled_prompt_is_not_counted_as_an_interaction(self) -> None:
+        source = hierarchy(
+            node("互动消息", bounds="[300,60][600,150]"),
+            node("访客记录已关闭", bounds="[180,250][720,330]"),
+            node("已读", bounds="[410,500][490,560]"),
+        )
+        result = engagement_module.parse_unified_activity_viewport(
+            source, InspectionPolicy(), width=900, height=1600
+        )
+        self.assertTrue(result["visitor_history_disabled"])
+        self.assertEqual(result["items"], [])
+
     def test_v2_readable_entries_keep_real_fields_and_omit_missing_ones(self) -> None:
         source = hierarchy(
             node(
@@ -518,6 +702,138 @@ class EngagementInspectorTest(unittest.TestCase):
             {"max_items_per_section": 20}
         )
         return result, recorder
+
+    def test_v3_first_screen_read_boundary_completes_without_scrolling(self) -> None:
+        activity = v3_page(
+            node("互动消息", bounds="[330,40][570,130]"),
+            node(
+                description="Alice赞了你的作品，2小时前",
+                bounds="[30,220][870,370]",
+                clickable=True,
+            ),
+            node("已读", bounds="[410,470][490,530]"),
+        )
+        device = V3Device([activity])
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            result = EngagementInspector(
+                device,
+                V2Recorder(Path(directory)),
+                sleep=lambda _value: None,
+                store=store,
+                device_id="device-v3",
+                task_id="inspection-v3-1",
+            ).inspect(v3_policy())
+
+        self.assertEqual(result["status"], "completed")
+        self.assertTrue(result["restored"])
+        self.assertEqual(result["unified_activity"]["read_boundary"], "first_screen")
+        self.assertEqual(result["unified_activity"]["unread_item_count"], 1)
+        self.assertEqual(result["unified_activity"]["scroll_count"], 0)
+        self.assertNotIn("private_messages", result["sections"])
+        self.assertEqual(device.swipes, 0)
+        self.assertEqual(device.state, "home")
+
+    def test_v3_scrolls_until_read_boundary_then_stops(self) -> None:
+        first = v3_page(
+            node("互动消息", bounds="[330,40][570,130]"),
+            node(
+                description="Alice收藏了你的作品，刚刚",
+                bounds="[30,220][870,370]",
+                clickable=True,
+            ),
+        )
+        second = v3_page(
+            node("互动消息", bounds="[330,40][570,130]"),
+            node(
+                description="Bob回复了你的评论，1小时前",
+                bounds="[30,220][870,370]",
+                clickable=True,
+            ),
+            node("已读", bounds="[410,470][490,530]"),
+        )
+        device = V3Device([first, second])
+        result = EngagementInspector(
+            device,
+            Recorder(),
+            sleep=lambda _value: None,
+            device_id="device-v3",
+        ).inspect(v3_policy())
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["unified_activity"]["read_boundary"], "after_scroll")
+        self.assertEqual(result["unified_activity"]["scroll_count"], 1)
+        self.assertEqual(result["unified_activity"]["unread_item_count"], 2)
+        self.assertEqual(device.swipes, 1)
+
+    def test_v3_stagnant_list_is_incomplete_and_never_reports_clear(self) -> None:
+        activity = v3_page(
+            node("互动消息", bounds="[330,40][570,130]"),
+            node(
+                description="Alice赞了你的作品，刚刚",
+                bounds="[30,220][870,370]",
+                clickable=True,
+            ),
+        )
+        incidents: list[dict] = []
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            result = EngagementInspector(
+                V3Device([activity]),
+                V2Recorder(Path(directory)),
+                sleep=lambda _value: None,
+                store=store,
+                device_id="device-v3",
+                task_id="inspection-v3-incomplete",
+                incident_sink=incidents.append,
+            ).inspect(v3_policy())
+            receipts = store.list_interaction_inspections()
+
+        self.assertEqual(result["status"], "failed")
+        self.assertFalse(result["unified_activity"]["complete"])
+        self.assertEqual(
+            result["unified_activity"]["reason_code"],
+            "list_boundary_not_confirmed",
+        )
+        self.assertFalse(result["inspection_metadata"].get("alert_created", False))
+        self.assertEqual(receipts["inspections"][0]["result_kind"], "incomplete")
+        self.assertTrue(
+            any(
+                item["context"]["inspection_section"] == "unified_activity"
+                for item in incidents
+            )
+        )
+
+    def test_v3_visitor_disabled_keeps_other_results_but_is_not_full_success(self) -> None:
+        activity = v3_page(
+            node("互动消息", bounds="[330,40][570,130]"),
+            node("访客记录已关闭", bounds="[180,170][720,230]"),
+            node(
+                description="Alice赞了你的作品，2小时前",
+                bounds="[30,260][870,410]",
+                clickable=True,
+            ),
+            node("已读", bounds="[410,500][490,560]"),
+        )
+        result = EngagementInspector(
+            V3Device([activity]),
+            Recorder(),
+            sleep=lambda _value: None,
+            device_id="device-v3",
+        ).inspect(v3_policy())
+
+        self.assertEqual(result["status"], "degraded")
+        self.assertTrue(result["unified_activity"]["complete"])
+        self.assertEqual(
+            result["unified_activity"]["reason_code"],
+            "visitor_history_disabled",
+        )
+        self.assertEqual(result["sections"]["received_likes"]["count"], 1)
+        self.assertEqual(result["sections"]["profile_visitors"]["status"], "unavailable")
+        self.assertEqual(
+            result["sections"]["profile_visitors"]["reason"],
+            "visitor_history_disabled",
+        )
 
     def test_complete_run_uses_only_allowlisted_navigation(self) -> None:
         device = FakeDevice()

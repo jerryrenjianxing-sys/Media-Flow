@@ -18,6 +18,7 @@ from control_api import (
     Handler,
     PRESET_FIELDS,
     _public_task,
+    _public_inspection_result,
     _public_interaction_alert,
     _public_interaction_inspection,
     _pid_is_running,
@@ -56,6 +57,48 @@ from virtual_devices import STANDARD_RECIPE
 
 
 class ControlApiTest(unittest.TestCase):
+    def test_public_v3_inspection_result_keeps_unified_contract(self) -> None:
+        payload = _public_inspection_result(
+            {
+                "status": "completed",
+                "workflow_version": "v3",
+                "restored": True,
+                "unified_activity": {
+                    "status": "available",
+                    "complete": True,
+                    "read_boundary": "first_screen",
+                    "scroll_count": 0,
+                    "unread_item_count": 1,
+                    "categories": ["received_likes"],
+                    "reason_code": None,
+                },
+                "sections": {
+                    "received_likes": {
+                        "status": "available",
+                        "count": 1,
+                        "complete": True,
+                        "entries": [
+                            {
+                                "category": "received_likes",
+                                "display_name": "测试用户",
+                                "content": "测试用户赞了你的作品",
+                            }
+                        ],
+                    }
+                },
+                "evidence": ["unified_activity:first-screen"],
+            }
+        )
+
+        self.assertEqual(payload["workflow_version"], "v3")
+        self.assertEqual(payload["unified_activity"]["read_boundary"], "first_screen")
+        self.assertEqual(payload["unified_activity"]["unread_item_count"], 1)
+        self.assertEqual(
+            payload["sections"]["received_likes"]["entries"][0]["content"],
+            "测试用户赞了你的作品",
+        )
+        self.assertNotIn("private_messages", payload["sections"])
+
     def test_status_snapshot_coalesces_duplicate_page_polling(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
@@ -198,6 +241,65 @@ class ControlApiTest(unittest.TestCase):
                     }
                 },
             )
+    def test_scheduled_plan_freezes_v3_for_standard_virtual_device(self) -> None:
+        config = {
+            **DEFAULT_CONFIG,
+            "device_ids": ["127.0.0.1:16416"],
+            "round_count": 5,
+            "engagement_inspection_enabled": True,
+            "inspection_every_rounds": 5,
+        }
+        calibration = {
+            "profile_version": "mediaflow-engagement-v3-r1",
+            "device_id": "127.0.0.1:16416",
+            "app_version": "35.8.0",
+            "display_signature": "900x1600x320x0x100",
+            "passes": 3,
+            "later_passes_semantically_equal": True,
+            "controls": {"aggregate": ["互动消息"]},
+        }
+        plan = build_scheduled_plan(
+            config,
+            inspection_profiles={
+                "127.0.0.1:16416": {
+                    "device_kind": "virtual",
+                    "managed_standard": True,
+                    "engagement_inspection_version": "v3",
+                    "engagement_app_version": "35.8.0",
+                    "engagement_display_signature": "900x1600x320x0x100",
+                    "engagement_calibration": calibration,
+                }
+            },
+        )
+        inspection = [
+            task for task in plan.tasks
+            if task.task_type == "douyin_engagement_inspection"
+        ][0]
+        self.assertEqual(inspection.payload["inspection_workflow_version"], "v3")
+        self.assertEqual(
+            inspection.payload["inspection_calibration"]["profile_version"],
+            "mediaflow-engagement-v3-r1",
+        )
+
+    def test_scheduled_plan_does_not_fall_back_for_standard_virtual_device(self) -> None:
+        config = {
+            **DEFAULT_CONFIG,
+            "device_ids": ["127.0.0.1:16416"],
+            "round_count": 5,
+            "engagement_inspection_enabled": True,
+            "inspection_every_rounds": 5,
+        }
+        with self.assertRaisesRegex(ValueError, "requires a stable v3 calibration"):
+            build_scheduled_plan(
+                config,
+                inspection_profiles={
+                    "127.0.0.1:16416": {
+                        "device_kind": "virtual",
+                        "managed_standard": True,
+                    }
+                },
+            )
+
     def test_background_onboarding_status_reads_supervisor_summary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             heartbeat = Path(directory) / "heartbeat.json"

@@ -1,6 +1,8 @@
 import tempfile
 import unittest
+import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from control_config import DEFAULT_CONFIG, build_scheduled_plan, normalized_config
 from run_planning import build_preview, get_or_create_draft, save_draft
@@ -157,6 +159,25 @@ class RunPlanningTests(unittest.TestCase):
             self.store, draft, devices=self.devices, paused=False
         )
         self.assertIsNone(preview["segments"])
+
+    def test_v3_preview_rejects_physical_or_nonstandard_device(self) -> None:
+        draft = get_or_create_draft(
+            self.store,
+            {**base_config(), "engagement_inspection_enabled": True},
+        )
+        with patch(
+            "run_planning.inspection_profiles_for_store",
+            return_value={"device-a": {"device_kind": "physical"}},
+        ):
+            preview = build_preview(
+                self.store, draft, devices=self.devices, paused=True
+            )
+
+        self.assertFalse(preview["ready"])
+        self.assertIn(
+            "互动巡检 v3 仅支持已复验的900×1600标准虚拟机",
+            preview["blockers"],
+        )
 
 
 if __name__ == "__main__":

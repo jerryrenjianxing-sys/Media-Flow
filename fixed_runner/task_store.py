@@ -1845,16 +1845,18 @@ class TaskStore:
             if "round_index" in payload:
                 raise ValueError("engagement inspection must not define round_index")
             workflow_version = payload.get("inspection_workflow_version", "v1")
-            if workflow_version not in {"v1", "v2"}:
-                raise ValueError("inspection_workflow_version must be v1 or v2")
-            if workflow_version == "v2":
+            if workflow_version not in {"v1", "v2", "v3"}:
+                raise ValueError("inspection_workflow_version must be v1, v2, or v3")
+            if workflow_version in {"v2", "v3"}:
                 for name in ("expected_app_version", "expected_display_signature"):
                     value = payload.get(name)
                     if not isinstance(value, str) or not value.strip() or len(value) > 80:
-                        raise ValueError(f"{name} is required for v2 inspection")
+                        raise ValueError(f"{name} is required for {workflow_version} inspection")
                 calibration = payload.get("inspection_calibration")
                 if not isinstance(calibration, dict):
-                    raise ValueError("inspection_calibration is required for v2 inspection")
+                    raise ValueError(
+                        f"inspection_calibration is required for {workflow_version} inspection"
+                    )
                 if calibration.get("device_id") != payload.get("device_id"):
                     raise ValueError("inspection_calibration device_id must match task device_id")
                 if (
@@ -1862,7 +1864,9 @@ class TaskStore:
                     or calibration.get("display_signature")
                     != payload.get("expected_display_signature")
                 ):
-                    raise ValueError("inspection_calibration signature must match frozen v2 fields")
+                    raise ValueError(
+                        f"inspection_calibration signature must match frozen {workflow_version} fields"
+                    )
                 if (
                     not isinstance(calibration.get("profile_version"), str)
                     or not calibration["profile_version"].strip()
@@ -1873,6 +1877,12 @@ class TaskStore:
                     or not isinstance(calibration.get("sections"), dict)
                 ):
                     raise ValueError("inspection_calibration must be a stable three-pass calibration")
+                if workflow_version == "v3":
+                    controls = calibration.get("controls") or {}
+                    if "互动消息" not in list(controls.get("aggregate") or []):
+                        raise ValueError(
+                            "v3 inspection calibration must identify the unified activity entry"
+                        )
 
     @staticmethod
     def _validate_comment_policy(payload: dict[str, Any]) -> None:
@@ -2007,6 +2017,28 @@ class TaskStore:
                 "UPDATE tasks SET status='cancelled', finished_at=?, "
                 "error='cancelled_by_user' WHERE " + " AND ".join(clauses),
                 parameters,
+            )
+        return cursor.rowcount
+
+    def cancel_superseded_virtual_engagement_inspections(self) -> int:
+        """Cancel queued v1/v2 VM inspections once v3 becomes authoritative.
+
+        Historical and running tasks are deliberately left untouched.  The
+        SQL is idempotent and only matches endpoints registered to managed
+        virtual devices, including their last known dynamic ADB address.
+        """
+        timestamp = now_iso()
+        with self.connection() as connection:
+            cursor = connection.execute(
+                "UPDATE tasks SET status='cancelled', finished_at=?, "
+                "error='superseded_by_engagement_inspection_v3' "
+                "WHERE status='pending' "
+                "AND task_type='douyin_engagement_inspection' "
+                "AND COALESCE(json_extract(payload_json, '$.inspection_workflow_version'), 'v1') IN ('v1','v2') "
+                "AND EXISTS (SELECT 1 FROM virtual_devices vd "
+                "WHERE vd.managed=1 AND vd.state!='retired' "
+                "AND (vd.adb_endpoint=tasks.device_id OR vd.last_adb_endpoint=tasks.device_id))",
+                (timestamp,),
             )
         return cursor.rowcount
 
@@ -2968,7 +3000,7 @@ class TaskStore:
             not inspection_id.strip()
             or not task_id.strip()
             or not device_id.strip()
-            or workflow_version not in {"v1", "v2"}
+            or workflow_version not in {"v1", "v2", "v3"}
             or status not in {"completed", "degraded", "failed"}
             or result_kind not in {"alert", "clear", "incomplete"}
             or not run_dir.strip()

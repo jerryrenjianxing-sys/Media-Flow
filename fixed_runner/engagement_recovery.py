@@ -36,8 +36,24 @@ def _semantic_signature(result: dict[str, Any]) -> str:
         for name, value in sorted(sections.items())
         if isinstance(value, dict)
     }
+    unified = result.get("unified_activity")
+    unified_values = (
+        {
+            "status": unified.get("status"),
+            "complete": bool(unified.get("complete")),
+            "read_boundary": unified.get("read_boundary"),
+            "reason_code": unified.get("reason_code"),
+        }
+        if isinstance(unified, dict)
+        else None
+    )
     return json.dumps(
-        {"status": result.get("status"), "restored": result.get("restored"), "sections": values},
+        {
+            "status": result.get("status"),
+            "restored": result.get("restored"),
+            "sections": values,
+            "unified_activity": unified_values,
+        },
         ensure_ascii=False,
         sort_keys=True,
     )
@@ -85,6 +101,9 @@ def recover_version_drift(
     )
 
     calibration = task.payload.get("inspection_calibration")
+    workflow_version = str(task.payload.get("inspection_workflow_version") or "v2")
+    if workflow_version not in {"v2", "v3"}:
+        workflow_version = "v2"
     if not isinstance(calibration, dict) or not actual["app_version"] or not actual["display_signature"]:
         return store.finish_task_recovery(
             recovery["id"],
@@ -153,7 +172,7 @@ def recover_version_drift(
         timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
         new_calibration = {
             **provisional_calibration,
-            "profile_version": f"{calibration.get('profile_version', 'douyin-engagement-v2')}-auto-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            "profile_version": f"{calibration.get('profile_version', f'douyin-engagement-{workflow_version}')}-auto-{datetime.now().strftime('%Y%m%d%H%M%S')}",
             "revalidated_at": timestamp,
             "revalidation_origin_task_id": task.id,
         }
@@ -162,6 +181,7 @@ def recover_version_drift(
         profile.update(
             engagement_app_version=actual["app_version"],
             engagement_display_signature=actual["display_signature"],
+            engagement_inspection_version=workflow_version,
             engagement_calibration=new_calibration,
         )
         upsert_device_profile(task.device_id, profile, profile_path)

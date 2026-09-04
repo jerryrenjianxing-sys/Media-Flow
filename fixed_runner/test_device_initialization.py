@@ -257,6 +257,44 @@ class DeviceInitializationTest(unittest.TestCase):
             self.assertEqual(store.get_initialization(record.id).status, "failed")
             self.assertEqual(device.current_ime(), "original/.Ime")
 
+    def test_virtual_onboarding_saves_verified_v3_inspection_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = TaskStore(root / "tasks.db")
+            record = store.create_initialization(
+                "device-1", options={"auto_onboarding": True}
+            )
+            claimed = store.claim_initialization("device-1", "worker-1")
+            assert claimed is not None
+            calibration = {
+                "profile_version": "mediaflow-engagement-v3-r1",
+                "device_id": "device-1",
+                "app_version": "1.0",
+                "display_signature": "1080x2400x420x0xgesture",
+                "passes": 3,
+                "later_passes_semantically_equal": True,
+                "controls": {"aggregate": ["互动消息"]},
+            }
+            with patch("device_initialization.upsert_device_profile") as save_device, patch(
+                "device_initialization.save_platform_profile"
+            ):
+                result = execute_initialization(
+                    FakeDevice(),
+                    claimed,
+                    store,
+                    artifacts_root=root / "artifacts",
+                    adapter_factory=FakeAdapter,
+                    engagement_calibrator=lambda **_kwargs: calibration,
+                    vision_locator=None,
+                )
+            self.assertEqual(result["status"], "ready")
+            profile = save_device.call_args.args[1]
+            self.assertEqual(profile["engagement_inspection_version"], "v3")
+            self.assertEqual(profile["engagement_calibration"], calibration)
+            self.assertEqual(
+                store.get_initialization(record.id).stage, "ready"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

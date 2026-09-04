@@ -92,6 +92,29 @@ PRESET_FIELDS = (
     "max_gate_skips",
 )
 
+
+def inspection_profiles_for_store(store: TaskStore) -> dict[str, dict[str, Any]]:
+    """Bind local inspection profiles to the authoritative VM inventory.
+
+    ADB endpoints are runtime addresses.  The inventory is the source of truth
+    for whether a selected endpoint belongs to a managed standard VM, so task
+    planning cannot silently treat a standard VM as a legacy v1 device.
+    """
+    profiles = load_device_profile_payloads()
+    for virtual_device in store.list_managed_virtual_devices():
+        endpoint = str(virtual_device.get("adb_endpoint") or "").strip()
+        if not endpoint:
+            continue
+        current = dict(profiles.get(endpoint) or {})
+        current.update(
+            device_kind="virtual",
+            managed_standard=(virtual_device.get("standard_status") == "standard"),
+            virtual_device_id=str(virtual_device.get("virtual_device_id") or ""),
+            android_identity=str(virtual_device.get("android_identity") or ""),
+        )
+        profiles[endpoint] = current
+    return profiles
+
 BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
     "保守预演": {
         "video_count": 10,
@@ -467,26 +490,47 @@ def build_scheduled_plan(
                     "max_items_per_section": 20,
                 }
                 inspection_profile = inspection_profiles.get(device_id, {})
+                standard_virtual = (
+                    inspection_profile.get("device_kind") == "virtual"
+                    and inspection_profile.get("managed_standard") is True
+                )
                 workflow = str(
-                    inspection_profile.get("engagement_inspection_version") or "v1"
+                    inspection_profile.get("engagement_inspection_version")
+                    or ("v3" if standard_virtual else "v1")
                 )
                 inspection_config["inspection_workflow_version"] = (
-                    workflow if workflow in {"v1", "v2"} else "v1"
+                    workflow if workflow in {"v1", "v2", "v3"} else "v1"
                 )
+                if standard_virtual and inspection_config["inspection_workflow_version"] != "v3":
+                    raise ValueError(
+                        f"device {device_id} requires a stable v3 calibration"
+                    )
                 inspection_config["max_items_per_section"] = (
                     100
-                    if inspection_config["inspection_workflow_version"] == "v2"
+                    if inspection_config["inspection_workflow_version"] in {"v2", "v3"}
                     else 20
                 )
-                if inspection_config["inspection_workflow_version"] == "v2":
+                if inspection_config["inspection_workflow_version"] in {"v2", "v3"}:
+                    workflow_version = inspection_config["inspection_workflow_version"]
                     calibration = inspection_profile.get("engagement_calibration")
                     if (
                         not isinstance(calibration, Mapping)
                         or int(calibration.get("passes") or 0) < 3
                         or calibration.get("later_passes_semantically_equal") is not True
+                        or (
+                            workflow_version == "v3"
+                            and "互动消息"
+                            not in list(
+                                (calibration.get("controls") or {}).get("aggregate")
+                                if isinstance(calibration.get("controls"), Mapping)
+                                else []
+                            )
+                        )
                     ):
                         raise ValueError(
-                            f"device {device_id} requires a stable three-pass calibration for v2"
+                            f"device {device_id} requires a stable v3 calibration"
+                            if workflow_version == "v3"
+                            else f"device {device_id} requires a stable three-pass calibration for v2"
                         )
                     inspection_config["expected_app_version"] = str(
                         inspection_profile.get("engagement_app_version") or ""
@@ -499,13 +543,21 @@ def build_scheduled_plan(
                     )
                     calibration_snapshot.setdefault(
                         "sections",
-                        {
-                            "private_messages": True,
-                            "received_likes": True,
-                            "received_comments": True,
-                            "received_danmaku": True,
-                            "profile_visitors": True,
-                        },
+                        (
+                            {
+                                "received_likes": True,
+                                "comment_danmaku": True,
+                                "profile_visitors": True,
+                            }
+                            if workflow_version == "v3"
+                            else {
+                                "private_messages": True,
+                                "received_likes": True,
+                                "received_comments": True,
+                                "received_danmaku": True,
+                                "profile_visitors": True,
+                            }
+                        ),
                     )
                     inspection_config["inspection_calibration"] = calibration_snapshot
                 inspection_config.pop("round_index", None)
@@ -559,7 +611,7 @@ def submit_scheduled_rounds(store: TaskStore, config: dict[str, Any]) -> Submiss
     plan = build_scheduled_plan(
         config,
         plan_revision=plan_revision,
-        inspection_profiles=load_device_profile_payloads(),
+        inspection_profiles=inspection_profiles_for_store(store),
     )
     task_ids = [
         store.submit(

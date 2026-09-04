@@ -477,6 +477,23 @@ V2_ENTRY_SKIP_LABELS = {
     "搜索", "更多", "返回", "关注", "回赞",
 }
 
+V3_EMPTY_MARKERS = ("暂无互动消息", "还没有互动消息", "暂无新互动", "暂无互动")
+V3_END_MARKERS = ("暂时没有更多了", "没有更多了", "已经到底了", "到底了")
+V3_VISITOR_DISABLED_MARKERS = (
+    "开启主页访客记录",
+    "开启后可查看访客",
+    "访客记录已关闭",
+)
+V3_CATEGORY_MARKERS = {
+    "received_likes": ("赞了", "点赞了", "收藏了", "赞与收藏"),
+    "comment_danmaku": ("评论了", "回复了", "回复:", "回复：", "弹幕"),
+    "profile_visitors": ("访问过你的主页", "主页访客", "访客记录"),
+}
+V3_SKIP_LABELS = {
+    "首页", "朋友", "消息", "我", "互动消息", "全部消息", "已读",
+    "搜索", "更多", "返回", "关注", "回赞",
+}
+
 
 def _now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="milliseconds")
@@ -485,6 +502,212 @@ def _now_iso() -> str:
 def _bounds(node: ET.Element) -> tuple[int, int, int, int] | None:
     match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
     return tuple(int(value) for value in match.groups()) if match else None
+
+
+def _inside_screen(
+    bounds: tuple[int, int, int, int], width: int, height: int
+) -> bool:
+    left, top, right, bottom = bounds
+    return 0 <= left < right <= width and 0 <= top < bottom <= height
+
+
+def find_unified_activity_entry_bounds(
+    xml_source: str, width: int, height: int
+) -> tuple[int, int, int, int] | None:
+    """Return the unique visible clickable row containing the activity label."""
+    root = ET.fromstring(xml_source)
+    parent = {child: node for node in root.iter() for child in node}
+    candidates: set[tuple[int, int, int, int]] = set()
+    for node in root.iter("node"):
+        if node.get("visible-to-user", "true") != "true":
+            continue
+        label = _label(node)
+        if not (
+            label == "互动消息"
+            or label.startswith("互动消息，")
+            or label.startswith("互动消息,")
+        ):
+            continue
+        clickable = node
+        while clickable is not None and clickable.get("clickable") != "true":
+            clickable = parent.get(clickable)
+        if clickable is None:
+            continue
+        bounds = _bounds(clickable)
+        if bounds is None or not _inside_screen(bounds, width, height):
+            continue
+        left, top, right, bottom = bounds
+        if top < round(height * 0.12) or bottom > round(height * 0.92):
+            continue
+        if right - left < round(width * 0.45) or bottom - top < 44:
+            continue
+        candidates.add(bounds)
+    if len(candidates) > 1:
+        raise ValueError("interaction_entry_ambiguous")
+    return next(iter(candidates), None)
+
+
+def _v3_category(label: str) -> str | None:
+    for category, markers in V3_CATEGORY_MARKERS.items():
+        if any(marker in label for marker in markers):
+            return category
+    return None
+
+
+def _v3_item(label: str, category: str, policy: InspectionPolicy) -> dict[str, Any]:
+    cleaned = _clean(label, policy.field_length)
+    action_markers = tuple(
+        marker for markers in V3_CATEGORY_MARKERS.values() for marker in markers
+    )
+    actor = cleaned
+    for marker in action_markers:
+        if marker in actor:
+            actor = actor.split(marker, 1)[0].strip(" ，,|")
+            break
+    time_matches = list(
+        re.finditer(
+            r"刚刚|昨天|前天|\d+\s*(?:秒|分钟|小时|天)前|"
+            r"\d{1,2}:\d{2}|\d{1,2}[-/]\d{1,2}|\d{4}[/.-]\d{1,2}",
+            cleaned,
+        )
+    )
+    item: dict[str, Any] = {"category": category, "content": cleaned}
+    if actor and len(actor) <= 40:
+        item["display_name"] = actor
+    if time_matches:
+        item["time"] = time_matches[-1].group(0)
+    return item
+
+
+def _v3_row_candidates(
+    nodes: list[ET.Element], width: int, height: int
+) -> list[tuple[ET.Element, str, tuple[int, int, int, int]]]:
+    """Prefer one full clickable list row, even when its own label is empty."""
+    composite: list[tuple[ET.Element, str, tuple[int, int, int, int]]] = []
+    for node in nodes:
+        bounds = _bounds(node)
+        if (
+            node.get("clickable") != "true"
+            or bounds is None
+            or not _inside_screen(bounds, width, height)
+        ):
+            continue
+        left, top, right, bottom = bounds
+        if (
+            top < round(height * 0.10)
+            or bottom > round(height * 0.92)
+            or right - left < round(width * 0.45)
+            or not 44 <= bottom - top <= round(height * 0.30)
+        ):
+            continue
+        labels = list(
+            dict.fromkeys(
+                _label(child)
+                for child in node.iter("node")
+                if _label(child)
+            )
+        )
+        combined = "，".join(labels)
+        if _v3_category(combined):
+            composite.append((node, combined, bounds))
+    if composite:
+        # A row and one of its clickable children can both match. Keep the
+        # outer row so one visible item never becomes multiple receipts.
+        outer: list[tuple[ET.Element, str, tuple[int, int, int, int]]] = []
+        for candidate in sorted(
+            composite,
+            key=lambda item: (-(item[2][2] - item[2][0]) * (item[2][3] - item[2][1])),
+        ):
+            left, top, right, bottom = candidate[2]
+            if any(
+                outer_left <= left
+                and outer_top <= top
+                and right <= outer_right
+                and bottom <= outer_bottom
+                for _node, _label_value, (
+                    outer_left,
+                    outer_top,
+                    outer_right,
+                    outer_bottom,
+                ) in outer
+            ):
+                continue
+            outer.append(candidate)
+        return sorted(outer, key=lambda item: (item[2][1], item[2][0]))
+    return [
+        (node, _label(node), bounds)
+        for node in nodes
+        if _v3_category(_label(node))
+        and (bounds := _bounds(node)) is not None
+        and _inside_screen(bounds, width, height)
+    ]
+
+
+def parse_unified_activity_viewport(
+    xml_source: str,
+    policy: InspectionPolicy,
+    *,
+    width: int,
+    height: int,
+) -> dict[str, Any]:
+    """Parse one v3 viewport without opening any activity row."""
+    nodes = _nodes(xml_source)
+    labels = [_label(node) for node in nodes if _label(node)]
+    combined = " ".join(labels)
+    page_recognized = any(
+        label == "互动消息"
+        or label.startswith("互动消息，")
+        or label in {"全部消息", "消息通知"}
+        for label in labels
+    )
+    read_tops = [
+        bounds[1]
+        for node in nodes
+        if re.fullmatch(r"(?:全部)?已读(?:消息)?", _label(node).strip())
+        and (bounds := _bounds(node)) is not None
+        and _inside_screen(bounds, width, height)
+    ]
+    read_top = min(read_tops) if read_tops else None
+    boundary = (
+        "read"
+        if read_top is not None
+        else "explicit_empty"
+        if any(marker in combined for marker in V3_EMPTY_MARKERS)
+        else "end_of_list"
+        if any(marker in combined for marker in V3_END_MARKERS)
+        else None
+    )
+    candidates = _v3_row_candidates(nodes, width, height)
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for node, label, bounds in candidates:
+        category = _v3_category(label)
+        if (
+            category is None
+            or not label
+            or label in V3_SKIP_LABELS
+            or label in seen
+            or bounds[1] < round(height * 0.10)
+            or bounds[3] > round(height * 0.92)
+            or (read_top is not None and bounds[1] >= read_top)
+            or any(marker in label for marker in QUICK_ACTION_MARKERS)
+            or any(marker in label for marker in V3_VISITOR_DISABLED_MARKERS)
+        ):
+            continue
+        items.append(_v3_item(label, category, policy))
+        seen.add(label)
+    bounded, truncated = _bounded_entries(items, policy)
+    categories = list(dict.fromkeys(str(item["category"]) for item in bounded))
+    return {
+        "page_recognized": page_recognized,
+        "boundary": boundary,
+        "items": bounded,
+        "categories": categories,
+        "truncated": truncated,
+        "visitor_history_disabled": any(
+            marker in combined for marker in V3_VISITOR_DISABLED_MARKERS
+        ),
+    }
 
 
 def parse_entry_badge(xml_source: str, aliases: Iterable[str]) -> dict[str, Any]:
@@ -709,6 +932,7 @@ class EngagementInspector:
         recorder,
         *,
         sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
         store=None,
         device_id: str = "",
         task_id: str = "",
@@ -717,6 +941,7 @@ class EngagementInspector:
         self._device = device
         self._recorder = recorder
         self._sleep = sleep
+        self._clock = clock
         self._store = store
         self._device_id = device_id
         self._task_id = task_id
@@ -727,6 +952,7 @@ class EngagementInspector:
         self._v2_image_hashes: set[str] = set()
         self._v2_calibration: dict[str, Any] = {}
         self._v2_precondition: dict[str, Any] | None = None
+        self._evidence_workflow = "v2"
         try:
             width, height = device.window_size()
             self._width, self._height = int(width), int(height)
@@ -736,7 +962,12 @@ class EngagementInspector:
     def inspect(
         self, policy: Mapping[str, Any] | None = None
     ) -> EngagementInspectionResult:
-        if str((policy or {}).get("inspection_workflow_version", "v1")) == "v2":
+        workflow_version = str(
+            (policy or {}).get("inspection_workflow_version", "v1")
+        )
+        if workflow_version == "v3":
+            return self._inspect_v3(policy or {})
+        if workflow_version == "v2":
             return self._inspect_v2(policy or {})
         rules = InspectionPolicy.from_mapping(policy)
         sections = {
@@ -868,6 +1099,397 @@ class EngagementInspector:
             section_statuses={name: value["status"] for name, value in sections.items()},
         )
         return result
+
+    def _inspect_v3(self, policy: Mapping[str, Any]) -> EngagementInspectionResult:
+        calibration_only = bool(policy.get("_calibration_only", False))
+        self._evidence_workflow = "v3"
+        started_at = _now_iso()
+        rules = InspectionPolicy.from_mapping(policy)
+        sections = {
+            name: {
+                **_section("failed", reason="not_checked"),
+                "scroll_count": 0,
+                "complete": False,
+            }
+            for name in ("received_likes", "comment_danmaku", "profile_visitors")
+        }
+        unified: dict[str, Any] = {
+            "status": "failed",
+            "complete": False,
+            "read_boundary": None,
+            "scroll_count": 0,
+            "unread_item_count": None,
+            "categories": [],
+            "items": [],
+            "reason_code": "not_checked",
+        }
+        metadata: dict[str, Any] = {
+            "workflow_version": "v3",
+            "alert_sources": [],
+        }
+        fatal_reason: str | None = None
+        restored = False
+        last_source: str | None = None
+        self._recorder.emit("engagement_inspection_started", workflow_version="v3")
+        try:
+            self._validate_v3_calibration(policy)
+            source = self._prepare_feed()
+            last_source = source
+            self._capture_v2("home-before-message", source)
+            message_source = self._open_bottom_tab(source, "消息")
+            last_source = message_source
+            self._capture_v2("message-entry", message_source)
+            if "消息" not in " ".join(_labels(message_source)):
+                raise RuntimeError("message_page_not_recognized")
+            entry_bounds = find_unified_activity_entry_bounds(
+                message_source, self._width, self._height
+            )
+            if entry_bounds is None:
+                raise RuntimeError("interaction_entry_not_found")
+            self._click(entry_bounds, "list_entry:互动消息")
+            activity_source = self._dump()
+            last_source = activity_source
+            first = parse_unified_activity_viewport(
+                activity_source, rules, width=self._width, height=self._height
+            )
+            self._capture_v2("unified-activity-entry", activity_source)
+            if not first["page_recognized"]:
+                raise RuntimeError("unified_activity_page_not_recognized")
+            unified, last_source = self._scan_v3_activity(
+                activity_source, rules, first=first
+            )
+            sections = self._v3_sections(unified)
+            for name, section in sections.items():
+                self._emit_section(name, section)
+            if not unified["complete"]:
+                fatal_reason = str(
+                    unified.get("reason_code") or "list_boundary_not_confirmed"
+                )
+                self._record_failure(
+                    stage="engagement_boundary",
+                    reason=fatal_reason,
+                    error_type="EngagementBoundaryError",
+                    section="unified_activity",
+                    workflow_version="v3",
+                    outcome="skipped",
+                    recovery_action="calibrate_unified_activity_boundary",
+                    source=last_source,
+                    context={
+                        "read_boundary": unified.get("read_boundary"),
+                        "scroll_count": unified.get("scroll_count"),
+                    },
+                )
+        except V2PreconditionMismatch as exc:
+            self._v2_precondition = exc.as_dict()
+            fatal_reason = exc.code
+            self._recorder.emit(
+                "engagement_inspection_precondition_changed",
+                workflow_version="v3",
+                **self._v2_precondition,
+            )
+            self._record_failure(
+                stage="engagement_precondition",
+                reason=fatal_reason,
+                error_type=type(exc).__name__,
+                section="navigation",
+                workflow_version="v3",
+                outcome="skipped",
+                recovery_action="revalidate_inspection_profile",
+                source=last_source,
+                context=self._v2_precondition,
+            )
+        except Exception as exc:
+            fatal_reason = self._public_reason(exc)
+            self._recorder.emit(
+                "engagement_inspection_stopped",
+                workflow_version="v3",
+                reason=fatal_reason,
+                error_type=type(exc).__name__,
+            )
+            self._record_failure(
+                stage="engagement_navigation",
+                reason=fatal_reason,
+                error_type=type(exc).__name__,
+                section="navigation",
+                workflow_version="v3",
+                outcome="device_fatal",
+                recovery_action="restore_home_then_revalidate",
+                source=last_source,
+            )
+        finally:
+            restored = self._restore_home()
+            if restored:
+                try:
+                    self._capture_v2("home-restored", self._dump())
+                except Exception:
+                    pass
+            else:
+                self._record_failure(
+                    stage="engagement_restore",
+                    reason="home_restore_failed",
+                    error_type="EngagementRestoreError",
+                    section="restore",
+                    workflow_version="v3",
+                    outcome="device_fatal",
+                    recovery_action="restore_home_then_revalidate",
+                    source=last_source,
+                )
+
+        visitor_disabled = bool(unified.get("visitor_history_disabled"))
+        if visitor_disabled and not unified.get("reason_code"):
+            unified["reason_code"] = "visitor_history_disabled"
+        if fatal_reason or not restored:
+            status = "failed"
+        elif visitor_disabled:
+            status = "degraded"
+        elif unified.get("complete"):
+            status = "completed"
+        else:
+            status = "failed"
+        if calibration_only:
+            metadata.update({"alert_sources": [], "alert_created": False})
+        elif unified.get("complete"):
+            metadata.update(
+                self._record_v2_alert(
+                    sections,
+                    "changed"
+                    if sections["profile_visitors"].get("entries")
+                    else "unchanged",
+                )
+            )
+        finished_at = _now_iso()
+        if calibration_only:
+            metadata.update(
+                {"calibration_only": True, "evidence_count": len(self._v2_evidence)}
+            )
+        else:
+            metadata.update(
+                self._record_v2_receipt(
+                    status=status,
+                    restored=restored,
+                    sections=sections,
+                    metadata=metadata,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    workflow_version="v3",
+                    unified_activity=unified,
+                )
+            )
+        result: dict[str, Any] = {
+            "status": status,
+            "task_type": "douyin_engagement_inspection",
+            "workflow_version": "v3",
+            "restored": restored,
+            "failure_reason": fatal_reason
+            or (None if restored else "home_restore_failed"),
+            "side_effect_notice": "打开互动列表可能改变未读状态；未打开具体记录或执行对外互动",
+            "unified_activity": unified,
+            "sections": sections,
+            "evidence": (
+                []
+                if status == "completed"
+                else [f"unified_activity:{unified.get('reason_code') or status}"]
+            ),
+            "inspection_metadata": metadata,
+        }
+        if self._v2_precondition:
+            result.update(self._v2_precondition)
+        self._recorder.emit(
+            "engagement_inspection_complete",
+            workflow_version="v3",
+            status=status,
+            restored=restored,
+            read_boundary=unified.get("read_boundary"),
+            scroll_count=unified.get("scroll_count"),
+        )
+        return result  # type: ignore[return-value]
+
+    def _validate_v3_calibration(self, policy: Mapping[str, Any]) -> None:
+        expected_app = str(policy.get("expected_app_version") or "")
+        expected_display = str(policy.get("expected_display_signature") or "")
+        calibration = policy.get("inspection_calibration")
+        if not expected_app or not expected_display or not isinstance(calibration, Mapping):
+            raise RuntimeError("v3_calibration_missing")
+        if self._device_id and str(calibration.get("device_id") or "") != self._device_id:
+            raise RuntimeError("v3_calibration_device_mismatch")
+        if (
+            str(calibration.get("app_version") or "") != expected_app
+            or str(calibration.get("display_signature") or "") != expected_display
+        ):
+            raise RuntimeError("v3_calibration_signature_mismatch")
+        controls = calibration.get("controls")
+        if (
+            int(calibration.get("passes") or 0) < 3
+            or calibration.get("later_passes_semantically_equal") is not True
+            or not isinstance(controls, Mapping)
+            or "互动消息" not in list(controls.get("aggregate") or [])
+        ):
+            raise RuntimeError("v3_calibration_unstable")
+        if self._width != 900 or self._height != 1600 or not expected_display.startswith(
+            "900x1600x320x0x"
+        ):
+            raise RuntimeError("v3_standard_display_required")
+        self._v2_calibration = dict(calibration)
+        app_info = getattr(self._device, "app_info", None)
+        info = app_info(DOUYIN_PACKAGE) if callable(app_info) else {}
+        actual_app = str(
+            (info or {}).get("versionName") or (info or {}).get("version_name") or ""
+        )
+        actual_display = self._runtime_display_signature()
+        if actual_app != expected_app or actual_display != expected_display:
+            mismatch = V2PreconditionMismatch(
+                "v3_app_version_changed"
+                if actual_app != expected_app
+                else "v3_display_signature_changed",
+                expected_app_version=expected_app,
+                actual_app_version=actual_app,
+                expected_display_signature=expected_display,
+                actual_display_signature=actual_display,
+            )
+            raise mismatch
+
+    def _scan_v3_activity(
+        self,
+        source: str,
+        policy: InspectionPolicy,
+        *,
+        first: Mapping[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], str]:
+        started = self._clock()
+        parsed = dict(
+            first
+            or parse_unified_activity_viewport(
+                source, policy, width=self._width, height=self._height
+            )
+        )
+        items = list(parsed.get("items") or [])
+        seen = {
+            json.dumps(item, ensure_ascii=False, sort_keys=True) for item in items
+        }
+        visitor_disabled = bool(parsed.get("visitor_history_disabled"))
+        boundary = parsed.get("boundary")
+        effective_scrolls = 0
+        stagnant = 0
+        previous_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        while boundary is None and effective_scrolls < 12 and self._clock() - started < 45:
+            self._device.swipe(
+                round(self._width * 0.5),
+                round(self._height * 0.79),
+                round(self._width * 0.5),
+                round(self._height * 0.30),
+                duration=0.35,
+            )
+            self._sleep(0.55)
+            current = self._dump()
+            current_hash = hashlib.sha256(current.encode("utf-8")).hexdigest()
+            if current_hash == previous_hash:
+                stagnant += 1
+            else:
+                stagnant = 0
+                effective_scrolls += 1
+                source = current
+                self._capture_v2(
+                    f"unified-activity-swipe-{effective_scrolls}", source
+                )
+                parsed = parse_unified_activity_viewport(
+                    source, policy, width=self._width, height=self._height
+                )
+                if not parsed["page_recognized"]:
+                    return (
+                        {
+                            "status": "failed",
+                            "complete": False,
+                            "read_boundary": None,
+                            "scroll_count": effective_scrolls,
+                            "unread_item_count": None,
+                            "categories": [],
+                            "items": items,
+                            "reason_code": "unified_activity_page_changed",
+                            "visitor_history_disabled": visitor_disabled,
+                        },
+                        source,
+                    )
+                for item in parsed.get("items") or []:
+                    key = json.dumps(item, ensure_ascii=False, sort_keys=True)
+                    if key not in seen:
+                        seen.add(key)
+                        items.append(dict(item))
+                visitor_disabled = visitor_disabled or bool(
+                    parsed.get("visitor_history_disabled")
+                )
+                boundary = parsed.get("boundary")
+            previous_hash = current_hash
+            if stagnant >= 2:
+                break
+        complete = boundary is not None
+        read_boundary = (
+            "first_screen"
+            if boundary == "read" and effective_scrolls == 0
+            else "after_scroll"
+            if boundary == "read"
+            else boundary
+        )
+        bounded, truncated = _bounded_entries(items, policy)
+        categories = list(
+            dict.fromkeys(str(item.get("category")) for item in bounded if item.get("category"))
+        )
+        return (
+            {
+                "status": "available" if complete else "failed",
+                "complete": complete,
+                "read_boundary": read_boundary,
+                "scroll_count": effective_scrolls,
+                "unread_item_count": len(items) if complete else None,
+                "categories": categories,
+                "items": bounded,
+                "truncated": truncated,
+                "reason_code": None if complete else "list_boundary_not_confirmed",
+                "visitor_history_disabled": visitor_disabled,
+            },
+            source,
+        )
+
+    @staticmethod
+    def _v3_sections(unified: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+        complete = bool(unified.get("complete"))
+        items = [
+            dict(item)
+            for item in list(unified.get("items") or [])
+            if isinstance(item, Mapping)
+        ]
+        sections: dict[str, dict[str, Any]] = {}
+        for name in ("received_likes", "comment_danmaku", "profile_visitors"):
+            category_items = [item for item in items if item.get("category") == name]
+            visitor_disabled = name == "profile_visitors" and bool(
+                unified.get("visitor_history_disabled")
+            )
+            status = "unavailable" if visitor_disabled else "available" if complete else "failed"
+            reason = (
+                "visitor_history_disabled"
+                if visitor_disabled
+                else None
+                if complete
+                else str(unified.get("reason_code") or "list_boundary_not_confirmed")
+            )
+            sections[name] = {
+                **_section(
+                    status,
+                    count=len(category_items) if complete else None,
+                    unread_count=len(category_items) if complete else None,
+                    entries=category_items,
+                    truncated=bool(unified.get("truncated")),
+                    reason=reason,
+                ),
+                "entry_badge": {
+                    "has_unread": bool(category_items),
+                    "unread_count": len(category_items),
+                    "indicator": "number" if category_items else "none",
+                },
+                "scroll_count": int(unified.get("scroll_count") or 0),
+                "complete": complete and not visitor_disabled,
+                "alert_source": "unified_activity" if category_items and complete else None,
+            }
+        return sections
 
     def _inspect_v2(self, policy: Mapping[str, Any]) -> EngagementInspectionResult:
         calibration_only = bool(policy.get("_calibration_only", False))
@@ -1306,25 +1928,29 @@ class EngagementInspector:
         captured_at = _now_iso()
         screenshot = getattr(self._recorder, "screenshot", None)
         image_path: Path | None = None
+        artifact_name = f"inspection-{self._evidence_workflow}-{name}"
         if callable(screenshot):
-            image = screenshot(self._device, f"inspection-v2-{name}")
+            image = screenshot(self._device, artifact_name)
             run_dir = getattr(self._recorder, "run_dir", None)
             if run_dir is not None:
-                image_path = Path(run_dir) / f"inspection-v2-{name}.png"
+                image_path = Path(run_dir) / f"{artifact_name}.png"
                 self._v2_artifacts.append(image_path)
         run_dir = getattr(self._recorder, "run_dir", None)
         image_hash = hashlib.sha256(image.tobytes()).hexdigest() if image is not None else ""
-        if image_hash and image_hash in self._v2_image_hashes:
+        duplicate_image = bool(image_hash and image_hash in self._v2_image_hashes)
+        if duplicate_image:
             if image_path is not None:
                 image_path.unlink(missing_ok=True)
             self._recorder.emit(
                 "engagement_evidence_deduplicated", name=name, image_sha256=image_hash
             )
-            return image
-        if image_hash:
+            image_path = None
+            if self._evidence_workflow != "v3":
+                return image
+        elif image_hash:
             self._v2_image_hashes.add(image_hash)
         if run_dir is not None:
-            xml_path = Path(run_dir) / f"inspection-v2-{name}.xml.gz"
+            xml_path = Path(run_dir) / f"{artifact_name}.xml.gz"
             with gzip.open(xml_path, "wt", encoding="utf-8") as handle:
                 handle.write(source)
             self._v2_artifacts.append(xml_path)
@@ -1342,12 +1968,17 @@ class EngagementInspector:
             if image_path is not None and image_path.is_file():
                 item["image_name"] = image_path.name
                 item["image_sha256"] = image_hash
+            elif duplicate_image:
+                item["image_sha256"] = image_hash
+                item["image_deduplicated"] = True
             self._v2_evidence.append(item)
         self._recorder.emit("engagement_observation", name=name)
         return image
 
     @staticmethod
     def _evidence_section(name: str) -> str:
+        if name.startswith("unified-activity"):
+            return "unified_activity"
         if name.startswith(("home", "message", "all-messages", "filter-menu", "wait-control")):
             return "private_messages"
         if name.startswith("received-likes"):
@@ -1364,11 +1995,16 @@ class EngagementInspector:
             "home-before-message": "首页消息角标",
             "message-entry": "消息列表",
             "all-messages-entry": "互动消息入口",
+            "unified-activity-entry": "互动消息首屏",
+            "home-restored": "返回首页确认",
             "profile-entry": "我的主页",
             "visitors-entry": "主页访客首屏",
         }
         if name in labels:
             return labels[name]
+        unified_swipe = re.search(r"unified-activity-swipe-(\d+)", name)
+        if unified_swipe:
+            return f"互动消息第 {unified_swipe.group(1)} 次有效滑动"
         swipe = re.search(r"(?:received-likes|received-comments|received-danmaku|visitors)-swipe-(\d+)", name)
         if swipe:
             return f"第 {swipe.group(1)} 次有效滑动"
@@ -1701,6 +2337,8 @@ class EngagementInspector:
         metadata: Mapping[str, Any],
         started_at: str,
         finished_at: str,
+        workflow_version: str = "v2",
+        unified_activity: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         sources = list(metadata.get("alert_sources") or [])
         visitor_status = str(metadata.get("visitor_comparison") or "not_checked")
@@ -1708,7 +2346,12 @@ class EngagementInspector:
             "alert"
             if sources
             else "clear"
-            if status == "completed" and visitor_status not in {"pending_review", "unavailable", "not_checked"}
+            if status == "completed"
+            and (
+                bool(unified_activity and unified_activity.get("complete"))
+                if workflow_version == "v3"
+                else visitor_status not in {"pending_review", "unavailable", "not_checked"}
+            )
             else "incomplete"
         )
         public_sections: dict[str, Any] = {}
@@ -1740,6 +2383,8 @@ class EngagementInspector:
             "conclusion": (
                 "检测到新互动"
                 if result_kind == "alert"
+                else "互动消息已完整检查，无新互动"
+                if workflow_version == "v3" and result_kind == "clear"
                 else "四个分区已检查，无新互动"
                 if result_kind == "clear"
                 else "巡检未完整完成"
@@ -1749,6 +2394,20 @@ class EngagementInspector:
         }
         if sources:
             summary["alert_sources"] = sources
+        if workflow_version == "v3" and unified_activity is not None:
+            summary["unified_activity"] = {
+                key: unified_activity.get(key)
+                for key in (
+                    "status",
+                    "complete",
+                    "read_boundary",
+                    "scroll_count",
+                    "unread_item_count",
+                    "categories",
+                    "items",
+                    "reason_code",
+                )
+            }
         visitor_change: dict[str, Any] = {}
         for key in ("previous_visitor", "current_visitor"):
             raw = metadata.get(key)
@@ -1772,7 +2431,7 @@ class EngagementInspector:
                 inspection_id=inspection_id,
                 task_id=self._task_id,
                 device_id=self._device_id,
-                workflow_version="v2",
+                workflow_version=workflow_version,
                 status=status,
                 result_kind=result_kind,
                 restored=restored,

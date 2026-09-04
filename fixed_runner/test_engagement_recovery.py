@@ -148,6 +148,55 @@ class EngagementRecoveryTest(unittest.TestCase):
             self.assertEqual(recovery["status"], "waiting_user")
             self.assertIsNone(recovery["replacement_task_id"])
 
+    def test_v3_revalidation_preserves_v3_profile_and_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile_path = root / "device_profiles.json"
+            store = TaskStore(root / "tasks.db")
+            payload = inspection_payload()
+            payload["inspection_workflow_version"] = "v3"
+            payload["inspection_calibration"]["profile_version"] = "mediaflow-engagement-v3-r1"
+            task = store.get(store.submit("douyin_engagement_inspection", "device-1", payload))
+            pass_result = {
+                "status": "completed",
+                "restored": True,
+                "workflow_version": "v3",
+                "unified_activity": {
+                    "status": "available",
+                    "complete": True,
+                    "read_boundary": "first_screen",
+                    "reason_code": None,
+                },
+                "sections": {
+                    "received_likes": {"status": "available", "complete": True},
+                    "comment_danmaku": {"status": "available", "complete": True},
+                    "profile_visitors": {"status": "available", "complete": True},
+                },
+            }
+            inspector = Mock()
+            inspector.inspect.return_value = pass_result
+            with (
+                patch("engagement_recovery.EngagementInspector", return_value=inspector),
+                patch(
+                    "engagement_recovery.Uia2RunRecorder",
+                    return_value=SimpleNamespace(run_dir=root / "evidence"),
+                ),
+            ):
+                recovery = recover_version_drift(
+                    store=store,
+                    device=object(),
+                    task=task,
+                    result=drift_result(),
+                    artifacts_root=root / "artifacts",
+                    profile_path=profile_path,
+                )
+
+            self.assertEqual(recovery["status"], "ready")
+            replacement = store.get(recovery["replacement_task_id"])
+            self.assertEqual(replacement.payload["inspection_workflow_version"], "v3")
+            profile = json.loads(profile_path.read_text(encoding="utf-8"))["devices"]["device-1"]
+            self.assertEqual(profile["engagement_inspection_version"], "v3")
+
 
 if __name__ == "__main__":
     unittest.main()

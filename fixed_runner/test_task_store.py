@@ -544,6 +544,68 @@ class TaskStoreTest(unittest.TestCase):
         self.assertEqual(self.store.cancel_pending([paused_id]), 1)
         self.assertEqual(self.store.get(paused_id).status, "cancelled")
 
+    def test_superseded_pending_vm_inspections_cancel_without_touching_physical(self) -> None:
+        self.store.save_virtual_device(
+            {
+                "virtual_device_id": "virtual-1",
+                "provider": "mumu",
+                "provider_instance_id": "1",
+                "name": "MediaFlow虚拟机1",
+                "state": "stopped",
+                "recipe": {},
+                "provider_snapshot": {},
+                "last_adb_endpoint": "127.0.0.1:16416",
+                "discovery_source": "mediaflow_created",
+                "managed": True,
+            }
+        )
+        payload = {
+            "submission_id": "submission-old",
+            "device_id": "127.0.0.1:16416",
+            "inspection_index": 1,
+            "after_round_index": 5,
+            "inspection_every_rounds": 5,
+            "max_items_per_section": 20,
+            "inspection_workflow_version": "v2",
+            "expected_app_version": "35.8.0",
+            "expected_display_signature": "900x1600x320x0x100",
+            "inspection_calibration": {
+                "profile_version": "old-v2",
+                "device_id": "127.0.0.1:16416",
+                "app_version": "35.8.0",
+                "display_signature": "900x1600x320x0x100",
+                "passes": 3,
+                "later_passes_semantically_equal": True,
+                "controls": {},
+                "sections": {},
+            },
+        }
+        virtual_id = self.store.submit(
+            "douyin_engagement_inspection", "127.0.0.1:16416", payload
+        )
+        physical_id = self.store.submit(
+            "douyin_engagement_inspection",
+            "physical-1",
+            {
+                **payload,
+                "inspection_workflow_version": "v1",
+                "device_id": "physical-1",
+            },
+        )
+
+        self.assertEqual(
+            self.store.cancel_superseded_virtual_engagement_inspections(), 1
+        )
+        self.assertEqual(self.store.get(virtual_id).status, "cancelled")
+        self.assertEqual(
+            self.store.get(virtual_id).error,
+            "superseded_by_engagement_inspection_v3",
+        )
+        self.assertEqual(self.store.get(physical_id).status, "pending")
+        self.assertEqual(
+            self.store.cancel_superseded_virtual_engagement_inspections(), 0
+        )
+
     def test_interrupted_engagement_inspection_is_not_replayed(self) -> None:
         payload = {
             "submission_id": "submission-interrupted",

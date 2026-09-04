@@ -20,6 +20,7 @@ from device_profiles import (
 )
 from douyin_adapter import DouyinAdapter
 from douyin_uia2_runner import Uia2RunRecorder
+from engagement_calibration import calibrate_engagement_v3
 from platform_adapters import PlatformAdapter
 from platform_profiles import (
     ADAPTER_VERSION,
@@ -34,7 +35,7 @@ from brand import PRODUCT_NAME
 
 
 INITIALIZATION_COMMENT = f"{PRODUCT_NAME} 初始化连通性测试，请忽略"
-STAGE_TOTAL = 7
+STAGE_TOTAL = 8
 U2_INPUT_IME_COMPONENTS = {
     "com.github.uiautomator/.AdbKeyboard",
     # Kept for profiles and older uiautomator2 builds already deployed on devices.
@@ -318,6 +319,7 @@ def execute_initialization(
     *,
     artifacts_root: Path = INITIALIZATION_ARTIFACTS_ROOT,
     adapter_factory: Callable[..., PlatformAdapter] = DouyinAdapter,
+    engagement_calibrator: Callable[..., dict[str, Any]] = calibrate_engagement_v3,
     vision_locator: VisionCandidateLocator | None = None,
 ) -> dict[str, Any]:
     """Run from the device's existing worker, which already owns DeviceLock."""
@@ -436,6 +438,39 @@ def execute_initialization(
                 "chinese_input": True,
             },
         )
+        if bool(record.options.get("auto_onboarding")):
+            engagement_signature = display_signature(probe["display"])
+            try:
+                engagement_calibration = engagement_calibrator(
+                    device=device,
+                    store=store,
+                    device_id=record.device_id,
+                    app_version=app_version,
+                    display_signature=engagement_signature,
+                    artifacts_root=artifacts_root,
+                    origin_id=record.id,
+                )
+            except RuntimeError as exc:
+                raise InitializationWaitingForUser(
+                    "互动巡检v3三次只读复验未通过，请打开画面确认消息页和互动消息入口后继续："
+                    + str(exc)
+                ) from exc
+            device_profile.update(
+                engagement_app_version=app_version,
+                engagement_display_signature=engagement_signature,
+                engagement_inspection_version="v3",
+                engagement_calibration=engagement_calibration,
+            )
+            checkpoint(
+                "engagement_calibration",
+                7,
+                "互动消息聚合页已完成三次只读语义复验",
+                engagement_calibration=engagement_calibration,
+            )
+        else:
+            checkpoint(
+                "engagement_calibration", 7, "真机暂不启用标准虚拟机互动巡检v3档案"
+            )
         upsert_device_profile(record.device_id, device_profile)
 
         key = profile_key(
@@ -476,7 +511,7 @@ def execute_initialization(
             write_acceptance=write_result,
         )
         report_path = _report(record, recorder, result)
-        checkpoint("ready", 7, "设备初始化完成并已写入设备与平台档案")
+        checkpoint("ready", 8, "设备初始化完成并已写入设备与平台档案")
         store.finish_initialization(
             record.id,
             status="ready",

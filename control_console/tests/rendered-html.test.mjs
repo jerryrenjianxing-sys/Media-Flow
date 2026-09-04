@@ -88,6 +88,11 @@ test("task workbench preserves precise controls behind progressive disclosure", 
   assert.match(page, /matched_comment_probability/);
   assert.match(page, /device_ids: config\.device_ids/);
   assert.match(page, /preview_only: config\.preview_only/);
+  assert.match(page, /互动巡检 v3/);
+  assert.match(page, /只检查互动消息聚合页，不进入普通私信/);
+  assert.match(page, /请先在抖音隐私设置中打开访客记录/);
+  assert.match(page, /\/api\/engagement-preflight/);
+  assert.match(page, /visitor-acknowledgement/);
 });
 
 test("visual system uses real capsule switches, responsive layout and reduced motion", async () => {
@@ -170,6 +175,18 @@ test("results workspace joins tasks, incidents and interaction evidence", async 
   assert.match(page, /TaskGroupDetail/);
   assert.match(page, /已恢复并继续/);
   assert.match(page, /已跳过当前视频/);
+});
+
+test("interaction alert acknowledgement fails closed and v3 omits private-message scanning", async () => {
+  const banner = await source("../app/components/interaction-alert-banner.tsx");
+  const interactions = await source("../app/interactions/page.tsx");
+  const groups = await source("../app/components/task-groups.tsx");
+  assert.match(banner, /确认失败，提醒仍保留在这里/);
+  assert.match(banner, /if \(!response\.ok\) throw/);
+  assert.match(interactions, /unified_activity/);
+  assert.match(interactions, /互动消息聚合页/);
+  assert.match(groups, /workflow_version === "v3"/);
+  assert.match(groups, /不会进入普通私信/);
 });
 
 test("task details retain verified action and recovery evidence", async () => {

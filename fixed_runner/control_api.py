@@ -36,6 +36,10 @@ from control_config import (
     validate_preset_name,
 )
 from model_connection import test_current_model, verify as verify_openrouter_key
+from engagement_preflight import (
+    acknowledge_visitor_reminder,
+    visitor_reminder_status,
+)
 from device_profiles import enrich_device_statuses, load_device_profiles
 from platform_profiles import latest_device_platform_profile, profile_matches_runtime
 from profile_resolution import resolve_execution_profile
@@ -1812,9 +1816,13 @@ def _public_inspection_result(raw: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(entry, dict):
                 continue
             public_entry: dict[str, Any] = {}
-            for key in ("display_name", "time", "preview", "summary"):
+            for key in ("display_name", "time", "preview", "summary", "content"):
                 if key in entry:
                     public_entry[key] = _bounded_public_text(entry.get(key))
+            if entry.get("category") in {
+                "received_likes", "comment_danmaku", "profile_visitors"
+            }:
+                public_entry["category"] = entry["category"]
             if isinstance(entry.get("unread_count"), int):
                 public_entry["unread_count"] = max(0, int(entry["unread_count"]))
             public_entries.append(public_entry)
@@ -1871,13 +1879,36 @@ def _public_inspection_result(raw: dict[str, Any]) -> dict[str, Any]:
         "evidence": [
             _bounded_public_text(item, 100)
             for item in evidence[:6]
-            if isinstance(item, str) and item.startswith("section:")
+            if isinstance(item, str)
+            and (item.startswith("section:") or item.startswith("unified_activity:"))
         ]
         if isinstance(evidence, list)
         else [],
     }
-    if raw.get("workflow_version") in {"v1", "v2"}:
+    if raw.get("workflow_version") in {"v1", "v2", "v3"}:
         public["workflow_version"] = raw["workflow_version"]
+    unified = raw.get("unified_activity")
+    if raw.get("workflow_version") == "v3" and isinstance(unified, dict):
+        public["unified_activity"] = {
+            "status": unified.get("status")
+            if unified.get("status") in {"available", "failed"}
+            else "failed",
+            "complete": bool(unified.get("complete")),
+            "read_boundary": unified.get("read_boundary")
+            if unified.get("read_boundary")
+            in {"first_screen", "after_scroll", "explicit_empty", "end_of_list"}
+            else None,
+            "scroll_count": max(0, int(unified.get("scroll_count") or 0)),
+            "unread_item_count": unified.get("unread_item_count")
+            if isinstance(unified.get("unread_item_count"), int)
+            else None,
+            "categories": [
+                value
+                for value in list(unified.get("categories") or [])
+                if value in {"received_likes", "comment_danmaku", "profile_visitors"}
+            ][:3],
+            "reason_code": _bounded_public_text(unified.get("reason_code"), 80),
+        }
     if raw.get("failure_class") == "recoverable_precondition":
         public.update(
             failure_class="recoverable_precondition",
@@ -1891,7 +1922,9 @@ def _public_inspection_result(raw: dict[str, Any]) -> dict[str, Any]:
     metadata = raw.get("inspection_metadata")
     if isinstance(metadata, dict):
         public["inspection_metadata"] = {
-            "workflow_version": "v2" if metadata.get("workflow_version") == "v2" else "v1",
+            "workflow_version": metadata.get("workflow_version")
+            if metadata.get("workflow_version") in {"v1", "v2", "v3"}
+            else "v1",
             "alert_sources": [
                 value for value in metadata.get("alert_sources", [])
                 if value in {"private_messages", "received_likes", "comment_danmaku", "profile_visitors"}
@@ -2764,6 +2797,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/device-preferences":
             self._json(device_preferences(self.store))
+            return
+        if path == "/api/engagement-preflight":
+            query = parse_qs(parsed.query)
+            device_ids = [
+                device_id.strip()
+                for value in query.get("device_id", []) + query.get("device_ids", [])
+                for device_id in value.split(",")
+                if device_id.strip()
+            ]
+            self._json(visitor_reminder_status(self.store, device_ids))
             return
         if path == "/api/workbench/draft":
             fallback = normalized_config(self.store.get_profile(PROFILE_NAME) or {})
@@ -3879,6 +3922,13 @@ class Handler(BaseHTTPRequestHandler):
                 result = self.store.acknowledge_interaction_alerts(alert_ids)
                 self._json({"ok": True, **result})
                 return
+            if path == "/api/engagement-preflight/visitor-acknowledgement":
+                device_ids = body.get("device_ids")
+                if not isinstance(device_ids, list):
+                    raise ValueError("device_ids 必须是列表")
+                result = acknowledge_visitor_reminder(self.store, device_ids)
+                self._json({"ok": True, **result})
+                return
             if path == "/api/content-plans":
                 revision = self.store.save_content_plan(
                     body.get("document"), plan_id=body.get("plan_id")
@@ -4064,6 +4114,18 @@ def main() -> int:
                 online_adb_ids=online_ids
             )
             inventory.reconcile(online_adb_ids=online_ids)
+            cancelled = Handler.store.cancel_superseded_virtual_engagement_inspections()
+            if cancelled:
+                print(
+                    json.dumps(
+                        {
+                            "event": "engagement_inspections_superseded",
+                            "count": cancelled,
+                            "replacement": "v3",
+                        },
+                        ensure_ascii=False,
+                    )
+                )
         except Exception as exc:
             print(
                 json.dumps(

@@ -1255,6 +1255,10 @@ footer { padding: 24px 0 34px; display: flex; justify-content: space-between; co
 .confirmation-dialog { width: min(100%, 500px); padding: 26px; border: 1px solid var(--hairline-strong); border-radius: 14px; background: var(--surface-1); box-shadow: 0 30px 90px rgba(0,0,0,.4); }
 .confirmation-dialog h2 { margin: 5px 0 8px; font-size: 24px; }
 .confirmation-dialog > p { color: var(--ink-muted); }
+.visitor-reminder-button { align-self: flex-start; margin-top: -4px; }
+.visitor-reminder-dialog { width: min(100%, 560px); }
+.visitor-reminder-list { margin: 16px 0; display: grid; gap: 8px; }
+.visitor-reminder-list strong { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 9px; color: var(--ink); background: var(--surface-2); font-size: 13px; }
 .confirmation-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .dialog-actions { margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px; }
 .workbench-loading { width: min(560px, calc(100% - 32px)); margin: 12vh auto; padding: 28px; display: grid; gap: 8px; }
