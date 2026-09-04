@@ -1,0 +1,16 @@
+<hierarchy>
+  <node package="com.ss.android.ugc.aweme" visible-to-user="true" bounds="[0,0][1080,2340]">
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" text="视频" bounds="[60,80][160,160]" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" text="图文" bounds="[180,80][280,160]" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" text="直播" bounds="[300,80][400,160]" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" text="推荐" content-desc="已选中，推荐，按钮" bounds="[650,80][800,160]" clickable="true" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" content-desc="图文" bounds="[0,160][1080,2070]" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" content-desc="图片1，按钮" bounds="[0,160][1080,2070]" clickable="true" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" content-desc="暂停视频，按钮" bounds="[0,160][1080,2070]" clickable="true" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" content-desc="未点赞，喜欢475，按钮" bounds="[900,980][1080,1160]" clickable="true" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" content-desc="评论268，按钮" bounds="[900,1160][1080,1340]" clickable="true" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" content-desc="未选中，收藏17，按钮" bounds="[900,1340][1080,1520]" clickable="true" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" content-desc="分享4，按钮" bounds="[900,1520][1080,1700]" clickable="true" />
+    <node package="com.ss.android.ugc.aweme" visible-to-user="true" text="首页" content-desc="首页，按钮" bounds="[0,2071][213,2214]" clickable="true" />
+  </node>
+</hierarchy>

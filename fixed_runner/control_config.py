@@ -1,31 +1,29 @@
 from __future__ import annotations
 
-import os
-import subprocess
+import json
+import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Mapping
 
-from runtime_control import SECRET_PATH
+from model_connection import (
+    save_candidate as save_openrouter_key,
+    status as openrouter_key_status,
+    validate_openrouter_key,
+)
+from content_plans import round_snapshot
+from device_profiles import load_device_profile_payloads
 from task_store import TaskStore
-from worker import DEFAULT_DEVICE_ID
 
 PRESET_PREFIX = "preset:"
-OPENROUTER_KEY_PATH = SECRET_PATH
-OPENROUTER_KEY_STDIN_SCRIPT = Path(__file__).resolve().parent / "set-openrouter-key-from-stdin.ps1"
-
 DEFAULT_CONFIG: dict[str, Any] = {
-    "device_id": "emulator-5556",
-    "device_ids": [
-        "emulator-5556",
-        "127.0.0.1:16448",
-        "127.0.0.1:16480",
-        "127.0.0.1:16512",
-        "127.0.0.1:16544",
-    ],
+    "device_id": "",
+    "device_ids": [],
     "video_count": 20,
     "round_count": 1,
     "round_interval_minutes": 0,
+    "engagement_inspection_enabled": False,
+    "inspection_every_rounds": 5,
     "dwell_min": 6.0,
     "dwell_max": 15.0,
     "like_probability": 0.20,
@@ -36,18 +34,30 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "matched_comment_probability": 0.50,
     "content_mode": "general",
     "search_query": "",
+    "search_trust_results": False,
+    "search_segment_min": 7,
+    "search_segment_max": 14,
+    "home_segment_min": 5,
+    "home_segment_max": 10,
     "topic_prompt": "不限主题",
+    "content_plan_id": None,
+    "content_plan_revision_id": None,
     "topic_filter_enabled": False,
     "topic_confidence": 0.78,
     "like_only_on_match": False,
     "engagement_requires_topic": False,
     "comment_requires_topic": False,
+    "comment_policy_enabled": False,
+    "comment_policy_prompt": "不对日常生活相关内容发表评论",
     "preview_only": True,
     "seed": 20260821,
     "max_gate_skips": 6,
     "max_likes": 20,
     "max_favorites": 20,
     "max_comments": 20,
+    "auto_onboard_root_emulators": False,
+    "auto_run_after_onboarding": False,
+    "emulator_identity_registry": {},
 }
 
 PRESET_FIELDS = (
@@ -64,12 +74,21 @@ PRESET_FIELDS = (
     "matched_comment_probability",
     "content_mode",
     "search_query",
+    "search_trust_results",
+    "search_segment_min",
+    "search_segment_max",
+    "home_segment_min",
+    "home_segment_max",
     "topic_prompt",
+    "content_plan_id",
+    "content_plan_revision_id",
     "topic_filter_enabled",
     "topic_confidence",
     "like_only_on_match",
     "engagement_requires_topic",
     "comment_requires_topic",
+    "comment_policy_enabled",
+    "comment_policy_prompt",
     "max_gate_skips",
 )
 
@@ -88,6 +107,7 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
         "matched_comment_probability": 0,
         "content_mode": "general",
         "search_query": "",
+        "search_trust_results": False,
         "topic_prompt": "不限主题",
         "topic_filter_enabled": False,
         "topic_confidence": 0.78,
@@ -110,6 +130,7 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
         "matched_comment_probability": 0.35,
         "content_mode": "general",
         "search_query": "",
+        "search_trust_results": False,
         "topic_prompt": "不限主题",
         "topic_filter_enabled": False,
         "topic_confidence": 0.78,
@@ -132,6 +153,7 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
         "matched_comment_probability": 0.20,
         "content_mode": "general",
         "search_query": "",
+        "search_trust_results": False,
         "topic_prompt": "不限主题",
         "topic_filter_enabled": False,
         "topic_confidence": 0.80,
@@ -140,26 +162,129 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
         "comment_requires_topic": False,
         "max_gate_skips": 8,
     },
+    "主题搜索测试": {
+        "video_count": 20,
+        "round_count": 1,
+        "round_interval_minutes": 0,
+        "dwell_min": 6,
+        "dwell_max": 15,
+        "like_probability": 0.05,
+        "favorite_probability": 0.05,
+        "comment_probability": 0,
+        "matched_like_probability": 0.30,
+        "matched_favorite_probability": 0.20,
+        "matched_comment_probability": 0.10,
+        "content_mode": "search",
+        "search_query": "人工智能 智能制造 塑料包装",
+        "search_trust_results": True,
+        "topic_prompt": "AI、智能制造与塑料包装",
+        "topic_filter_enabled": True,
+        "topic_confidence": 1.0,
+        "like_only_on_match": False,
+        "engagement_requires_topic": False,
+        "comment_requires_topic": True,
+        "max_gate_skips": 6,
+    },
+    "搜索＋主页交替测试": {
+        "video_count": 20,
+        "round_count": 1,
+        "round_interval_minutes": 0,
+        "dwell_min": 6,
+        "dwell_max": 15,
+        "like_probability": 0.20,
+        "favorite_probability": 0.10,
+        "comment_probability": 0.05,
+        "matched_like_probability": 0.30,
+        "matched_favorite_probability": 0.20,
+        "matched_comment_probability": 0.10,
+        "content_mode": "hybrid",
+        "search_query": "人工智能 智能制造 塑料包装",
+        "search_trust_results": True,
+        "search_segment_min": 7,
+        "search_segment_max": 14,
+        "home_segment_min": 5,
+        "home_segment_max": 10,
+        "topic_prompt": "AI、智能制造与塑料包装",
+        "topic_filter_enabled": True,
+        "topic_confidence": 1.0,
+        "like_only_on_match": False,
+        "engagement_requires_topic": False,
+        "comment_requires_topic": True,
+        "max_gate_skips": 6,
+    },
 }
+
+
+@dataclass(frozen=True)
+class PlannedTask:
+    task_type: str
+    device_id: str
+    payload: dict[str, Any]
+    not_before: str
+
+
+@dataclass(frozen=True)
+class SubmissionPlan:
+    tasks: tuple[PlannedTask, ...]
+    video_task_count: int
+    inspection_task_count: int
+    device_plans: tuple[dict[str, Any], ...]
+
+
+class SubmissionResult(list[str]):
+    """List-compatible submission receipt for old callers and new summaries."""
+
+    def __init__(
+        self,
+        task_ids: Iterable[str],
+        *,
+        video_task_count: int,
+        inspection_task_count: int,
+        device_plans: Iterable[dict[str, Any]],
+    ) -> None:
+        super().__init__(task_ids)
+        self.video_task_count = int(video_task_count)
+        self.inspection_task_count = int(inspection_task_count)
+        self.device_plans = tuple(dict(item) for item in device_plans)
 
 
 def normalized_config(raw: dict[str, Any]) -> dict[str, Any]:
     config = {**DEFAULT_CONFIG, **raw}
     raw_device_ids = raw.get("device_ids")
     if not isinstance(raw_device_ids, list):
-        raw_device_ids = [raw.get("device_id", DEFAULT_DEVICE_ID)]
+        raw_device_id = str(raw.get("device_id") or "").strip()
+        raw_device_ids = [raw_device_id] if raw_device_id else []
     device_ids = list(
         dict.fromkeys(str(value).strip() for value in raw_device_ids if str(value).strip())
     )
-    if not 1 <= len(device_ids) <= 8:
-        raise ValueError("请选择 1 到 8 台设备")
+    if len(device_ids) > 8:
+        raise ValueError("最多选择 8 台设备")
     config["device_ids"] = device_ids
-    config["device_id"] = device_ids[0]
+    config["device_id"] = device_ids[0] if device_ids else ""
     config["topic_prompt"] = str(config["topic_prompt"]).strip()[:800]
+    for name in ("content_plan_id", "content_plan_revision_id"):
+        value = config.get(name)
+        config[name] = str(value).strip()[:80] if value else None
+    if bool(config["content_plan_id"]) != bool(config["content_plan_revision_id"]):
+        raise ValueError("内容计划和版本必须同时选择")
+    config["comment_policy_prompt"] = " ".join(
+        str(config.get("comment_policy_prompt", "")).split()
+    )[:1000]
+    config["comment_policy_enabled"] = bool(config.get("comment_policy_enabled", False))
+    if config["comment_policy_enabled"] and not config["comment_policy_prompt"]:
+        raise ValueError("启用评论约束后请输入约束内容")
     config["search_query"] = str(config.get("search_query", "")).strip()[:80]
     config["video_count"] = int(config["video_count"])
     config["round_count"] = int(config["round_count"])
     config["round_interval_minutes"] = int(config["round_interval_minutes"])
+    config["engagement_inspection_enabled"] = bool(
+        raw.get("engagement_inspection_enabled", False)
+    )
+    config["inspection_every_rounds"] = int(
+        raw.get("inspection_every_rounds", 5)
+    )
+    if not 1 <= config["inspection_every_rounds"] <= 20:
+        raise ValueError("每几轮检查互动必须是 1 到 20")
     config["dwell_min"] = float(config["dwell_min"])
     config["dwell_max"] = float(config["dwell_max"])
     for name in (
@@ -181,11 +306,41 @@ def normalized_config(raw: dict[str, Any]) -> dict[str, Any]:
     for name in ("max_likes", "max_favorites", "max_comments"):
         config[name] = config["video_count"]
     config["preview_only"] = bool(config["preview_only"])
+    config["auto_onboard_root_emulators"] = bool(
+        config.get("auto_onboard_root_emulators", False)
+    )
+    # Kept in serialized profiles for compatibility, but onboarding now stops
+    # after the audited three-video zero-write validation. Formal tasks always
+    # require an explicit submission from the workbench.
+    config["auto_run_after_onboarding"] = False
+    raw_registry = config.get("emulator_identity_registry", {})
+    if not isinstance(raw_registry, dict):
+        raw_registry = {}
+    config["emulator_identity_registry"] = {
+        str(identity).strip()[:128]: str(device_id).strip()[:160]
+        for identity, device_id in raw_registry.items()
+        if str(identity).strip() and str(device_id).strip()
+    }
     legacy_topic_filter = bool(config["topic_filter_enabled"])
     content_mode = str(raw.get("content_mode") or ("mixed" if legacy_topic_filter else "general"))
-    if content_mode not in {"general", "mixed", "search"}:
-        raise ValueError("内容模式必须是不限主题、混合主题或搜索主题")
+    if content_mode not in {"general", "mixed", "search", "hybrid"}:
+        raise ValueError("内容模式必须是不限主题、混合主题、搜索主题或搜索主页交替")
     config["content_mode"] = content_mode
+    for name, fallback in (
+        ("search_segment_min", 7),
+        ("search_segment_max", 14),
+        ("home_segment_min", 5),
+        ("home_segment_max", 10),
+    ):
+        # These settings are meaningful only in hybrid mode. Old tasks in the
+        # other modes may carry stale values, so ignore rather than reject them.
+        config[name] = int(config.get(name, fallback)) if content_mode == "hybrid" else fallback
+    # The field is deliberately read from the original payload. A saved preset
+    # or queued task created before this feature must not silently inherit the
+    # new search-source trust behavior from DEFAULT_CONFIG.
+    config["search_trust_results"] = bool(
+        raw.get("search_trust_results", False)
+    )
     config["engagement_requires_topic"] = False
     config["comment_requires_topic"] = False
     # Keep the old fields in saved payloads so existing runners remain compatible.
@@ -241,76 +396,184 @@ def delete_preset(store: TaskStore, name: Any) -> bool:
     return store.delete_profile(f"{PRESET_PREFIX}{preset_name}")
 
 
-def validate_openrouter_key(value: Any) -> str:
-    key = str(value or "").strip()
-    if not key.startswith("sk-or-v1-") or not 32 <= len(key) <= 512:
-        raise ValueError("请输入有效的 OpenRouter API Key")
-    return key
-
-
-def openrouter_key_status() -> dict[str, Any]:
-    configured = OPENROUTER_KEY_PATH.is_file() and OPENROUTER_KEY_PATH.stat().st_size > 0
-    return {
-        "provider": "OpenRouter",
-        "model": "google/gemini-3.1-flash-lite",
-        "key_configured": configured,
-    }
-
-
-def save_openrouter_key(value: Any) -> None:
-    key = validate_openrouter_key(value)
-    powershell = (
-        Path(os.environ.get("WINDIR", r"C:\Windows"))
-        / "System32"
-        / "WindowsPowerShell"
-        / "v1.0"
-        / "powershell.exe"
-    )
-    result = subprocess.run(
-        [
-            str(powershell),
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(OPENROUTER_KEY_STDIN_SCRIPT),
-        ],
-        input=key,
-        capture_output=True,
-        text=True,
-        timeout=15,
-        check=False,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-    if result.returncode != 0:
-        raise RuntimeError("OpenRouter Key 加密保存失败")
-
-
-def submit_scheduled_rounds(store: TaskStore, config: dict[str, Any]) -> list[str]:
-    """Queue independently auditable rounds with deterministic, distinct seeds."""
-    base_time = datetime.now().astimezone()
+def build_scheduled_plan(
+    config: dict[str, Any],
+    *,
+    base_time: datetime | None = None,
+    submission_id: str | None = None,
+    plan_revision: dict[str, Any] | None = None,
+    inspection_profiles: dict[str, dict[str, Any]] | None = None,
+) -> SubmissionPlan:
+    """Build a deterministic per-device queue without mutating the task store."""
+    if not config.get("device_ids"):
+        raise ValueError("请选择至少一台可执行设备")
+    base_time = base_time or datetime.now().astimezone()
     base_seed = int(config["seed"])
     interval = int(config["round_interval_minutes"])
-    task_ids: list[str] = []
     round_count = int(config["round_count"])
+    submission_id = submission_id or uuid.uuid4().hex
+    inspection_enabled = bool(config.get("engagement_inspection_enabled", False))
+    inspection_every = int(config.get("inspection_every_rounds", 5))
+    planned: list[PlannedTask] = []
+    device_plans: list[dict[str, Any]] = []
+    inspection_profiles = inspection_profiles or {}
     for device_offset, device_id in enumerate(config["device_ids"]):
+        queue_position = 0
+        device_video_count = 0
+        device_inspection_count = 0
         for index in range(round_count):
             round_config = {
                 **config,
                 "device_id": device_id,
                 "round_index": index + 1,
                 "seed": base_seed + device_offset * round_count + index,
+                "submission_id": submission_id,
             }
-            not_before = (base_time + timedelta(minutes=index * interval)).isoformat(
-                timespec="milliseconds"
+            if plan_revision is not None:
+                snapshot = round_snapshot(plan_revision, index + 1)
+                theme = snapshot["theme"]
+                round_config.update(
+                    {
+                        "content_plan_snapshot": snapshot,
+                        "topic_prompt": theme["topic_prompt"],
+                        "search_query": theme["search_query"],
+                    }
+                )
+            not_before = (
+                base_time
+                + timedelta(minutes=index * interval, microseconds=queue_position + 1)
+            ).isoformat(
+                timespec="microseconds"
             )
-            task_ids.append(
-                store.submit(
+            planned.append(
+                PlannedTask(
                     "douyin_topic_session",
                     device_id,
                     round_config,
                     not_before=not_before,
                 )
             )
-    return task_ids
+            queue_position += 1
+            device_video_count += 1
+            round_index = index + 1
+            if inspection_enabled and round_index % inspection_every == 0:
+                inspection_config = {
+                    **config,
+                    "device_id": device_id,
+                    "submission_id": submission_id,
+                    "inspection_index": device_inspection_count + 1,
+                    "after_round_index": round_index,
+                    "inspection_every_rounds": inspection_every,
+                    "max_items_per_section": 20,
+                }
+                inspection_profile = inspection_profiles.get(device_id, {})
+                workflow = str(
+                    inspection_profile.get("engagement_inspection_version") or "v1"
+                )
+                inspection_config["inspection_workflow_version"] = (
+                    workflow if workflow in {"v1", "v2"} else "v1"
+                )
+                inspection_config["max_items_per_section"] = (
+                    100
+                    if inspection_config["inspection_workflow_version"] == "v2"
+                    else 20
+                )
+                if inspection_config["inspection_workflow_version"] == "v2":
+                    calibration = inspection_profile.get("engagement_calibration")
+                    if (
+                        not isinstance(calibration, Mapping)
+                        or int(calibration.get("passes") or 0) < 3
+                        or calibration.get("later_passes_semantically_equal") is not True
+                    ):
+                        raise ValueError(
+                            f"device {device_id} requires a stable three-pass calibration for v2"
+                        )
+                    inspection_config["expected_app_version"] = str(
+                        inspection_profile.get("engagement_app_version") or ""
+                    )
+                    inspection_config["expected_display_signature"] = str(
+                        inspection_profile.get("engagement_display_signature") or ""
+                    )
+                    calibration_snapshot = json.loads(
+                        json.dumps(calibration, ensure_ascii=False)
+                    )
+                    calibration_snapshot.setdefault(
+                        "sections",
+                        {
+                            "private_messages": True,
+                            "received_likes": True,
+                            "received_comments": True,
+                            "received_danmaku": True,
+                            "profile_visitors": True,
+                        },
+                    )
+                    inspection_config["inspection_calibration"] = calibration_snapshot
+                inspection_config.pop("round_index", None)
+                inspection_not_before = (
+                    base_time
+                    + timedelta(
+                        minutes=index * interval,
+                        microseconds=queue_position + 1,
+                    )
+                ).isoformat(timespec="microseconds")
+                planned.append(
+                    PlannedTask(
+                        "douyin_engagement_inspection",
+                        device_id,
+                        inspection_config,
+                        not_before=inspection_not_before,
+                    )
+                )
+                queue_position += 1
+                device_inspection_count += 1
+        device_plans.append(
+            {
+                "device_id": device_id,
+                "video_task_count": device_video_count,
+                "inspection_task_count": device_inspection_count,
+                "total_task_count": device_video_count + device_inspection_count,
+            }
+        )
+    return SubmissionPlan(
+        tasks=tuple(planned),
+        video_task_count=sum(item["video_task_count"] for item in device_plans),
+        inspection_task_count=sum(
+            item["inspection_task_count"] for item in device_plans
+        ),
+        device_plans=tuple(device_plans),
+    )
+
+
+def submit_scheduled_rounds(store: TaskStore, config: dict[str, Any]) -> SubmissionResult:
+    """Queue independently auditable rounds and interleaved inspections."""
+    plan_revision: dict[str, Any] | None = None
+    if config.get("content_mode") != "general" and config.get("content_plan_revision_id"):
+        try:
+            plan_revision = store.get_content_plan_revision(
+                str(config["content_plan_revision_id"])
+            )
+        except KeyError as exc:
+            raise ValueError("所选内容计划版本不存在") from exc
+        if plan_revision["plan_id"] != config.get("content_plan_id"):
+            raise ValueError("内容计划与版本不匹配")
+    plan = build_scheduled_plan(
+        config,
+        plan_revision=plan_revision,
+        inspection_profiles=load_device_profile_payloads(),
+    )
+    task_ids = [
+        store.submit(
+            item.task_type,
+            item.device_id,
+            item.payload,
+            not_before=item.not_before,
+        )
+        for item in plan.tasks
+    ]
+    return SubmissionResult(
+        task_ids,
+        video_task_count=plan.video_task_count,
+        inspection_task_count=plan.inspection_task_count,
+        device_plans=plan.device_plans,
+    )
 

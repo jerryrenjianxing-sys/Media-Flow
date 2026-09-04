@@ -11,6 +11,7 @@ from typing import Any
 import requests
 
 from comment_ai import encode_image, parse_streaming_response
+from model_runtime_config import OPENROUTER_PRIMARY_MODEL
 from task_store import IncidentRecord
 
 
@@ -137,13 +138,14 @@ def build_incident_analysis_payload(
         "stream": True,
     }
     if "openrouter.ai" in base_url.lower():
+        json_object_only = model.startswith("z-ai/glm-5.3-flash")
         payload["models"] = [model, *fallback_models]
         payload["provider"] = {
-            "allow_fallbacks": True,
-            "require_parameters": True,
+            "allow_fallbacks": bool(fallback_models),
+            "require_parameters": not json_object_only,
             "data_collection": "deny",
         }
-        payload["response_format"] = {
+        payload["response_format"] = {"type": "json_object"} if json_object_only else {
             "type": "json_schema",
             "json_schema": {
                 "name": "incident_advice",
@@ -162,6 +164,10 @@ def build_incident_analysis_payload(
                 },
             },
         }
+        if json_object_only:
+            payload.pop("temperature", None)
+            payload["max_tokens"] = 1600
+            payload["reasoning"] = {"effort": "high", "exclude": True}
     else:
         payload["model"] = model
         payload["response_format"] = {"type": "json_object"}
@@ -180,10 +186,10 @@ def analyze_incident(
     if not api_key:
         raise RuntimeError("No cloud model API key is available in the environment")
     base_url = (base_url or os.environ.get("PHONE_AGENT_BASE_URL") or "https://openrouter.ai/api/v1").rstrip("/")
-    model = model or os.environ.get("PHONE_AGENT_COMMENT_MODEL") or "google/gemini-3.1-flash-lite"
+    model = model or os.environ.get("PHONE_AGENT_COMMENT_MODEL") or OPENROUTER_PRIMARY_MODEL
     fallbacks = tuple(
         item.strip()
-        for item in os.environ.get("PHONE_AGENT_COMMENT_FALLBACK_MODELS", "openai/gpt-4.1-nano").split(",")
+        for item in os.environ.get("PHONE_AGENT_COMMENT_FALLBACK_MODELS", "").split(",")
         if item.strip()
     )
     payload = build_incident_analysis_payload(

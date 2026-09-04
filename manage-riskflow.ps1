@@ -6,18 +6,78 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
-$python = Join-Path $projectRoot '.venv\Scripts\python.exe'
+$bundledPython = Join-Path $projectRoot 'runtime\python\python.exe'
+$isDistribution = Test-Path -LiteralPath $bundledPython
+if ($isDistribution) {
+    $env:RISKFLOW_APP_ROOT = $projectRoot
+    $env:RISKFLOW_DATA_ROOT = Join-Path $env:LOCALAPPDATA 'RiskFlow\data'
+    $env:PYTHONUTF8 = '1'
+    $env:PYTHONIOENCODING = 'utf-8'
+    $env:PATH = (Join-Path $projectRoot 'runtime\platform-tools') + ';' +
+        (Join-Path $projectRoot 'runtime\node') + ';' + $env:PATH
+}
+$python = if ($isDistribution) { $bundledPython } else { Join-Path $projectRoot '.venv\Scripts\python.exe' }
+$pythonwCandidate = if ($isDistribution) { Join-Path $projectRoot 'runtime\python\pythonw.exe' } else { Join-Path $projectRoot '.venv\Scripts\pythonw.exe' }
+$pythonw = if (Test-Path -LiteralPath $pythonwCandidate) { $pythonwCandidate } else { $python }
 $control = Join-Path $projectRoot 'fixed_runner\runtime_control.py'
+$backgroundHost = Join-Path $projectRoot 'fixed_runner\background_host.py'
+$taskName = 'RiskFlow Background'
 
 if (-not (Test-Path -LiteralPath $python)) {
-    throw 'RiskFlow 独立环境尚未安装。请先运行 setup-riskflow.ps1。'
+    throw 'RiskFlow runtime is not installed. Run setup-riskflow.ps1 first.'
 }
 
-$normalized = $Action.ToLowerInvariant()
-& $python $control $normalized
-if ($LASTEXITCODE -ne 0) { throw "RiskFlow $Action 失败。" }
+if ($Action -eq 'Doctor') {
+    & $python $control doctor
+    if ($LASTEXITCODE -ne 0) { throw 'RiskFlow doctor checks failed.' }
+    return
+}
+
+if ($Action -eq 'Status') {
+    & $python $backgroundHost status
+    & $python $control status
+    return
+}
+
+$registered = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+$backgroundState = 'stopped'
+$backgroundStatusText = & $python $backgroundHost status
+try { $backgroundState = ($backgroundStatusText | ConvertFrom-Json).state } catch { $backgroundState = 'unknown' }
+
+function Wait-BackgroundStopped {
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        $statusText = & $python $backgroundHost status
+        try { $state = ($statusText | ConvertFrom-Json).state } catch { $state = 'unknown' }
+        if ($state -eq 'stopped') { return }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    throw 'RiskFlow background host did not stop before the timeout.'
+}
+
+if ($Action -in @('Stop', 'Restart')) {
+    if ($backgroundState -eq 'running') {
+        & $python $backgroundHost request-stop
+        if ($LASTEXITCODE -ne 0) { throw "RiskFlow $Action failed." }
+        Wait-BackgroundStopped
+    }
+    else {
+        & $python $control stop
+        if ($LASTEXITCODE -ne 0) { throw "RiskFlow $Action failed." }
+    }
+    if ($Action -eq 'Stop') { return }
+}
 
 if ($Action -in @('Start', 'Restart')) {
+    & $python $backgroundHost request-start
+    if ($LASTEXITCODE -ne 0) { throw "RiskFlow $Action failed." }
+    if ($registered) {
+        Start-ScheduledTask -TaskName $taskName
+    }
+    else {
+        Start-Process -WindowStyle Hidden -FilePath $pythonw -ArgumentList @($backgroundHost, 'run') -WorkingDirectory $projectRoot
+    }
+
     $apiUrl = 'http://127.0.0.1:48138/api/config'
     $pageUrl = 'http://127.0.0.1:3000/'
     $deadline = (Get-Date).AddSeconds(45)
@@ -30,8 +90,7 @@ if ($Action -in @('Start', 'Restart')) {
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
     if (-not ($apiReady -and $pageReady)) {
-        throw 'RiskFlow 启动超时，请查看 fixed_runner\runtime 中的日志。'
+        throw 'RiskFlow startup timed out. Check the runtime logs.'
     }
     if (-not $NoBrowser) { Start-Process $pageUrl }
 }
-

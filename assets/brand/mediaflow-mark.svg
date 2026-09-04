@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">MediaFlow</title>
+  <defs>
+    <linearGradient id="ribbon" x1="10" y1="16" x2="55" y2="49" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4F58CE"/>
+      <stop offset="0.48" stop-color="#98A4FF"/>
+      <stop offset="1" stop-color="#4F58CE"/>
+    </linearGradient>
+  </defs>
+  <path d="M10 47V30C10 18 18 14 26 24L32 32L41 20C48 11 55 17 55 28V47" fill="none" stroke="url(#ribbon)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M10 30C15 18 22 18 29 28L36 39C42 48 50 44 55 33" fill="none" stroke="#AEB7FF" stroke-width="6" stroke-linecap="round"/>
+</svg>

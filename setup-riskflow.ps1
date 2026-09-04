@@ -44,8 +44,13 @@ if (-not $SkipFrontend) {
     }
 }
 
+& (Join-Path $projectRoot 'launcher\build-launcher.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'RiskFlow 启动器生成失败。' }
+
+& (Join-Path $projectRoot 'install-riskflow-background.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'RiskFlow 后台任务安装失败。' }
+
 & $python (Join-Path $projectRoot 'fixed_runner\runtime_control.py') doctor
 if ($LASTEXITCODE -ne 0) { throw 'RiskFlow 环境自检未通过。' }
 
 Write-Host 'RiskFlow 独立环境已就绪。'
-

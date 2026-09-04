@@ -1,0 +1,25 @@
+{
+  "fixture_version": 1,
+  "source": "sanitized from two consecutive Mobilerun local-android-adb observations",
+  "device_alias": "抖音5号",
+  "package": "com.ss.android.ugc.aweme",
+  "path": ["首页", "消息", "全部消息", "消息", "首页"],
+  "allowed_actions": [
+    "bottom_tab:消息",
+    "list_entry:互动消息",
+    "key:back",
+    "bottom_tab:首页"
+  ],
+  "observations": {
+    "message_interaction_semantics_present": true,
+    "same_row_duplicate_semantics_possible": true,
+    "all_messages_title_present": true,
+    "like_summary_present": true,
+    "visitor_summary_present": true,
+    "bottom_navigation_hidden_on_all_messages": true,
+    "delayed_tree_after_back_possible": true,
+    "home_restored": true,
+    "prohibited_action_taken": false
+  },
+  "synthetic_activity_xml": "<hierarchy><node package=\"com.ss.android.ugc.aweme\" visible-to-user=\"true\" text=\"全部消息\" content-desc=\"\" clickable=\"false\" bounds=\"[0,0][1080,200]\" /><node package=\"com.ss.android.ugc.aweme\" visible-to-user=\"true\" text=\"\" content-desc=\"校准样本A赞了你的作品，2小时前\" clickable=\"false\" bounds=\"[0,200][1080,400]\" /><node package=\"com.ss.android.ugc.aweme\" visible-to-user=\"true\" text=\"\" content-desc=\"校准样本B，等 3 人近期访问过你的主页，9小时前\" clickable=\"false\" bounds=\"[0,400][1080,600]\" /></hierarchy>"
+}

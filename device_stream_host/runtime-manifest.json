@@ -1,0 +1,15 @@
+{
+  "protocol": 1,
+  "tango": {
+    "@yume-chan/adb": "2.3.1",
+    "@yume-chan/adb-scrcpy": "2.3.0",
+    "@yume-chan/adb-server-node-tcp": "2.1.0",
+    "@yume-chan/scrcpy": "2.3.0",
+    "@yume-chan/stream-extra": "2.1.0"
+  },
+  "scrcpyServer": {
+    "version": "3.3.3",
+    "file": "vendor/scrcpy-server-v3.3.3",
+    "sha256": "7e70323ba7f259649dd4acce97ac4fefbae8102b2c6d91e2e7be613fd5354be0"
+  }
+}

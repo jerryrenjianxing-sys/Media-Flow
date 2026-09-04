@@ -33,3 +33,17 @@ TBD - created by archiving change modularize-execution-core. Update Purpose afte
 - **WHEN** 现有启动器或测试导入 `worker.py`、`control_api.py` 的公开入口
 - **THEN** 调用 SHALL 继续工作
 - **AND** 返回字段与终态含义 SHALL 不变
+
+### Requirement: 平台Adapter不得扩大动作权限
+固定执行器 SHALL 是平台 Adapter 的唯一动作调用者；Adapter 和视觉模型不得持有独立设备执行线程或绕过设备锁、动作前闸门与动作后验证。
+
+#### Scenario: 初始化视觉模型返回坐标
+- **WHEN** 云端模型返回一个高置信控件候选
+- **THEN** 本地固定程序在持有设备锁时完成复验，模型和控制接口本身不得点击设备
+
+### Requirement: 初始化与普通任务共享设备独占
+初始化和普通任务 MUST 使用同一设备独占机制，同一设备任一时刻最多存在一个动作执行者。
+
+#### Scenario: 设备正在运行普通任务
+- **WHEN** 用户尝试启动该设备初始化
+- **THEN** 系统拒绝开始并显示设备被占用，不中断或接管现有任务

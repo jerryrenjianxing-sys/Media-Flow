@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "mediaflow-mumu-standard-v1",
+  "name": "MediaFlow MuMu 标准配方",
+  "provider": "mumu",
+  "contains_account_data": false,
+  "contains_device_identity": false,
+  "signature": {
+    "android_image": "android-15",
+    "display": {
+      "width": 900,
+      "height": 1600,
+      "density": 320,
+      "orientation": "portrait"
+    },
+    "navigation_mode": "gestural",
+    "input_method": "adbkeyboard",
+    "douyin_version_prefixes": [],
+    "adapter_version": "douyin-adapter-v1"
+  },
+  "verification": {
+    "requires_instance_semantic_check": true,
+    "zero_write_video_count": 3
+  }
+}

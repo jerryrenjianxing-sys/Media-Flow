@@ -1,25 +1,50 @@
-# RiskFlow 运行手册
+# MediaFlow 运行手册
 
 ## 1. 安全启动
+
+### 安装版
+
+在没有源码和 Codex 的 Windows 电脑上，日常安装运行 `packaging/out/Releases/MediaFlow-Installer.exe`，可选择程序安装位置。内部快速安装可用 `MediaFlow-Setup.exe`，公司IT整机部署可用 `MediaFlow-x64.msi`。安装完成后从桌面或开始菜单打开 MediaFlow；首次启动会单独选择数据库、截图、日志、设备档案和备份的数据目录，默认 `%LocalAppData%\MediaFlow\data`。升级或普通卸载不会默认删除这些运行数据。
+
+如果检测到 `%LocalAppData%\RiskFlow\data`，首次启动默认复制到新目录并校验数据库与关键文件；只有校验通过才切换，旧目录保留用于回滚。迁移失败时继续使用旧目录，不删除或覆盖旧数据。
+
+首次安装不携带任何 OpenRouter Key 或设备档案，需要在本机控制台重新配置 Key、连接设备并执行设备检索。当前内部构建未签名，跨电脑安装可能出现 Windows SmartScreen 提示；正式外部分发前应增加受信任的代码签名证书。
+
+如果桌面窗口提示缺少 WebView2 Runtime，按窗口中的微软官方入口安装 Evergreen Runtime；在此期间浏览器入口仍可使用，后台任务不会因界面关闭而停止。
+
+### 开发版
 
 首次使用先从项目根目录安装和自检独立环境：
 
 ```powershell
-.\setup-riskflow.ps1
+.\setup-mediaflow.ps1
 ```
+
+该安装会为当前 Windows 用户注册 `MediaFlow Background` 登录任务、生成 `MediaFlow.exe`，并在桌面创建 MediaFlow 快捷方式。后台宿主由 Windows 任务计划程序启动，不依赖 Codex 或启动窗口继续运行；当前用户未登录时不会运行。
 
 日常启动：
 
 ```powershell
-.\run-riskflow-console.ps1
+.\run-mediaflow-console.ps1
 ```
 
-也可以双击 `启动-RiskFlow控制台.cmd` 或根目录的一键启动程序。启动器只启动本地 API 与网页，不会自动提交设备任务。
+也可以双击 `启动-MediaFlow控制台.cmd` 或根目录的一键启动程序。启动器只启动本地 API 与网页，不会自动提交设备任务。
+
+生产控制台的健康判断不仅检查首页是否返回 200，还会验证首页引用的全部 JS/CSS 资源。前端构建或升级替换哈希资源后，发行脚本会只刷新网页控制台；API、任务队列、设备 Worker 和正在执行的设备任务不会因此重启。若浏览器仍保留构建前的旧页面，核心资源加载失败时页面会最多自动刷新一次；桌面软件重新打开时会主动使用新入口地址。
+
+后台状态检查：
+
+```powershell
+.\manage-mediaflow.ps1 -Action Status
+.\manage-mediaflow.ps1 -Action Doctor
+```
+
+状态会分别显示计划任务注册、后台心跳、各服务进程和设备在线情况。页面在线不代表手机在线。
 
 正式运行使用项目自己的 `.venv`，不再借用 Mobile Harness 环境。独立环境包含固定执行器所需的 Python 依赖；Node、前端依赖、ADB、前端构建和本机加密 Key 由 doctor 分项检查：
 
 ```powershell
-.\manage-riskflow.ps1 -Action Doctor
+.\manage-mediaflow.ps1 -Action Doctor
 ```
 
 ## 2. 就绪检查
@@ -29,8 +54,18 @@
 - 控制台：`http://127.0.0.1:3000/`
 - 配置接口：`http://127.0.0.1:48138/api/config`
 - 状态接口：`http://127.0.0.1:48138/api/status`
+- 实时画面网关：`http://127.0.0.1:48139/health`
 
 页面和接口返回正常只说明服务在线。设备是否在线必须看状态接口中的设备字段并结合 ADB 实时检查；不要用 PID 文件或历史截图判断。
+
+### MuMu 实时画面与人工接管
+
+- 只有被 MediaFlow 确认为本机 MuMu 的设备会出现实时入口；真机固定显示“每 5 秒截图”。
+- 设备墙是只读的，任务运行时也可观看。打开聚焦画面后，该设备的墙面流会停止，避免重复编码。
+- “人工接管”只在设备没有任务、初始化和其他控制会话时可用；接管期间任务台会阻止向该设备提交任务。
+- 浏览器断开后控制锁最多保留 15 秒。人工输入结果不明时系统不会重放。
+- 五秒内没有首帧、浏览器不支持 WebCodecs 或解码失败时，页面会退回截图；可先点“重试实时画面”，仍失败再打开该台 MuMu 单机窗口。
+- 画面网关只接受本机短期令牌和有限的点击、滑动、系统键及文字输入，不提供 Shell、通用 ADB 或 Root 指令。
 
 ## 3. 暂停、停止和取消
 
@@ -76,14 +111,20 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:48138/api/resume -ContentTy
 需要结束服务时：
 
 1. 先暂停并确认没有运行中任务。
-2. 双击 `停止-RiskFlow控制台.cmd`，或执行：
+2. 双击 `停止-MediaFlow控制台.cmd`，或执行：
 
 ```powershell
-.\manage-riskflow.ps1 -Action Stop
+.\manage-mediaflow.ps1 -Action Stop
 ```
 
-3. 停机模块只处理登记过且 PID、启动时间和可执行文件身份均匹配的 RiskFlow API、网页和 Worker；身份不一致时拒绝停止。
+3. 停机模块只处理登记过且 PID、启动时间和可执行文件身份均匹配的 MediaFlow API、网页和 Worker；身份不一致时拒绝停止。
 4. 不使用“结束所有 Python/Node 进程”的方式，避免影响其他本地项目。
+
+彻底移除后台自启动但保留数据库、截图、日志和密钥：
+
+```powershell
+.\uninstall-mediaflow-background.ps1
+```
 
 重复执行 `Start`、`Stop` 或 `Restart` 是幂等的。全服务重启会在有运行中任务时拒绝执行；只重启某台设备 Worker 请使用控制台“精确重启已选 Worker”。
 
@@ -91,7 +132,7 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:48138/api/resume -ContentTy
 
 打开 `http://127.0.0.1:3000/governance`：
 
-- 候选标签和 RiskFlow 判断只用于辅助阅读，不能自动成为人工真值。
+- 候选标签和 MediaFlow 判断只用于辅助阅读，不能自动成为人工真值。
 - 选择人工结论并点击“确认结论”后，该样本才进入正式一致率分母。
 - 页面持续显示缺少的相关性类别与困难负样本；覆盖不完整时结果保持“暂定”。
 - 证据保留天数只是一项治理政策记录，系统不会按此数字自动删除文件。

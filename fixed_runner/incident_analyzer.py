@@ -6,10 +6,33 @@ import time
 from pathlib import Path
 
 from incident_analysis import analyze_incident
+from runtime_layout import RUNTIME_ROOT
 from task_store import TaskStore
 
 
-DEFAULT_DB = Path(__file__).resolve().parent / "runtime" / "tasks.db"
+DEFAULT_DB = RUNTIME_ROOT / "tasks.db"
+
+
+def _verified_recovery_analysis(incident) -> dict | None:
+    recovery = incident.context.get("verified_recovery")
+    if (
+        incident.outcome != "recovered"
+        or not isinstance(recovery, dict)
+        or recovery.get("verified") is not True
+    ):
+        return None
+    rule_id = str(recovery.get("rule_id") or incident.error_message or "fixed-rule")
+    action = str(recovery.get("action") or incident.recovery_action or "verified recovery")
+    return {
+        "classification": "navigation_drift",
+        "summary": f"固定规则 {rule_id} 已恢复并复验当前页面。",
+        "suggested_rule": f"继续使用已验证的 {action} 恢复规则；无需再次调用云模型分析。",
+        "confidence": 1.0,
+        "risk": "low",
+        "auto_applicable": False,
+        "prompt_version": "verified-fixed-recovery-v1-2026-09-03",
+        "source": "verified_fixed_rule",
+    }
 
 
 def process_one(store: TaskStore) -> bool:
@@ -17,11 +40,15 @@ def process_one(store: TaskStore) -> bool:
     if incident is None:
         return False
     try:
-        advice = analyze_incident(incident)
+        local_analysis = _verified_recovery_analysis(incident)
+        if local_analysis is not None:
+            analysis = local_analysis
+        else:
+            analysis = analyze_incident(incident).public_dict()
         store.finish_incident_analysis(
             incident.id,
             status="completed",
-            analysis=advice.public_dict(),
+            analysis=analysis,
         )
     except Exception as exc:
         store.finish_incident_analysis(
@@ -48,7 +75,7 @@ def run(store: TaskStore, *, poll_seconds: float = 3.0, once: bool = False) -> i
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="RiskFlow read-only incident analyzer")
+    parser = argparse.ArgumentParser(description="MediaFlow read-only incident analyzer")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--poll-seconds", type=float, default=3.0)
     parser.add_argument("--once", action="store_true")

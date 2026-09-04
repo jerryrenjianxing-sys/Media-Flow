@@ -13,9 +13,19 @@ ADB = os.environ.get("ADB_PATH", "adb")
 
 
 def adb(*args: str) -> str:
-    result = subprocess.run(
-        [ADB, *args], capture_output=True, text=True, encoding="utf-8", errors="replace"
-    )
+    try:
+        result = subprocess.run(
+            [ADB, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("ADB command timed out after 10 seconds") from exc
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "ADB command failed")
     return result.stdout.strip()

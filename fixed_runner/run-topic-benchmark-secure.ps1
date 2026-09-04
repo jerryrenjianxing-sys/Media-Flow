@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
-$python = 'C:\Users\jerry\.codex\skills\mobile-harness\.venv\Scripts\python.exe'
+$python = Join-Path (Split-Path $PSScriptRoot -Parent) '.venv\Scripts\python.exe'
 $benchmark = Join-Path $PSScriptRoot 'benchmark_topic_models.py'
-$savedKeyPath = 'C:\Users\jerry\Documents\Codex\Tools\Open-AutoGLM\.secrets\openrouter-api-key.dpapi'
+$savedKeyPath = Join-Path (Split-Path $PSScriptRoot -Parent) '.secrets\openrouter-api-key.dpapi'
 
 $encryptedKey = (Get-Content -Raw -LiteralPath $savedKeyPath).Trim()
 $secureKey = $encryptedKey | ConvertTo-SecureString

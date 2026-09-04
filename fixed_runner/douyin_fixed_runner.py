@@ -15,9 +15,10 @@ from typing import Any
 
 from PIL import Image
 
+from runtime_layout import RUNTIME_ROOT
+
 
 DOUYIN_PACKAGE = "com.ss.android.ugc.aweme"
-RUNTIME_ROOT = Path(__file__).resolve().parent / "runtime"
 SUPPORTED_LAYOUT_SIZES = {(1080, 2400), (900, 1600)}
 
 

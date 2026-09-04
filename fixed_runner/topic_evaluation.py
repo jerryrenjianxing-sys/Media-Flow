@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from comment_ai import TOPIC_PROMPT_VERSION
 from comment_ai import analyze_topic
+from model_runtime_config import OPENROUTER_PRIMARY_MODEL
 from topic_policy import resolve_topic_policy
 
 
@@ -137,7 +138,7 @@ def attach_riskflow_decisions(
     base_url: str,
     analyze=analyze_topic,
 ) -> list[dict[str, Any]]:
-    """Run RiskFlow's current prompt on existing images; never controls a device."""
+    """Run MediaFlow's current prompt on existing images; never controls a device."""
     policy_version = resolve_topic_policy(target_topic).version_id
     updated: list[dict[str, Any]] = []
     for sample in samples:
@@ -177,14 +178,14 @@ def attach_riskflow_decisions(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Compare confirmed topic references with RiskFlow decisions"
+        description="Compare confirmed topic references with MediaFlow decisions"
     )
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--prompt-version", default=TOPIC_PROMPT_VERSION)
     parser.add_argument("--run-model", action="store_true")
     parser.add_argument("--target-topic-file", type=Path)
-    parser.add_argument("--model", default="google/gemini-3.1-flash-lite")
+    parser.add_argument("--model", default=OPENROUTER_PRIMARY_MODEL)
     parser.add_argument("--base-url", default="https://openrouter.ai/api/v1")
     parser.add_argument("--evaluated-manifest", type=Path)
     args = parser.parse_args()

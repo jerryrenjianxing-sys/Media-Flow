@@ -57,6 +57,33 @@ class IncidentAnalysisTests(unittest.TestCase):
         self.assertIn("do not control the phone", system)
         self.assertIn("Do not output screen coordinates", system)
 
+    def test_glm_flash_payload_uses_supported_json_object_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            task_id = store.submit("healthcheck", "device-1")
+            incident_id = store.record_incident(
+                task_id=task_id,
+                device_id="device-1",
+                video_index=1,
+                stage="topic_model",
+                error_type="RuntimeError",
+                error_message="model failed",
+                outcome="model_failed",
+                recovery_action="none_model_channel",
+            )
+            payload = build_incident_analysis_payload(
+                store.get_incident(incident_id),
+                model="z-ai/glm-5.3-flash",
+                base_url="https://openrouter.ai/api/v1",
+            )
+        self.assertEqual(payload["models"], ["z-ai/glm-5.3-flash"])
+        self.assertFalse(payload["provider"]["allow_fallbacks"])
+        self.assertFalse(payload["provider"]["require_parameters"])
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertEqual(payload["reasoning"], {"effort": "high", "exclude": True})
+        self.assertEqual(payload["max_tokens"], 1600)
+        self.assertNotIn("temperature", payload)
+
 
 if __name__ == "__main__":
     unittest.main()

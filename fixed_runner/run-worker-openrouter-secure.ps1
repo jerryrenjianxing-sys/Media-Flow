@@ -26,9 +26,27 @@ $keyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
 try {
     $env:PHONE_AGENT_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPointer)
     $env:PHONE_AGENT_BASE_URL = 'https://openrouter.ai/api/v1'
-    $env:PHONE_AGENT_COMMENT_MODEL = 'google/gemini-3.1-flash-lite'
-    $env:PHONE_AGENT_COMMENT_FALLBACK_MODELS = 'openai/gpt-4.1-nano'
-    $proxyAvailable = Test-NetConnection -ComputerName '127.0.0.1' -Port 7890 -InformationLevel Quiet -WarningAction SilentlyContinue
+    $env:PHONE_AGENT_COMMENT_MODEL = 'z-ai/glm-5.3-flash'
+    $env:PHONE_AGENT_COMMENT_FALLBACK_MODELS = ''
+    # Test-NetConnection can throw an internal Write-Debug null reference on
+    # some Windows PowerShell / NetTCPIP combinations when the local proxy is
+    # simply not listening.  A bounded TcpClient probe treats that ordinary
+    # state as false without aborting the worker before it reaches the device.
+    $proxyAvailable = $false
+    $proxyProbe = New-Object System.Net.Sockets.TcpClient
+    try {
+        $proxyAttempt = $proxyProbe.BeginConnect('127.0.0.1', 7890, $null, $null)
+        if ($proxyAttempt.AsyncWaitHandle.WaitOne(500)) {
+            $proxyProbe.EndConnect($proxyAttempt)
+            $proxyAvailable = $proxyProbe.Connected
+        }
+    }
+    catch {
+        $proxyAvailable = $false
+    }
+    finally {
+        $proxyProbe.Dispose()
+    }
     if ($proxyAvailable) {
         $env:PHONE_AGENT_PROXY_URL = 'http://127.0.0.1:7890'
     }

@@ -1,7 +1,7 @@
 # correction-advisory Specification
 
 ## Purpose
-TBD - created by archiving change add-advisory-correction-and-visual-gate. Update Purpose after archive.
+规定异常证据的独立只读分析、候选规则边界和固定规则接入条件，使纠错建议可以帮助后续开发，同时不会绕过固定执行器直接操作设备或改变任务终态。
 
 ## Requirements
 
@@ -28,3 +28,14 @@ TBD - created by archiving change add-advisory-correction-and-visual-gate. Updat
 - **WHEN** 异常分析请求失败
 - **THEN** 异常 SHALL 标记为分析失败并保留错误摘要
 - **AND** 原任务终态 SHALL 保持不变
+
+### Requirement: 候选建议与正式规则分离
+纠错记录 SHALL 区分只读候选建议与固定程序中已经验证的规则；候选建议保持 `auto_applicable=false`，只有经过离线夹具或设备单步验证并进入版本化规则目录后才能由固定程序使用。
+
+#### Scenario: 分析器识别重复弹窗
+- **WHEN** 分析器认为异常与历史页面相似
+- **THEN** 系统展示候选规则和重复线索，但不得自动修改规则或操作设备
+
+#### Scenario: 已验证规则命中
+- **WHEN** 固定程序命中已进入规则目录的页面信号并成功恢复
+- **THEN** 纠错记录 SHALL 保存规则标识、实际动作和动作后验证结果

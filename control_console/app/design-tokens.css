@@ -1,0 +1,50 @@
+/* Active MediaFlow token mapping. Source and product-specific decisions: ../DESIGN.md and ../control_console/DESIGN.md. */
+:root {
+  --canvas: #010102;
+  --surface-1: #0f1011;
+  --surface-2: #141516;
+  --surface-3: #18191a;
+  --surface-4: #191a1b;
+  --hairline: #23252a;
+  --hairline-strong: #34343a;
+  --ink: #f7f8f8;
+  --ink-muted: #8a8f98;
+  --ink-subtle: #62666d;
+  --primary: #5e6ad2;
+  --primary-hover: #828fff;
+  --success: #27a644;
+  --warning: #d79b3b;
+  --danger: #e05d5d;
+  --danger-soft: #2a1517;
+  --topbar: rgba(1,1,2,.92);
+  --disabled-surface: #0b0c0d;
+  --muted-field: #4b4e54;
+  --muted: var(--ink-muted);
+  --panel: var(--surface-1);
+  --surface: var(--surface-2);
+  --text: var(--ink);
+  --accent: var(--primary);
+  --accent-soft: color-mix(in srgb, var(--primary) 12%, transparent);
+  --shadow-soft: 0 18px 48px rgba(0,0,0,.2);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --canvas: #f5f6f7;
+  --surface-1: #ffffff;
+  --surface-2: #f3f4f5;
+  --surface-3: #e9ebed;
+  --surface-4: #e3e5e8;
+  --hairline: #e1e3e6;
+  --hairline-strong: #cfd2d7;
+  --ink: #111216;
+  --ink-muted: #60656e;
+  --ink-subtle: #898e97;
+  --primary: #5e6ad2;
+  --primary-hover: #4d58bd;
+  --danger-soft: #fff0f0;
+  --topbar: rgba(245,246,247,.9);
+  --disabled-surface: #e9ebed;
+  --muted-field: #989da5;
+  color-scheme: light;
+}

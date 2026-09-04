@@ -7,7 +7,7 @@ $savedKeyPath = Join-Path $projectRoot '.secrets\openrouter-api-key.dpapi'
 $secretDirectory = Split-Path -Parent $savedKeyPath
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'RiskFlow - 保存 OpenRouter Key'
+$form.Text = 'MediaFlow - 保存 OpenRouter Key'
 $form.StartPosition = 'CenterScreen'
 $form.ClientSize = New-Object System.Drawing.Size(520, 210)
 $form.FormBorderStyle = 'FixedDialog'

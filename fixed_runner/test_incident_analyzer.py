@@ -14,6 +14,37 @@ from task_store import TaskStore
 
 
 class IncidentAnalyzerTests(unittest.TestCase):
+    def test_verified_recovery_is_archived_without_cloud_analysis(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            task_id = store.submit("healthcheck", "device-1")
+            incident_id = store.record_incident(
+                task_id=task_id,
+                device_id="device-1",
+                video_index=None,
+                stage="startup_recovery",
+                error_type="RecoveredPage",
+                error_message="douyin-navigation-drift",
+                outcome="recovered",
+                recovery_action="back",
+                context={
+                    "verified_recovery": {
+                        "rule_id": "douyin-navigation-drift",
+                        "rule_version": "1.0.0",
+                        "action": "back",
+                        "verified": True,
+                    }
+                },
+            )
+            with patch("incident_analyzer.analyze_incident") as analyze:
+                self.assertTrue(process_one(store))
+
+            incident = store.get_incident(incident_id)
+            self.assertEqual(incident.analysis_status, "completed")
+            self.assertEqual(incident.analysis["classification"], "navigation_drift")
+            self.assertEqual(incident.analysis["source"], "verified_fixed_rule")
+            analyze.assert_not_called()
+
     def test_process_one_writes_advice_without_changing_task(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")

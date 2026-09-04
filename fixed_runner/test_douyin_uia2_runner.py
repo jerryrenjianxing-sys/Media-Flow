@@ -10,8 +10,13 @@ from PIL import Image
 
 from douyin_fixed_runner import PROFILE  # noqa: E402
 from douyin_uia2_runner import (  # noqa: E402
+    GateDecision,
+    UIA2_HTTP_TIMEOUT_SECONDS,
     Uia2DouyinRunner,
+    comment_input_activation_source_confirmed,
+    classify_douyin_page_source,
     classify_mutation_gate,
+    find_comment_input_bounds,
     find_control_bounds,
     find_search_result_bounds,
     foreground_package,
@@ -19,6 +24,14 @@ from douyin_uia2_runner import (  # noqa: E402
 
 
 PACKAGE = "com.ss.android.ugc.aweme"
+REAL_PROFILE_RUN = (
+    Path(__file__).resolve().parent
+    / "runtime"
+    / "artifacts"
+    / "runs"
+    / "20260902-134353-832445-6HJ4C19917021309"
+)
+FIXTURES = Path(__file__).resolve().parent / "test_fixtures"
 
 
 def node(
@@ -27,11 +40,12 @@ def node(
     description: str = "",
     bounds: str = "[0,0][1080,2200]",
     clickable: str = "false",
+    resource_id: str = "",
 ) -> str:
     return (
         f'<node package="{PACKAGE}" visible-to-user="true" '
         f'bounds="{bounds}" clickable="{clickable}" text="{text}" '
-        f'content-desc="{description}" />'
+        f'content-desc="{description}" resource-id="{resource_id}" />'
     )
 
 
@@ -61,11 +75,77 @@ def page_xml(*extra_signals: str, include_controls: bool = True) -> str:
     )
 
 
+def search_shell_nodes() -> str:
+    return node(
+        description="返回",
+        bounds="[0,80][120,220]",
+        clickable="true",
+        resource_id=f"{PACKAGE}:id/back_btn",
+    ) + node(
+        text="人工智能",
+        bounds="[120,80][850,220]",
+        resource_id=f"{PACKAGE}:id/et_search_kw",
+    )
+
+
 class MutationGateTest(unittest.TestCase):
     def classify(self, *signals: str, include_controls: bool = True):
         return classify_mutation_gate(
             page_xml(*signals, include_controls=include_controls), PACKAGE
         )
+
+    def test_captured_home_image_notes_are_browsable_but_not_mutation_targets(self) -> None:
+        for fixture, size in (
+            ("home_image_note_douyin3.xml", (720, 1600)),
+            ("home_image_note_douyin4.xml", (1080, 2340)),
+        ):
+            with self.subTest(fixture=fixture):
+                source = (FIXTURES / fixture).read_text(encoding="utf-8")
+                self.assertEqual(
+                    classify_douyin_page_source(source, PACKAGE, *size),
+                    "home_image_note",
+                )
+                decision = classify_mutation_gate(source, PACKAGE, *size)
+                self.assertFalse(decision.allowed)
+                self.assertIn("non_video_feed_item", decision.reasons)
+
+    def test_comment_prompt_child_resolves_to_clickable_parent(self) -> None:
+        source = (
+            '<hierarchy><node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'bounds="[0,0][1080,2340]">'
+            '<node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'class="android.view.View" clickable="true" focusable="true" '
+            'bounds="[36,2076][684,2196]">'
+            '<node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'class="android.widget.TextView" clickable="false" '
+            'text="发条评论，说说你的感受" bounds="[66,2110][561,2163]" />'
+            '</node></node></hierarchy>'
+        )
+        self.assertEqual(
+            find_comment_input_bounds(source, 1080, 2340),
+            (36, 2076, 684, 2196),
+        )
+
+    def test_comment_input_activation_requires_editor_focus_or_keyboard(self) -> None:
+        plain = (
+            '<hierarchy><node package="com.ss.android.ugc.aweme" '
+            'visible-to-user="true" bounds="[0,0][1080,2340]" /></hierarchy>'
+        )
+        focused = (
+            '<hierarchy><node package="com.ss.android.ugc.aweme" '
+            'visible-to-user="true" focused="true" bounds="[36,2076][684,2196]" '
+            'class="android.view.View" /></hierarchy>'
+        )
+        editor = (
+            '<hierarchy><node package="com.ss.android.ugc.aweme" '
+            'visible-to-user="true" bounds="[0,0][1080,2340]">'
+            '<node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'class="android.widget.EditText" bounds="[36,2076][684,2196]" />'
+            '</node></hierarchy>'
+        )
+        self.assertFalse(comment_input_activation_source_confirmed(plain, 1080, 2340))
+        self.assertTrue(comment_input_activation_source_confirmed(focused, 1080, 2340))
+        self.assertTrue(comment_input_activation_source_confirmed(editor, 1080, 2340))
 
     def test_normal_feed_is_allowed(self) -> None:
         self.assertTrue(self.classify("普通视频文案").allowed)
@@ -148,6 +228,12 @@ class MutationGateTest(unittest.TestCase):
 
 
 class DeviceLayoutProfileTest(unittest.TestCase):
+    def test_uiautomator_transport_timeout_is_bounded_for_worker_recovery(self) -> None:
+        import uiautomator2 as u2
+
+        self.assertLessEqual(UIA2_HTTP_TIMEOUT_SECONDS, 20.0)
+        self.assertEqual(u2.HTTP_TIMEOUT, UIA2_HTTP_TIMEOUT_SECONDS)
+
     def test_runner_uses_actual_device_window_instead_of_one_global_resolution(self) -> None:
         device = Mock()
         device.window_size.return_value = (720, 1600)
@@ -164,7 +250,7 @@ class DeviceLayoutProfileTest(unittest.TestCase):
         runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=0)
         self.assertFalse(runner.main_feed_confirmed(Image.new("RGB", (1080, 2400), "black")))
 
-    def test_feed_shell_accepts_exact_recommendation_tab_without_mutation_controls(self) -> None:
+    def test_feed_shell_rejects_exact_recommendation_tab_without_video_controls(self) -> None:
         source = page_xml("推荐", include_controls=False)
         device = Mock()
         device.dump_hierarchy.return_value = source
@@ -173,7 +259,7 @@ class DeviceLayoutProfileTest(unittest.TestCase):
         image = Image.new("RGB", (1080, 2400), "black")
 
         with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
-            self.assertTrue(runner.main_feed_shell_confirmed(image))
+            self.assertFalse(runner.main_feed_shell_confirmed(image))
             self.assertFalse(runner.main_feed_confirmed(image))
 
         mutation = classify_mutation_gate(source, PACKAGE)
@@ -181,6 +267,42 @@ class DeviceLayoutProfileTest(unittest.TestCase):
         self.assertTrue(
             any(reason.startswith("missing_feed_controls") for reason in mutation.reasons)
         )
+
+    def test_personal_profile_is_classified_and_never_accepted_as_feed(self) -> None:
+        source = page_xml(
+            "编辑主页", "获赞", "互关", "关注", "粉丝", "作品", "日常", "收藏", "喜欢",
+            include_controls=False,
+        )
+        device = Mock()
+        device.dump_hierarchy.return_value = source
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+        image = Image.new("RGB", (1080, 2400), "black")
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertEqual(classify_douyin_page_source(source, PACKAGE), "profile")
+            self.assertFalse(runner.main_feed_shell_confirmed(image, source))
+
+    @unittest.skipUnless(
+        (REAL_PROFILE_RUN / "topic-session-initial.xml").is_file()
+        and (REAL_PROFILE_RUN / "topic-session-initial.png").is_file(),
+        "captured personal-profile regression evidence is unavailable",
+    )
+    def test_captured_personal_profile_regression_is_rejected_before_counting(self) -> None:
+        source = (REAL_PROFILE_RUN / "topic-session-initial.xml").read_text(
+            encoding="utf-8"
+        )
+        with Image.open(REAL_PROFILE_RUN / "topic-session-initial.png") as captured:
+            image = captured.copy()
+        device = Mock()
+        device.dump_hierarchy.return_value = source
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertEqual(classify_douyin_page_source(source, PACKAGE, *image.size), "profile")
+            self.assertFalse(runner.main_feed_shell_confirmed(image, source))
+            self.assertFalse(runner.required_feed_confirmed(image))
 
     def test_feed_shell_rejects_profile_copy_that_only_contains_recommendation_word(self) -> None:
         source = page_xml(
@@ -202,7 +324,8 @@ class DeviceLayoutProfileTest(unittest.TestCase):
     def test_verified_search_video_is_accepted_only_inside_search_session(self) -> None:
         search_page = page_xml(include_controls=False).replace(
             node(text="首页", description="首页", bounds="[0,2100][220,2280]", clickable="true"),
-            node(description="暂停视频，按钮", bounds="[0,0][1080,2100]", clickable="true"),
+            search_shell_nodes()
+            + node(description="暂停视频，按钮", bounds="[0,0][1080,2100]", clickable="true"),
         )
         device = Mock()
         device.dump_hierarchy.return_value = search_page
@@ -211,7 +334,26 @@ class DeviceLayoutProfileTest(unittest.TestCase):
         image = Image.new("RGB", (1080, 2400), "black")
         self.assertFalse(runner.main_feed_confirmed(image))
         runner.allow_search_feed = True
+        runner.feed_phase = "search"
         self.assertTrue(runner.main_feed_confirmed(image))
+
+    def test_verified_search_shell_accepts_complete_controls_without_play_marker(self) -> None:
+        search_video = page_xml().replace(
+            node(text="首页", description="首页", bounds="[0,2100][220,2280]", clickable="true"),
+            search_shell_nodes() + node(text="人工智能科普"),
+        )
+        device = Mock()
+        device.dump_hierarchy.return_value = search_video
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=0)
+        runner.allow_search_feed = True
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertTrue(
+                runner.main_feed_shell_confirmed(
+                    Image.new("RGB", (1080, 2400), "black"), search_video
+                )
+            )
 
     def test_search_topic_capture_can_bypass_visual_template_but_mutation_cannot(self) -> None:
         image = Image.new("RGB", (1080, 2400), "black")
@@ -223,10 +365,14 @@ class DeviceLayoutProfileTest(unittest.TestCase):
         device.dump_hierarchy.return_value = page_xml(
             "AI职业发展",
             include_controls=False,
+        ).replace(
+            node(text="首页", description="首页", bounds="[0,2100][220,2280]", clickable="true"),
+            search_shell_nodes() + node(description="暂停视频，按钮"),
         )
         device.app_current.return_value = {"package": PACKAGE}
         runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
         runner.allow_search_feed = True
+        runner.search_query = "人工智能"
         runner.main_feed_confirmed = Mock(return_value=False)
 
         _, topic_decision = runner.capture_gate(1, "topic-analysis")
@@ -234,7 +380,57 @@ class DeviceLayoutProfileTest(unittest.TestCase):
 
         self.assertTrue(topic_decision.allowed)
         self.assertFalse(like_decision.allowed)
-        self.assertEqual(("visual_main_feed_check_failed",), like_decision.reasons)
+        self.assertTrue(
+            any(reason.startswith("missing_feed_controls") for reason in like_decision.reasons)
+        )
+
+    def test_topic_analysis_classifies_live_preview_inside_browsable_feed(self) -> None:
+        image = Image.new("RGB", (1080, 2400), "black")
+        recorder = Mock()
+        recorder.screenshot.return_value = image
+        source = page_xml("推荐", include_controls=False).replace(
+            "</hierarchy>", node(text="直播中") + node(text="点击进入直播间") + "</hierarchy>"
+        )
+        device = Mock()
+        device.window_size.return_value = (1080, 2400)
+        device.dump_hierarchy.return_value = source
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=3)
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            _, decision = runner.capture_gate(1, "topic-analysis")
+
+        self.assertFalse(decision.allowed)
+        self.assertIn("live", decision.reasons)
+        self.assertNotIn("visual_main_feed_check_failed", decision.reasons)
+
+    def test_topic_analysis_recovers_known_share_sheet_before_model_gate(self) -> None:
+        image = Image.new("RGB", (1080, 2400), "black")
+        recorder = Mock()
+        recorder.screenshot.side_effect = [image, image]
+        recorder.emit.return_value = None
+        share_sheet = page_xml("推荐", include_controls=False).replace(
+            "</hierarchy>",
+            node(text="转发到日常")
+            + node(text="不感兴趣")
+            + node(text="倍速")
+            + "</hierarchy>",
+        )
+        recovered_feed = page_xml("AI职业发展", include_controls=False)
+        device = Mock()
+        device.window_size.return_value = (1080, 2400)
+        device.dump_hierarchy.side_effect = [share_sheet, recovered_feed]
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=3)
+        runner.main_feed_confirmed = Mock(return_value=False)
+        runner.main_feed_shell_confirmed = Mock(side_effect=[False, True])
+        runner.recover_main_feed = Mock(return_value=True)
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            _, decision = runner.capture_gate(3, "topic-analysis")
+
+        self.assertTrue(decision.allowed)
+        runner.recover_main_feed.assert_called_once_with("share-sheet-before-topic-3")
 
 
 class ExistingReactionRegressionTest(unittest.TestCase):
@@ -263,6 +459,51 @@ class ExistingReactionRegressionTest(unittest.TestCase):
             changed = runner.like_verified(10, red_background)
 
         self.assertTrue(changed)
+        self.assertEqual(len(device.clicks), 1)
+
+    def test_confirmed_inactive_like_retries_once_and_verifies(self) -> None:
+        inactive = Image.new("RGB", (1080, 2400), "black")
+        active = inactive.copy()
+        active.paste((255, 0, 0), (900, 900, 1040, 1100))
+        recorder = Mock()
+        recorder.screenshot.side_effect = [inactive, active]
+        device = self.Device()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
+        runner.control_bounds["like"] = (900, 900, 1040, 1100)
+        runner.control_states = {"like": False}
+
+        def reacquire(video, action, **kwargs):
+            runner.control_states[action] = False
+            return inactive, GateDecision(True, (), ())
+
+        runner.capture_gate = Mock(side_effect=reacquire)
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            changed = runner.like_verified(8, inactive)
+
+        self.assertTrue(changed)
+        self.assertEqual(len(device.clicks), 2)
+        runner.capture_gate.assert_called_once_with(
+            8, "like", evidence_name="like-retry"
+        )
+
+    def test_unknown_reaction_state_is_never_replayed(self) -> None:
+        inactive = Image.new("RGB", (1080, 2400), "black")
+        recorder = Mock()
+        recorder.screenshot.return_value = inactive
+        device = self.Device()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
+        runner.control_bounds["like"] = (900, 900, 1040, 1100)
+        runner.control_states = {"like": False}
+
+        def reacquire(video, action, **kwargs):
+            runner.control_states[action] = None
+            return inactive, GateDecision(True, (), ())
+
+        runner.capture_gate = Mock(side_effect=reacquire)
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "Like verification failed"):
+                runner.like_verified(8, inactive)
+
         self.assertEqual(len(device.clicks), 1)
 
 
@@ -385,8 +626,284 @@ class HomeTabRecoveryRegressionTest(unittest.TestCase):
         self.assertTrue(recovered)
         self.assertEqual(device.clicks, [(110, 2190)])
 
+    def test_search_stack_unwinds_all_known_layers_before_relaunch(self) -> None:
+        class SearchStackDevice:
+            def __init__(self) -> None:
+                self.layer = 0
+                self.back_presses = 0
+                self.app_restarts = 0
+
+            def dump_hierarchy(self, **kwargs) -> str:
+                return "<hierarchy />"
+
+            def press(self, key: str) -> None:
+                if key == "back":
+                    self.back_presses += 1
+                    self.layer = min(self.layer + 1, 5)
+
+            def app_stop(self, *args, **kwargs) -> None:
+                pass
+
+            def app_start(self, *args, **kwargs) -> None:
+                self.app_restarts += 1
+
+        device = SearchStackDevice()
+        recorder = self.Recorder()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=3)
+        runner._home_feed_shell_confirmed = Mock(
+            side_effect=lambda *_args, **_kwargs: device.layer == 5
+        )
+
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            recovered = runner.recover_main_feed("search-stack")
+
+        self.assertTrue(recovered)
+        self.assertEqual(device.back_presses, 5)
+        self.assertEqual(device.app_restarts, 0)
+
+    def test_recovery_tolerates_one_transient_ui_tree_failure(self) -> None:
+        class TransientTreeDevice:
+            def __init__(self) -> None:
+                self.back_presses = 0
+                self.dump_calls = 0
+
+            def dump_hierarchy(self, **kwargs) -> str:
+                self.dump_calls += 1
+                if self.dump_calls == 2:
+                    raise RuntimeError("temporary empty hierarchy")
+                return "<hierarchy />"
+
+            def press(self, key: str) -> None:
+                if key == "back":
+                    self.back_presses += 1
+
+            def app_stop(self, *args, **kwargs) -> None:
+                pass
+
+            def app_start(self, *args, **kwargs) -> None:
+                pass
+
+        device = TransientTreeDevice()
+        recorder = self.Recorder()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=3)
+        runner._home_feed_shell_confirmed = Mock(
+            side_effect=lambda *_args, **_kwargs: device.back_presses >= 2
+        )
+
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            recovered = runner.recover_main_feed("transient-tree")
+
+        self.assertTrue(recovered)
+        self.assertEqual(device.back_presses, 2)
+
+    def test_required_feed_recovery_rebuilds_search_video_feed(self) -> None:
+        device = Mock()
+        device.window_size.return_value = (1080, 2400)
+        device.dump_hierarchy.return_value = "<hierarchy />"
+        recorder = self.Recorder()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=3)
+        runner.allow_search_feed = True
+        runner.search_query = "人工智能"
+        runner.feed_phase = "search"
+        runner.recover_main_feed = Mock(return_value=True)
+        runner.enter_topic_search = Mock()
+
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            recovered = runner.recover_required_feed("external-app")
+
+        self.assertTrue(recovered)
+        runner.enter_topic_search.assert_called_once_with("人工智能")
+        self.assertEqual(runner.recovery_events[-1]["action"], "search_reentry")
+
+    def test_required_feed_recovery_retries_one_failed_search_reentry(self) -> None:
+        device = Mock()
+        recorder = self.Recorder()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=3)
+        runner.allow_search_feed = True
+        runner.search_query = "塑料包装"
+        runner.feed_phase = "search"
+        runner.recover_main_feed = Mock(return_value=True)
+        runner.enter_topic_search = Mock(
+            side_effect=[RuntimeError("result card still loading"), None]
+        )
+
+        recovered = runner.recover_required_feed("search-drift")
+
+        self.assertTrue(recovered)
+        self.assertEqual(runner.recover_main_feed.call_count, 2)
+        self.assertEqual(runner.enter_topic_search.call_count, 2)
+        self.assertEqual(runner.recovery_events[-1]["action"], "search_reentry")
+
 
 class TopicSearchRegressionTest(unittest.TestCase):
+    def test_search_continuation_keeps_context_when_top_search_bar_collapses(self) -> None:
+        source = page_xml("塑料袋").replace(
+            node(
+                text="首页",
+                description="首页",
+                bounds="[0,2100][220,2280]",
+                clickable="true",
+            ),
+            node(
+                text="相关搜索",
+                bounds="[108,2035][264,2088]",
+                resource_id=f"{PACKAGE}:id/title",
+            ),
+        )
+        device = Mock()
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertTrue(
+                runner.search_feed_confirmed(
+                    source, Image.new("RGB", (1080, 2400), "black")
+                )
+            )
+            self.assertEqual(
+                classify_douyin_page_source(source, PACKAGE),
+                "search_feed",
+            )
+
+    def test_ordinary_immersive_feed_is_not_a_verified_search_feed(self) -> None:
+        source = page_xml("普通主页视频")
+        device = Mock()
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertFalse(
+                runner.search_feed_confirmed(
+                    source, Image.new("RGB", (1080, 2400), "black")
+                )
+            )
+
+    def test_search_session_accepts_visual_shell_when_app_nodes_are_missing(self) -> None:
+        source = (
+            '<hierarchy><node package="com.android.systemui" '
+            'resource-id="com.android.systemui:id/status_bar" '
+            'bounds="[0,0][1080,120]" /></hierarchy>'
+        )
+        device = Mock()
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+        image = Image.new("RGB", (1080, 2400), "black")
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertFalse(runner.search_feed_confirmed(source, image))
+            self.assertTrue(
+                runner.search_feed_confirmed(
+                    source, image, allow_visual_fallback=True
+                )
+            )
+
+    def test_search_visual_shell_does_not_replace_semantic_mutation_gate(self) -> None:
+        source = (
+            '<hierarchy><node package="com.android.systemui" '
+            'resource-id="com.android.systemui:id/status_bar" '
+            'bounds="[0,0][1080,120]" /></hierarchy>'
+        )
+        device = Mock()
+        device.dump_hierarchy.return_value = source
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+        runner.allow_search_feed = True
+        runner._search_visual_fallback_active = True
+        image = Image.new("RGB", (1080, 2400), "black")
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertTrue(runner.main_feed_shell_confirmed(image, source))
+            self.assertFalse(runner.main_feed_confirmed(image))
+
+    def test_search_inline_comment_prompt_is_not_mistaken_for_open_panel(self) -> None:
+        source = (
+            '<hierarchy><node package="com.ss.android.ugc.aweme" '
+            'visible-to-user="true" bounds="[0,0][720,1600]">'
+            + node(
+                description="返回",
+                resource_id=f"{PACKAGE}:id/back_btn",
+                bounds="[0,40][90,160]",
+            )
+            + node(
+                text="人工智能",
+                resource_id=f"{PACKAGE}:id/et_search_kw",
+                bounds="[90,40][600,160]",
+            )
+            + node(description="视频", bounds="[0,0][720,1502]")
+            + node(description="未点赞，喜欢26.7万，按钮")
+            + node(description="评论3402，按钮")
+            + node(description="已选中，收藏18.1万，按钮")
+            + node(text="期待你的评论", bounds="[24,1502][520,1584]")
+            + "</node></hierarchy>"
+        )
+        device = Mock()
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+        runner.allow_search_feed = True
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertTrue(
+                runner.main_feed_shell_confirmed(
+                    Image.new("RGB", (720, 1600), "black"), source
+                )
+            )
+
+    def test_search_visual_fallback_rejects_ambiguous_douyin_tree(self) -> None:
+        source = page_xml("个人主页", include_controls=False)
+        device = Mock()
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+        image = Image.new("RGB", (1080, 2400), "black")
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertFalse(runner.search_feed_confirmed(source, image))
+
+    def test_search_results_grid_is_not_an_immersive_search_feed(self) -> None:
+        source = (
+            '<hierarchy><node package="com.ss.android.ugc.aweme" visible-to-user="true">'
+            + node(text="综合")
+            + node(text="视频")
+            + node(text="用户")
+            + node(text="商品")
+            + node(description="播放视频，按钮")
+            + "</node></hierarchy>"
+        )
+        device = Mock()
+        device.app_current.return_value = {"package": PACKAGE}
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            self.assertFalse(
+                runner.search_feed_confirmed(
+                    source, Image.new("RGB", (1080, 2400), "white")
+                )
+            )
+
+    def test_search_drift_recovery_reenters_the_original_query(self) -> None:
+        image = Image.new("RGB", (1080, 2400), "black")
+        recorder = Mock()
+        recorder.screenshot.return_value = image
+        recorder.emit.return_value = None
+        device = Mock()
+        device.window_size.return_value = (1080, 2400)
+        device.dump_hierarchy.return_value = page_xml("推荐")
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=3)
+        runner.allow_search_feed = True
+        runner.search_query = "人工智能"
+        runner.feed_phase = "search"
+        runner.recover_main_feed = Mock(return_value=True)
+        runner.enter_topic_search = Mock()
+
+        with patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE):
+            recovered = runner.recover_required_feed("profile-drift")
+
+        self.assertTrue(recovered)
+        runner.enter_topic_search.assert_called_once_with("人工智能")
+        self.assertEqual(
+            runner.recovery_events[-1]["rule_id"],
+            "douyin-search-context-drift",
+        )
+
     def test_search_result_can_be_identified_by_semantic_caption_container(self) -> None:
         source = (
             '<hierarchy><node package="com.ss.android.ugc.aweme" visible-to-user="true" '
@@ -397,6 +914,24 @@ class TopicSearchRegressionTest(unittest.TestCase):
             '</node></hierarchy>'
         )
         self.assertEqual(find_search_result_bounds(source), (546, 545, 1068, 1515))
+
+    def test_captioned_search_card_can_start_below_compact_navigation(self) -> None:
+        source = (
+            '<hierarchy><node package="com.ss.android.ugc.aweme" visible-to-user="true">'
+            '<node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'resource-id="com.ss.android.ugc.aweme:id/ctw" '
+            'bounds="[12,380][534,1340]" clickable="true">'
+            '<node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'resource-id="com.ss.android.ugc.aweme:id/desc" '
+            'text="一期视频带你打通 AI 底层逻辑！" '
+            'bounds="[36,1100][510,1215]" clickable="false" />'
+            '</node></node></hierarchy>'
+        )
+
+        self.assertEqual(
+            find_search_result_bounds(source, width=1080, height=2340),
+            (12, 380, 534, 1340),
+        )
 
     def test_two_column_result_chooses_clickable_cover_not_row_gap(self) -> None:
         source = (
@@ -410,6 +945,28 @@ class TopicSearchRegressionTest(unittest.TestCase):
             '</node></hierarchy>'
         )
         self.assertEqual(find_search_result_bounds(source), (60, 759, 523, 1210))
+
+    def test_search_result_accepts_cover_and_duration_when_caption_id_changes(self) -> None:
+        source = (
+            '<hierarchy><node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'class="android.widget.LinearLayout" bounds="[8,235][356,883]" clickable="true">'
+            '<node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'resource-id="com.ss.android.ugc.aweme:id/cover" class="android.widget.ImageView" '
+            'bounds="[8,235][356,699]" clickable="false" />'
+            '<node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'class="android.view.View" bounds="[8,235][356,699]" clickable="true" />'
+            '<node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'resource-id="com.ss.android.ugc.aweme:id/5bf" text="32:31" '
+            'bounds="[277,653][340,685]" clickable="false" />'
+            '<node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'text="一期视频带你打通 AI 底层逻辑" bounds="[8,699][356,780]" '
+            'clickable="false" /></node></hierarchy>'
+        )
+
+        self.assertEqual(
+            find_search_result_bounds(source, width=720, height=1600),
+            (8, 235, 356, 699),
+        )
 
     class Recorder:
         def __init__(self) -> None:
@@ -463,7 +1020,8 @@ class TopicSearchRegressionTest(unittest.TestCase):
                             bounds="[0,2100][220,2280]",
                             clickable="true",
                         ),
-                        node(
+                        search_shell_nodes()
+                        + node(
                             description="暂停视频，按钮",
                             bounds="[0,0][1080,2100]",
                             clickable="true",
@@ -498,6 +1056,61 @@ class TopicSearchRegressionTest(unittest.TestCase):
         self.assertEqual(device.typed, [("人工智能", True)])
         self.assertEqual(device.pressed, ["enter"])
         self.assertEqual(device.clicks[-1], (540, 900))
+
+    def test_search_mode_retries_verified_card_when_grid_does_not_transition(self) -> None:
+        device = self.Device()
+        result_page = (
+            "<hierarchy>"
+            + '<node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+            'bounds="[80,500][1000,1300]" clickable="true">'
+            + node(text="视频：人工智能入门")
+            + "</node></hierarchy>"
+        )
+        grid_page = (
+            '<hierarchy><node package="com.ss.android.ugc.aweme" visible-to-user="true">'
+            + node(text="综合")
+            + node(text="视频")
+            + node(text="用户")
+            + node(text="商品")
+            + "</node></hierarchy>"
+        )
+        video_page = (
+            "<hierarchy>"
+            + search_shell_nodes()
+            + node(description="暂停视频，按钮")
+            + "</hierarchy>"
+        )
+        device.pages = iter(
+            [
+                "<hierarchy>"
+                + node(
+                    description="搜索，按钮",
+                    bounds="[900,100][1080,260]",
+                    clickable="true",
+                )
+                + "</hierarchy>",
+                '<hierarchy><node package="com.ss.android.ugc.aweme" visible-to-user="true" '
+                'class="android.widget.EditText" bounds="[120,100][850,240]" '
+                'clickable="true" /></hierarchy>',
+                result_page,
+                result_page,
+                grid_page,
+                video_page,
+            ]
+        )
+        recorder = self.Recorder()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=3)
+
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            runner.enter_topic_search("人工智能")
+
+        self.assertEqual(device.clicks[-2:], [(540, 900), (540, 900)])
+        retry_events = [
+            kwargs
+            for args, kwargs in recorder.events
+            if args == ("topic_search",) and kwargs.get("action") == "open_video_result_retry"
+        ]
+        self.assertEqual(len(retry_events), 1)
 
 
 class AppReadyRegressionTest(unittest.TestCase):
@@ -552,10 +1165,14 @@ class AppReadyRegressionTest(unittest.TestCase):
             )
             + "</hierarchy>"
         )
-        device.dump_hierarchy.side_effect = [minor_mode_page, comment_panel_page]
+        device.dump_hierarchy.side_effect = [
+            minor_mode_page,
+            comment_panel_page,
+            comment_panel_page,
+        ]
         recorder = Mock()
         runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
-        runner.main_feed_shell_confirmed = Mock(return_value=True)
+        runner.main_feed_shell_confirmed = Mock(return_value=False)
         runner.recover_main_feed = Mock(return_value=True)
 
         with (
@@ -569,9 +1186,65 @@ class AppReadyRegressionTest(unittest.TestCase):
         overlay_events = [
             call.kwargs
             for call in recorder.emit.call_args_list
-            if call.args and call.args[0] == "startup_overlay_recovery"
+            if call.args and call.args[0] == "verified_recovery"
         ]
-        self.assertEqual(overlay_events[0]["overlay"], "minor_mode")
+        self.assertEqual(overlay_events[0]["rule_id"], "douyin-minor-mode-overlay")
+        self.assertEqual(overlay_events[0]["action"], "close_button")
+
+    def test_minor_mode_uses_do_not_remind_when_close_is_missing(self) -> None:
+        device = Mock()
+        device.screenshot.return_value = Image.new("RGB", (1080, 2400), "black")
+        minor_mode_page = (
+            "<hierarchy>"
+            + node(text="未成年人模式")
+            + node(text="开启未成年人模式")
+            + node(
+                text="不再提醒",
+                bounds="[48,2016][984,2148]",
+                clickable="true",
+            )
+            + "</hierarchy>"
+        )
+        device.dump_hierarchy.side_effect = [minor_mode_page, page_xml()]
+        recorder = Mock()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
+        runner.main_feed_shell_confirmed = Mock(return_value=True)
+
+        with (
+            patch("douyin_uia2_runner.foreground_package", return_value=PACKAGE),
+            patch("douyin_uia2_runner.time.sleep", return_value=None),
+        ):
+            runner.ensure_app_ready()
+
+        device.click.assert_called_once_with(516, 2082)
+        self.assertEqual(runner.recovery_events[0]["action"], "do_not_remind")
+
+    def test_overlay_action_without_feed_verification_is_not_recovered(self) -> None:
+        device = Mock()
+        device.screenshot.return_value = Image.new("RGB", (1080, 2340), "black")
+        minor_mode_page = (
+            "<hierarchy>"
+            + node(text="未成年人模式")
+            + node(text="开启未成年人模式")
+            + node(
+                description="关闭",
+                bounds="[960,1427][984,1511]",
+                clickable="true",
+            )
+            + "</hierarchy>"
+        )
+        device.dump_hierarchy.return_value = minor_mode_page
+        recorder = Mock()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
+        runner.main_feed_shell_confirmed = Mock(return_value=False)
+
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            recovered = runner.try_verified_overlay_recovery(
+                minor_mode_page, "test-overlay"
+            )
+
+        self.assertFalse(recovered)
+        self.assertEqual(runner.recovery_events, [])
 
     def test_restart_waits_through_splash_until_feed_shell_is_ready(self) -> None:
         device = Mock()
@@ -581,7 +1254,7 @@ class AppReadyRegressionTest(unittest.TestCase):
         recorder = Mock()
         recorder.screenshot.return_value = image
         runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
-        runner.main_feed_shell_confirmed = Mock(side_effect=[False, False, True])
+        runner._home_feed_shell_confirmed = Mock(side_effect=[False, False, True])
 
         with patch("douyin_uia2_runner.time.sleep", return_value=None):
             ready = runner.wait_for_main_feed_shell(
@@ -589,7 +1262,7 @@ class AppReadyRegressionTest(unittest.TestCase):
             )
 
         self.assertTrue(ready)
-        self.assertEqual(runner.main_feed_shell_confirmed.call_count, 3)
+        self.assertEqual(runner._home_feed_shell_confirmed.call_count, 3)
         recorder.screenshot.assert_called_once_with(
             device, "feed-recovery-slow-start-app-start-ready"
         )
@@ -657,6 +1330,88 @@ class CommentPanelRecoveryRegressionTest(unittest.TestCase):
         self.assertTrue(
             any(args and args[0] == "comment_close_recovery" for args, _ in recorder.events)
         )
+
+    def test_close_comment_panel_accepts_verified_search_shell_without_back(self) -> None:
+        device = self.Device()
+        search_video = page_xml().replace(
+            node(text="首页", description="首页", bounds="[0,2100][220,2280]", clickable="true"),
+            search_shell_nodes() + node(text="人工智能科普"),
+        )
+
+        def close_panel(_x: int, _y: int) -> None:
+            device.panel_open = False
+
+        device.click = close_panel
+        original_dump = device.dump_hierarchy
+        device.dump_hierarchy = lambda **kwargs: (
+            search_video if not device.panel_open else original_dump(**kwargs)
+        )
+        recorder = self.Recorder()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
+        runner.allow_search_feed = True
+
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            runner.close_comment_panel(1, "closed")
+
+        self.assertEqual(device.back_presses, 0)
+
+    def test_closed_panel_on_search_page_rebuilds_required_feed(self) -> None:
+        device = self.Device()
+        search_landing = (
+            "<hierarchy>"
+            + search_shell_nodes()
+            + node(text="历史记录")
+            + node(text="猜你想搜")
+            + "</hierarchy>"
+        )
+
+        def close_panel(_x: int, _y: int) -> None:
+            device.panel_open = False
+
+        device.click = close_panel
+        original_dump = device.dump_hierarchy
+        device.dump_hierarchy = lambda **kwargs: (
+            search_landing if not device.panel_open else original_dump(**kwargs)
+        )
+        recorder = self.Recorder()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
+        runner.allow_search_feed = True
+        runner.search_query = "人工智能"
+        runner.feed_phase = "search"
+        runner.recover_required_feed = Mock(return_value=True)
+
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            runner.close_comment_panel(1, "closed")
+
+        runner.recover_required_feed.assert_called_once_with(
+            "comment-panel-close-drift-1"
+        )
+        self.assertEqual(device.back_presses, 0)
+
+    def test_close_comment_panel_ignores_unrelated_close_control_in_search_feed(self) -> None:
+        device = self.Device()
+        search_video = page_xml().replace(
+            node(text="首页", description="首页", bounds="[0,2100][220,2280]", clickable="true"),
+            search_shell_nodes()
+            + node(description="关闭", bounds="[900,80][1060,240]", clickable="true"),
+        )
+
+        def close_panel(_x: int, _y: int) -> None:
+            device.panel_open = False
+
+        device.click = close_panel
+        original_dump = device.dump_hierarchy
+        device.dump_hierarchy = lambda **kwargs: (
+            search_video if not device.panel_open else original_dump(**kwargs)
+        )
+        recorder = self.Recorder()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
+        runner.allow_search_feed = True
+
+        with patch("douyin_uia2_runner.time.sleep", return_value=None):
+            runner.close_comment_panel(1, "closed")
+
+        self.assertEqual(device.back_presses, 0)
 
 
 if __name__ == "__main__":

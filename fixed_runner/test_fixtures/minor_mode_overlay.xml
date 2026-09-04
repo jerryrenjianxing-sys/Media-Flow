@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hierarchy rotation="0">
+  <node text="未成年人模式" resource-id="com.ss.android.ugc.aweme:id/z3o" class="android.widget.TextView" package="com.ss.android.ugc.aweme" content-desc="" clickable="false" visible-to-user="true" bounds="[360,1463][720,1544]" />
+  <node text="开启未成年人模式" resource-id="com.ss.android.ugc.aweme:id/sb0" class="android.widget.Button" package="com.ss.android.ugc.aweme" content-desc="" clickable="true" visible-to-user="true" bounds="[372,1923][708,1980]" />
+  <node text="不再提醒" resource-id="com.ss.android.ugc.aweme:id/b7p" class="android.widget.Button" package="com.ss.android.ugc.aweme" content-desc="" clickable="true" visible-to-user="true" bounds="[48,2016][984,2148]" />
+  <node text="" resource-id="com.ss.android.ugc.aweme:id/b_e" class="android.widget.Button" package="com.ss.android.ugc.aweme" content-desc="关闭" clickable="true" visible-to-user="true" bounds="[960,1427][984,1511]" />
+</hierarchy>

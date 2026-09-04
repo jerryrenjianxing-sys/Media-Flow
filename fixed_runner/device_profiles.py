@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import msvcrt
+import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from runtime_layout import DEVICE_PROFILE_PATH
+from host_identity import installation_id
 
-PROFILE_PATH = Path(__file__).with_name("device_profiles.json")
+PROFILE_PATH = DEVICE_PROFILE_PATH
 
 
 @dataclass(frozen=True)
@@ -75,10 +80,31 @@ def load_device_profiles(path: Path = PROFILE_PATH) -> dict[str, DeviceProfile]:
     except (OSError, ValueError, TypeError):
         return {}
     devices = payload.get("devices") if isinstance(payload, dict) else None
+    owner = str(payload.get("host_installation_id") or "") if isinstance(payload, dict) else ""
+    if owner and owner != installation_id():
+        return {}
     if not isinstance(devices, dict):
         return {}
     return {
         str(device_id): _profile_from_payload(str(device_id), raw)
+        for device_id, raw in devices.items()
+        if isinstance(raw, dict)
+    }
+
+
+def load_device_profile_payloads(path: Path = PROFILE_PATH) -> dict[str, dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    devices = payload.get("devices") if isinstance(payload, dict) else None
+    owner = str(payload.get("host_installation_id") or "") if isinstance(payload, dict) else ""
+    if owner and owner != installation_id():
+        return {}
+    if not isinstance(devices, dict):
+        return {}
+    return {
+        str(device_id): dict(raw)
         for device_id, raw in devices.items()
         if isinstance(raw, dict)
     }
@@ -143,7 +169,56 @@ def merge_device_probe(
 
 
 def save_device_profile_payload(payload: dict[str, Any], path: Path = PROFILE_PATH) -> None:
+    payload = {**payload, "host_installation_id": installation_id()}
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+@contextmanager
+def _profile_lock(path: Path):
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+b")
+    if handle.seek(0, os.SEEK_END) == 0:
+        handle.write(b"0")
+        handle.flush()
+    handle.seek(0)
+    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+    try:
+        yield
+    finally:
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        handle.close()
+
+
+def upsert_device_profile(
+    device_id: str,
+    profile: dict[str, Any],
+    path: Path = PROFILE_PATH,
+) -> dict[str, Any]:
+    """Atomically merge one device without losing another worker's profile."""
+    with _profile_lock(path):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            payload = {"schema_version": 2, "devices": {}}
+        if not isinstance(payload, dict):
+            payload = {"schema_version": 2, "devices": {}}
+        payload["host_installation_id"] = installation_id()
+        devices = payload.setdefault("devices", {})
+        if not isinstance(devices, dict):
+            devices = {}
+            payload["devices"] = devices
+        devices[str(device_id)] = dict(profile)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    return dict(profile)

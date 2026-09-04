@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "RiskFlow 本地真机自动化系统全景",
+    "output": "riskflow-system-overview.html",
+    "quality_profile": "showcase",
+    "viewBox": [1680, 760],
+    "views": [
+      {
+        "id": "task-path",
+        "label": "一次任务如何执行",
+        "focus": ["operator", "console", "control_api", "task_store", "device_worker", "fixed_executor", "android_pool"],
+        "note": "从控制台提交，到固定程序在独占设备上完成动作与复核。"
+      },
+      {
+        "id": "ai-boundary",
+        "label": "AI 与设备动作边界",
+        "focus": ["device_worker", "ai_models", "fixed_executor", "android_pool"],
+        "note": "AI 只返回判断和候选内容；设备动作始终由固定执行器决定。"
+      },
+      {
+        "id": "recovery-loop",
+        "label": "异常留证与纠错",
+        "focus": ["device_worker", "evidence_store", "incident_analyzer", "ai_models", "control_api", "console"],
+        "note": "未知异常先留证，只读分析产生候选建议，不能直接变成手机点击。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "操作人员",
+      "sublabel": "本地浏览器",
+      "pos": [20, 322],
+      "size": [120, 72]
+    },
+    {
+      "id": "package_entry",
+      "type": "external",
+      "label": "安装与启动入口",
+      "sublabel": "Velopack / RiskFlow.exe",
+      "pos": [250, 72],
+      "size": [160, 76],
+      "tag": "不依赖 Codex"
+    },
+    {
+      "id": "runtime_supervisor",
+      "type": "backend",
+      "label": "后台宿主与看门狗",
+      "sublabel": "守护 API / 网页 / Worker / 分析器",
+      "pos": [485, 72],
+      "size": [180, 76],
+      "tag": "单实例 · 自动拉起"
+    },
+    {
+      "id": "ai_models",
+      "type": "cloud",
+      "label": "AI 判断与内容生成",
+      "sublabel": "OpenRouter 多模态模型",
+      "pos": [990, 72],
+      "size": [180, 76],
+      "tag": "只返回结构化结果"
+    },
+    {
+      "id": "console",
+      "type": "frontend",
+      "label": "策略控制台",
+      "sublabel": "React / Vinext · :3000",
+      "pos": [250, 322],
+      "size": [140, 72]
+    },
+    {
+      "id": "control_api",
+      "type": "backend",
+      "label": "本地控制接口",
+      "sublabel": "Python HTTP API · :48138",
+      "pos": [500, 322],
+      "size": [150, 72]
+    },
+    {
+      "id": "task_store",
+      "type": "database",
+      "label": "任务与配置库",
+      "sublabel": "SQLite WAL",
+      "pos": [760, 322],
+      "size": [140, 72],
+      "tag": "本机持久化"
+    },
+    {
+      "id": "device_worker",
+      "type": "backend",
+      "label": "每设备 Worker",
+      "sublabel": "领取任务 · 独占设备",
+      "pos": [1010, 322],
+      "size": [140, 72],
+      "tag": "一机一执行者"
+    },
+    {
+      "id": "fixed_executor",
+      "type": "security",
+      "label": "固定执行器",
+      "sublabel": "uiautomator2 安全状态机",
+      "pos": [1260, 322],
+      "size": [150, 72],
+      "tag": "唯一动作平面"
+    },
+    {
+      "id": "android_pool",
+      "type": "external",
+      "label": "授权 Android 设备池",
+      "sublabel": "真机 / 模拟器",
+      "pos": [1530, 322],
+      "size": [130, 72]
+    },
+    {
+      "id": "evidence_store",
+      "type": "database",
+      "label": "本地证据与运行数据",
+      "sublabel": "截图 · UI 树 · 日志 · 备份",
+      "pos": [760, 562],
+      "size": [190, 76],
+      "tag": "%LocalAppData%"
+    },
+    {
+      "id": "incident_analyzer",
+      "type": "backend",
+      "label": "纠错分析器",
+      "sublabel": "AI 异步只读分析 · 写回任务库",
+      "pos": [1131, 562],
+      "size": [168, 76],
+      "tag": "建议不可自动执行"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Windows 本机运行边界",
+      "wraps": ["package_entry", "runtime_supervisor", "console", "control_api", "task_store", "device_worker", "fixed_executor", "evidence_store", "incident_analyzer"],
+      "pad": 22
+    },
+    {
+      "kind": "security-group",
+      "label": "设备写入安全边界",
+      "wraps": ["fixed_executor"],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "operator_console",
+      "from": "operator",
+      "to": "console",
+      "label": "配置",
+      "variant": "emphasis"
+    },
+    {
+      "id": "console_api",
+      "from": "console",
+      "to": "control_api",
+      "label": "本机 HTTP",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api_store",
+      "from": "control_api",
+      "to": "task_store",
+      "label": "提交任务",
+      "variant": "emphasis"
+    },
+    {
+      "id": "store_worker",
+      "from": "task_store",
+      "to": "device_worker",
+      "label": "独占领取",
+      "variant": "emphasis"
+    },
+    {
+      "id": "worker_executor",
+      "from": "device_worker",
+      "to": "fixed_executor",
+      "label": "安全执行",
+      "variant": "security"
+    },
+    {
+      "id": "executor_devices",
+      "from": "fixed_executor",
+      "to": "android_pool",
+      "label": "ADB",
+      "variant": "security"
+    },
+    {
+      "id": "package_supervisor",
+      "from": "package_entry",
+      "to": "runtime_supervisor",
+      "label": "安装 / 自启",
+      "variant": "dashed"
+    },
+    {
+      "id": "supervisor_api",
+      "from": "runtime_supervisor",
+      "to": "control_api",
+      "label": "拉起 / 恢复",
+      "labelAt": [575, 162],
+      "variant": "dashed"
+    },
+    {
+      "id": "worker_ai",
+      "from": "device_worker",
+      "to": "ai_models",
+      "label": "截图 → 结构化判断",
+      "variant": "dashed"
+    },
+    {
+      "id": "worker_evidence",
+      "from": "device_worker",
+      "to": "evidence_store",
+      "label": "保存证据"
+    },
+    {
+      "id": "evidence_analyzer",
+      "from": "evidence_store",
+      "to": "incident_analyzer",
+      "label": "只读领取"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "设备动作边界",
+      "items": [
+        "AI 只做主题、安全、内容和纠错建议，不直接点击设备",
+        "固定执行器负责动作前检查、点击、动作后复核与失败留证",
+        "结果不明的状态改变失败关闭，不自动从头重试"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "独立运行",
+      "items": [
+        "Windows 当前用户计划任务维持 API、网页、Worker 与分析器",
+        "关闭 Codex、终端或启动窗口不会结束后台",
+        "运行数据和加密凭据留在本机，不进入发行包"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "交付形态",
+      "items": [
+        "Velopack 每用户安装器与便携 ZIP 已包含 Python、Node、ADB 和前端产物",
+        "新电脑首次使用仍需配置 OpenRouter Key 并检索授权设备",
+        "当前内部测试安装包未做商业代码签名"
+      ]
+    }
+  ]
+}

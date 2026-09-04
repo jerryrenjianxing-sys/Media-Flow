@@ -40,6 +40,120 @@ class TaskStoreTest(unittest.TestCase):
         self.assertEqual(completed.status, "completed")
         self.assertEqual(completed.result, {"status": "passed"})
 
+    def test_read_only_view_can_coexist_with_tasks(self) -> None:
+        session = self.store.create_device_view_session(
+            device_id="device-1",
+            virtual_device_id="virtual-1",
+            mode="read_only",
+            stream_profile="wall",
+            token_hash="a" * 64,
+        )
+        task_id = self.store.submit("healthcheck", "device-1")
+
+        self.assertEqual(session["mode"], "read_only")
+        self.assertEqual(self.store.claim_next("device-1", "worker-1").id, task_id)
+
+    def test_control_view_blocks_task_and_initialization_until_closed(self) -> None:
+        session = self.store.create_device_view_session(
+            device_id="device-1",
+            virtual_device_id="virtual-1",
+            mode="control",
+            stream_profile="focus",
+            token_hash="b" * 64,
+        )
+
+        self.assertTrue(self.store.has_active_control_session("device-1"))
+        with self.assertRaisesRegex(ValueError, "人工接管"):
+            self.store.submit("healthcheck", "device-1")
+        with self.assertRaisesRegex(ValueError, "人工接管"):
+            self.store.create_initialization("device-1")
+
+        self.store.close_device_view_session(session["id"])
+        self.assertFalse(self.store.has_active_control_session("device-1"))
+        self.assertIsInstance(self.store.submit("healthcheck", "device-1"), str)
+
+    def test_control_view_refuses_existing_task_or_initialization(self) -> None:
+        self.store.submit("healthcheck", "device-1")
+        with self.assertRaisesRegex(ValueError, "当前只能观看"):
+            self.store.create_device_view_session(
+                device_id="device-1",
+                virtual_device_id="virtual-1",
+                mode="control",
+                stream_profile="focus",
+                token_hash="c" * 64,
+            )
+
+        self.store.create_initialization("device-2")
+        with self.assertRaisesRegex(ValueError, "正在初始化"):
+            self.store.create_device_view_session(
+                device_id="device-2",
+                virtual_device_id="virtual-2",
+                mode="control",
+                stream_profile="focus",
+                token_hash="d" * 64,
+            )
+
+    def test_focus_view_closes_wall_and_token_is_verified(self) -> None:
+        wall = self.store.create_device_view_session(
+            device_id="device-1",
+            virtual_device_id="virtual-1",
+            mode="read_only",
+            stream_profile="wall",
+            token_hash="e" * 64,
+        )
+        focus = self.store.create_device_view_session(
+            device_id="device-1",
+            virtual_device_id="virtual-1",
+            mode="read_only",
+            stream_profile="focus",
+            token_hash="f" * 64,
+        )
+
+        self.assertEqual(self.store.get_device_view_session(wall["id"])["status"], "closed")
+        with self.assertRaises(KeyError):
+            self.store.validate_device_view_session(focus["id"], "0" * 64)
+        connected = self.store.validate_device_view_session(focus["id"], "f" * 64)
+        self.assertTrue(connected["connected"])
+
+    def test_disconnected_control_lease_expires_without_replay(self) -> None:
+        session = self.store.create_device_view_session(
+            device_id="device-1",
+            virtual_device_id="virtual-1",
+            mode="control",
+            stream_profile="focus",
+            token_hash="1" * 64,
+        )
+        self.store.heartbeat_device_view_session(session["id"], connected=False)
+        past = (datetime.now().astimezone() - timedelta(seconds=1)).isoformat(
+            timespec="milliseconds"
+        )
+        with self.store.connection() as connection:
+            connection.execute(
+                "UPDATE device_view_sessions SET lease_expires_at=? WHERE id=?",
+                (past, session["id"]),
+            )
+
+        self.assertFalse(self.store.has_active_control_session("device-1"))
+        expired = self.store.get_device_view_session(session["id"])
+        self.assertEqual(expired["status"], "expired")
+        self.assertEqual(expired["close_reason"], "lease_expired")
+
+    def test_disconnected_read_only_view_closes_immediately(self) -> None:
+        session = self.store.create_device_view_session(
+            device_id="device-1",
+            virtual_device_id="virtual-1",
+            mode="read_only",
+            stream_profile="wall",
+            token_hash="2" * 64,
+        )
+
+        closed = self.store.heartbeat_device_view_session(
+            session["id"], connected=False
+        )
+
+        self.assertEqual(closed["status"], "closed")
+        self.assertEqual(closed["close_reason"], "stream_disconnected")
+
     def test_claim_is_scoped_to_device(self) -> None:
         self.store.submit("healthcheck", "device-2")
         self.assertIsNone(self.store.claim_next("device-1", "worker-1"))
@@ -123,6 +237,38 @@ class TaskStoreTest(unittest.TestCase):
         self.assertIsNotNone(task.finished_at)
         self.assertEqual(task.result["videos_seen"], 3)
 
+    def test_running_task_exposes_run_dir_before_terminal_result(self) -> None:
+        task_id = self.store.submit("healthcheck", "device-1")
+        self.store.claim_next("device-1", "worker-1")
+        self.store.attach_run_dir(task_id, "runs/live-task")
+        task = self.store.get(task_id)
+        self.assertEqual(task.status, "running")
+        self.assertEqual(task.run_dir, "runs/live-task")
+        self.assertIsNone(task.result)
+
+        pending_id = self.store.submit("healthcheck", "device-2")
+        with self.assertRaises(RuntimeError):
+            self.store.attach_run_dir(pending_id, "runs/not-started")
+
+    def test_running_task_can_finish_as_degraded_terminal_state(self) -> None:
+        task_id = self.store.submit("healthcheck", "device-1")
+        self.store.claim_next("device-1", "worker-1")
+        self.store.finish(
+            task_id,
+            status="degraded",
+            run_dir="run/degraded",
+            result={
+                "status": "degraded",
+                "videos_seen": 20,
+                "degraded_reason": {"code": "model_channel_partial"},
+            },
+            error="model_channel_partial",
+        )
+        task = self.store.get(task_id)
+        self.assertEqual(task.status, "degraded")
+        self.assertIsNotNone(task.finished_at)
+        self.assertEqual(task.result["videos_seen"], 20)
+
     def test_cancel_pending_is_atomic_and_does_not_touch_running_task(self) -> None:
         pending_id = self.store.submit("healthcheck", "device-1")
         running_id = self.store.submit("healthcheck", "device-2")
@@ -192,11 +338,108 @@ class TaskStoreTest(unittest.TestCase):
         self.assertEqual(recovered.status, "failed")
         self.assertIn("not retried", recovered.error or "")
 
+    def test_initialization_create_is_idempotent_while_active(self) -> None:
+        first = self.store.create_initialization(
+            "device-1", options={"write_acceptance": False}
+        )
+        second = self.store.create_initialization(
+            "device-1", options={"write_acceptance": True}
+        )
+        self.assertEqual(first.id, second.id)
+        self.assertFalse(second.options["write_acceptance"])
+        claimed = self.store.claim_initialization("device-1", "worker-1")
+        self.assertIsNotNone(claimed)
+        assert claimed is not None
+        self.assertEqual(claimed.status, "running")
+
+    def test_waiting_initialization_can_continue_from_checkpoint(self) -> None:
+        queued = self.store.create_initialization("device-1")
+        self.store.claim_initialization("device-1", "worker-1")
+        self.store.finish_initialization(
+            queued.id,
+            status="waiting_user",
+            stage="waiting_user",
+            message="请在手机确认安装",
+        )
+        continued = self.store.continue_initialization("device-1")
+        self.assertEqual(continued.status, "queued")
+        self.assertEqual(
+            self.store.claim_initialization("device-1", "worker-2").id,
+            queued.id,
+        )
+
+    def test_running_initialization_cancel_is_checkpointed(self) -> None:
+        queued = self.store.create_initialization("device-1")
+        self.store.claim_initialization("device-1", "worker-1")
+        requested = self.store.cancel_initialization("device-1")
+        self.assertTrue(requested.cancel_requested)
+        self.assertEqual(requested.status, "running")
+        self.assertTrue(self.store.initialization_cancel_requested(queued.id))
+
+    def test_interrupted_initialization_fails_without_requeue(self) -> None:
+        queued = self.store.create_initialization("device-1")
+        self.store.claim_initialization("device-1", "worker-1")
+        self.assertEqual(
+            self.store.recover_interrupted_initializations("device-1"), 1
+        )
+        recovered = self.store.get_initialization(queued.id)
+        self.assertEqual(recovered.status, "failed")
+        self.assertIn("not retried", recovered.error or "")
+
     def test_invalid_benchmark_payload_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             self.store.submit(
                 "douyin_benchmark", "device-1", {"dwell": [1, 2, 3]}
             )
+
+    def test_hybrid_topic_payload_validates_segment_ranges(self) -> None:
+        payload = {
+            "video_count": 20,
+            "round_count": 1,
+            "round_interval_minutes": 0,
+            "max_gate_skips": 6,
+            "dwell_min": 1,
+            "dwell_max": 2,
+            "topic_filter_enabled": True,
+            "engagement_requires_topic": False,
+            "comment_requires_topic": True,
+            "content_mode": "hybrid",
+            "topic_prompt": "智能制造",
+            "search_query": "智能制造",
+            "search_trust_results": True,
+            "search_segment_min": 7,
+            "search_segment_max": 14,
+            "home_segment_min": 5,
+            "home_segment_max": 10,
+            "like_probability": 0.2,
+            "favorite_probability": 0.1,
+            "comment_probability": 0.05,
+            "matched_like_probability": 0.8,
+            "matched_favorite_probability": 0.7,
+            "matched_comment_probability": 0.5,
+            "seed": 1,
+            "preview_only": True,
+        }
+        TaskStore.validate_payload("douyin_topic_session", payload)
+        for invalid in (
+            {**payload, "search_segment_min": 0},
+            {**payload, "search_segment_min": 15, "search_segment_max": 14},
+            {**payload, "home_segment_max": 201},
+            {**payload, "home_segment_min": 11, "home_segment_max": 10},
+        ):
+            with self.assertRaises(ValueError):
+                TaskStore.validate_payload("douyin_topic_session", invalid)
+
+        legacy = dict(payload)
+        legacy.update(content_mode="search")
+        for name in (
+            "search_segment_min",
+            "search_segment_max",
+            "home_segment_min",
+            "home_segment_max",
+        ):
+            legacy.pop(name)
+        TaskStore.validate_payload("douyin_topic_session", legacy)
 
     def test_benchmark_payload_round_trip(self) -> None:
         task_id = self.store.submit(
@@ -247,6 +490,94 @@ class TaskStoreTest(unittest.TestCase):
             {"dwell": [4.0, 7.0], "max_gate_skips": 3},
         )
 
+    def test_engagement_inspection_payload_round_trip(self) -> None:
+        payload = {
+            "submission_id": "submission-1",
+            "inspection_index": 1,
+            "after_round_index": 5,
+            "inspection_every_rounds": 5,
+            "max_items_per_section": 20,
+        }
+        task_id = self.store.submit(
+            "douyin_engagement_inspection", "device-1", payload
+        )
+        self.assertEqual(self.store.get(task_id).payload, payload)
+
+    def test_engagement_inspection_payload_rejects_missing_invalid_and_round_index(self) -> None:
+        valid = {
+            "submission_id": "submission-1",
+            "inspection_index": 1,
+            "after_round_index": 5,
+            "inspection_every_rounds": 5,
+            "max_items_per_section": 20,
+        }
+        for invalid in (
+            {**valid, "submission_id": ""},
+            {**valid, "inspection_index": 0},
+            {**valid, "after_round_index": 21},
+            {**valid, "inspection_every_rounds": -1},
+            {**valid, "max_items_per_section": 101},
+            {**valid, "round_index": 5},
+        ):
+            with self.assertRaises(ValueError):
+                self.store.submit(
+                    "douyin_engagement_inspection", "device-1", invalid
+                )
+
+    def test_engagement_inspection_obeys_pause_stop_and_cancel(self) -> None:
+        payload = {
+            "submission_id": "submission-lifecycle",
+            "inspection_index": 1,
+            "after_round_index": 5,
+            "inspection_every_rounds": 5,
+            "max_items_per_section": 20,
+        }
+        paused_id = self.store.submit(
+            "douyin_engagement_inspection", "device-1", payload
+        )
+        self.store.set_paused(True)
+        self.assertIsNone(self.store.claim_next("device-1", "worker-1"))
+        self.store.set_paused(False)
+        self.store.request_stop(["device-1"])
+        self.assertIsNone(self.store.claim_next("device-1", "worker-1"))
+        self.store.clear_stop_requests(["device-1"])
+        self.assertEqual(self.store.cancel_pending([paused_id]), 1)
+        self.assertEqual(self.store.get(paused_id).status, "cancelled")
+
+    def test_interrupted_engagement_inspection_is_not_replayed(self) -> None:
+        payload = {
+            "submission_id": "submission-interrupted",
+            "inspection_index": 1,
+            "after_round_index": 5,
+            "inspection_every_rounds": 5,
+            "max_items_per_section": 20,
+        }
+        base = datetime.now().astimezone() - timedelta(minutes=1)
+        inspection_id = self.store.submit(
+            "douyin_engagement_inspection",
+            "device-1",
+            payload,
+            not_before=base.isoformat(timespec="microseconds"),
+        )
+        next_id = self.store.submit(
+            "healthcheck",
+            "device-1",
+            not_before=(base + timedelta(microseconds=1)).isoformat(
+                timespec="microseconds"
+            ),
+        )
+        claimed = self.store.claim_next("device-1", "worker-1")
+        self.assertIsNotNone(claimed)
+        assert claimed is not None
+        self.assertEqual(claimed.id, inspection_id)
+        self.assertEqual(self.store.recover_interrupted("device-1"), 1)
+        self.assertEqual(self.store.get(inspection_id).status, "failed")
+        self.assertIn("not retried", self.store.get(inspection_id).error or "")
+        next_task = self.store.claim_next("device-1", "worker-1")
+        self.assertIsNotNone(next_task)
+        assert next_task is not None
+        self.assertEqual(next_task.id, next_id)
+
     def test_statistics_include_status_type_timing_and_failure(self) -> None:
         completed_id = self.store.submit("healthcheck", "device-1")
         self.store.claim_next("device-1", "worker-1")
@@ -294,6 +625,23 @@ class TaskStoreTest(unittest.TestCase):
         self.assertEqual(incident.context, {"actions": ["like"]})
         self.assertTrue(incident.fingerprint)
         self.assertEqual(self.store.incident_statistics()["recovered"], 1)
+
+    def test_model_channel_incident_outcomes_are_persisted_separately(self) -> None:
+        task_id = self.store.submit("healthcheck", "device-1")
+        for outcome in ("model_failed", "model_circuit_open"):
+            self.store.record_incident(
+                task_id=task_id,
+                device_id="device-1",
+                video_index=1,
+                stage="topic_model",
+                error_type="CloudModelError",
+                error_message=outcome,
+                outcome=outcome,
+                recovery_action="none_model_channel",
+            )
+        statistics = self.store.incident_statistics()
+        self.assertEqual(statistics["model_failed"], 1)
+        self.assertEqual(statistics["model_circuit_open"], 1)
 
     def test_recent_incidents_are_newest_first(self) -> None:
         task_id = self.store.submit("healthcheck", "device-1")
@@ -405,6 +753,24 @@ class TaskStoreTest(unittest.TestCase):
                     recovery_action="continue",
                 )
             )
+        # Pin every record to the same millisecond and give older rows larger
+        # lexical IDs. Pagination must still follow insertion recency rather
+        # than the random UUID tie-breaker.
+        stable_task_ids = [f"task-{letter}" for letter in "zyxw"]
+        stable_incident_ids = [f"incident-{letter}" for letter in "zyxw"]
+        with self.store.connection() as connection:
+            for old_id, new_id in zip(task_ids, stable_task_ids):
+                connection.execute(
+                    "UPDATE tasks SET id=?, created_at=? WHERE id=?",
+                    (new_id, "2026-09-02T10:00:00.000+08:00", old_id),
+                )
+            for old_id, new_id in zip(incident_ids, stable_incident_ids):
+                connection.execute(
+                    "UPDATE incidents SET id=?, created_at=? WHERE id=?",
+                    (new_id, "2026-09-02T10:00:00.000+08:00", old_id),
+                )
+        task_ids = stable_task_ids
+        incident_ids = stable_incident_ids
         self.assertEqual(
             [item.id for item in self.store.list(limit=2, offset=2)],
             list(reversed(task_ids))[2:4],
@@ -475,11 +841,289 @@ class TaskStoreTest(unittest.TestCase):
                 "pending": 1,
                 "running": 0,
                 "completed": 1,
+                "degraded": 0,
                 "failed": 0,
                 "stopped": 0,
                 "cancelled": 0,
             },
         )
+
+    def test_interaction_alerts_are_aggregated_deduplicated_and_acknowledged(self) -> None:
+        summary = {"source_count": 2, "sources": {}}
+        first, created = self.store.record_interaction_alert(
+            task_id="inspection-1",
+            device_id="device-1",
+            sources=["received_likes", "comment_danmaku"],
+            summary=summary,
+            fingerprint="same-change",
+        )
+        repeated, repeated_created = self.store.record_interaction_alert(
+            task_id="inspection-2",
+            device_id="device-1",
+            sources=["received_likes", "comment_danmaku"],
+            summary=summary,
+            fingerprint="same-change",
+        )
+        self.assertTrue(created)
+        self.assertFalse(repeated_created)
+        self.assertEqual(first["id"], repeated["id"])
+        page = self.store.list_interaction_alerts(status="unread")
+        self.assertEqual(page["total"], 1)
+        result = self.store.acknowledge_interaction_alerts([first["id"]])
+        self.assertEqual(result["acknowledged"], 1)
+        self.assertEqual(result["acknowledged_ids"], [first["id"]])
+        self.assertEqual(result["remaining_unread"], 0)
+        self.assertEqual(self.store.list_interaction_alerts()["alerts"][0]["status"], "viewed")
+
+    def test_visitor_baseline_stores_readable_first_row_locally(self) -> None:
+        self.store.upsert_visitor_baseline(
+            device_id="device-1",
+            app_version="33.0.0",
+            display_signature="1080x2340x480x0x100",
+            row_count=4,
+            first_row_hash="ui-hash",
+            visual_hash="visual-hash",
+            first_row={"display_name": "本地访客"},
+        )
+        baseline = self.store.get_visitor_baseline("device-1")
+        assert baseline is not None
+        self.assertEqual(baseline["row_count"], 4)
+        self.assertEqual(baseline["first_row_hash"], "ui-hash")
+        self.assertEqual(baseline["first_row"], {"display_name": "本地访客"})
+
+    def test_interaction_inspection_receipt_survives_as_independent_history(self) -> None:
+        receipt = self.store.record_interaction_inspection(
+            inspection_id="receipt-1",
+            task_id="task-1",
+            device_id="device-1",
+            workflow_version="v2",
+            status="completed",
+            result_kind="clear",
+            restored=True,
+            summary={"conclusion": "四个分区已检查，无新互动", "sections": {}},
+            evidence=[{"id": "evidence-1", "image_name": "entry.png"}],
+            run_dir="C:/local/evidence",
+            started_at="2026-09-02T00:00:00+08:00",
+            finished_at="2026-09-02T00:01:00+08:00",
+        )
+        self.assertEqual(receipt["result_kind"], "clear")
+        self.assertEqual(receipt["summary"]["conclusion"], "四个分区已检查，无新互动")
+        page = self.store.list_interaction_inspections(result_kind="clear")
+        self.assertEqual(page["total"], 1)
+        self.assertEqual(page["inspections"][0]["evidence"][0]["id"], "evidence-1")
+
+    def test_incomplete_filter_includes_failed_run_that_also_found_an_alert(self) -> None:
+        self.store.record_interaction_inspection(
+            inspection_id="inspection-overlap",
+            task_id="task-overlap",
+            device_id="device-1",
+            workflow_version="v2",
+            status="failed",
+            result_kind="alert",
+            restored=True,
+            summary={"alert_sources": ["private_messages"]},
+            evidence=[],
+            run_dir="C:/local/evidence",
+            started_at="2026-09-02T00:00:00+08:00",
+            finished_at="2026-09-02T00:01:00+08:00",
+        )
+        page = self.store.list_interaction_inspections(result_kind="incomplete")
+        self.assertEqual(page["total"], 1)
+        self.assertEqual(page["inspections"][0]["id"], "inspection-overlap")
+
+    def test_version_recovery_is_idempotent_and_links_replacement_task(self) -> None:
+        origin_id = self.store.submit(
+            "douyin_engagement_inspection",
+            "device-1",
+            {
+                "submission_id": "recovery-test",
+                "inspection_index": 1,
+                "after_round_index": 1,
+                "inspection_every_rounds": 1,
+                "max_items_per_section": 20,
+            },
+        )
+        first, created = self.store.create_task_recovery(
+            origin_task_id=origin_id,
+            device_id="device-1",
+            fingerprint="40.2.0->40.3.0|1080x2340",
+            expected={"app_version": "40.2.0"},
+            actual={"app_version": "40.3.0"},
+        )
+        repeated, repeated_created = self.store.create_task_recovery(
+            origin_task_id=origin_id,
+            device_id="device-1",
+            fingerprint="40.2.0->40.3.0|1080x2340",
+            expected={"app_version": "40.2.0"},
+            actual={"app_version": "40.3.0"},
+        )
+        self.assertTrue(created)
+        self.assertFalse(repeated_created)
+        self.assertEqual(first["id"], repeated["id"])
+
+        replacement_id = self.store.submit(
+            "douyin_engagement_inspection",
+            "device-1",
+            {
+                "submission_id": "recovery-test",
+                "inspection_index": 1,
+                "after_round_index": 1,
+                "inspection_every_rounds": 1,
+                "max_items_per_section": 20,
+                "recovery_parent_task_id": origin_id,
+            },
+        )
+        ready = self.store.finish_task_recovery(
+            first["id"],
+            status="ready",
+            progress_current=3,
+            progress_total=3,
+            replacement_task_id=replacement_id,
+            message="三遍语义复验一致，已创建替代任务",
+        )
+        self.assertEqual(ready["status"], "ready")
+        self.assertEqual(ready["replacement_task_id"], replacement_id)
+        self.assertEqual(self.store.get_task_recovery(origin_id)["progress_current"], 3)
+
+    def test_failed_version_precondition_can_be_queued_once_for_worker_recovery(self) -> None:
+        origin_id = self.store.submit(
+            "douyin_engagement_inspection",
+            "device-1",
+            {
+                "submission_id": "historic-recovery",
+                "inspection_index": 1,
+                "after_round_index": 1,
+                "inspection_every_rounds": 1,
+                "max_items_per_section": 20,
+            },
+        )
+        self.store.claim_next("device-1", "worker-1")
+        result = {
+            "status": "failed",
+            "restored": True,
+            "failure_class": "recoverable_precondition",
+            "recovery_eligible": True,
+            "navigation_started": False,
+            "expected_app_version": "40.2.0",
+            "actual_app_version": "40.3.0",
+            "expected_display_signature": "1080x2340x480x0x101",
+            "actual_display_signature": "1080x2340x480x0x101",
+        }
+        self.store.finish(
+            origin_id,
+            status="failed",
+            run_dir=None,
+            result=result,
+            error="v2_app_version_changed",
+        )
+
+        first, created = self.store.request_task_recovery(origin_id)
+        repeated, repeated_created = self.store.request_task_recovery(origin_id)
+
+        self.assertTrue(created)
+        self.assertFalse(repeated_created)
+        self.assertEqual(first["id"], repeated["id"])
+        self.assertTrue(self.store.has_ready_recovery("device-1"))
+        claimed = self.store.claim_task_recovery("device-1")
+        self.assertEqual(claimed["origin_task_id"], origin_id)
+        self.assertEqual(claimed["status"], "running")
+        self.assertFalse(self.store.has_ready_recovery("device-1"))
+
+    def test_legacy_action_free_version_failure_can_be_queued_for_probe(self) -> None:
+        origin_id = self.store.submit(
+            "douyin_engagement_inspection",
+            "device-1",
+            {
+                "submission_id": "legacy-recovery",
+                "inspection_index": 2,
+                "after_round_index": 6,
+                "inspection_every_rounds": 3,
+                "max_items_per_section": 20,
+                "expected_app_version": "40.2.0",
+                "expected_display_signature": "1080x2340x480x0x101",
+            },
+        )
+        self.store.claim_next("device-1", "worker-1")
+        sections = {
+            name: {"status": "failed", "reason": "not_checked"}
+            for name in (
+                "private_messages", "received_likes", "comment_danmaku", "profile_visitors"
+            )
+        }
+        self.store.finish(
+            origin_id,
+            status="failed",
+            run_dir=None,
+            result={
+                "status": "failed",
+                "restored": True,
+                "failure_reason": "v2_app_version_changed",
+                "workflow_version": "v2",
+                "sections": sections,
+                "inspection_metadata": {"alert_created": False},
+            },
+            error="v2_app_version_changed",
+        )
+
+        recovery, created = self.store.request_task_recovery(origin_id)
+
+        self.assertTrue(created)
+        self.assertEqual(recovery["expected"]["app_version"], "40.2.0")
+        self.assertEqual(recovery["actual"]["app_version"], "")
+        self.store.claim_task_recovery("device-1")
+        self.store.finish_task_recovery(
+            recovery["id"],
+            status="waiting_user",
+            progress_current=0,
+            progress_total=3,
+            message="旧格式探测无法读取结构化版本",
+            error="v2_app_version_changed",
+        )
+
+        retried, retried_created = self.store.request_task_recovery(origin_id)
+
+        self.assertFalse(retried_created)
+        self.assertEqual(retried["id"], recovery["id"])
+        self.assertEqual(retried["status"], "queued")
+
+    def test_waiting_recovery_can_be_explicitly_continued_without_creating_another_attempt(self) -> None:
+        origin_id = self.store.submit(
+            "douyin_engagement_inspection",
+            "device-1",
+            {
+                "submission_id": "manual-continue",
+                "inspection_index": 1,
+                "after_round_index": 1,
+                "inspection_every_rounds": 1,
+                "max_items_per_section": 20,
+            },
+        )
+        recovery, _ = self.store.create_task_recovery(
+            origin_task_id=origin_id,
+            device_id="device-1",
+            fingerprint="40.2.0->40.3.0",
+            expected={"app_version": "40.2.0"},
+            actual={"app_version": "40.3.0"},
+        )
+        self.store.claim_task_recovery("device-1")
+        self.store.finish_task_recovery(
+            recovery["id"],
+            status="waiting_user",
+            progress_current=0,
+            progress_total=3,
+            message="页面控件需要确认",
+            evidence_dir="C:/evidence/first-pass",
+            error="message_filter_title_not_found",
+        )
+
+        continued = self.store.continue_task_recovery(origin_id)
+
+        self.assertEqual(continued["id"], recovery["id"])
+        self.assertEqual(continued["status"], "queued")
+        self.assertEqual(continued["progress_current"], 0)
+        self.assertIsNone(continued["error"])
+        self.assertIsNone(continued["evidence_dir"])
+        self.assertTrue(self.store.has_ready_recovery("device-1"))
 
 
 if __name__ == "__main__":

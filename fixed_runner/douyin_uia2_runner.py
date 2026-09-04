@@ -13,6 +13,10 @@ import uiautomator2 as u2
 from PIL import Image
 
 from device_profiles import DeviceProfile, get_device_profile
+from recovery_rules import (
+    find_action_bounds,
+    match_verified_recovery_rule,
+)
 
 from douyin_fixed_runner import (
     DOUYIN_PACKAGE,
@@ -26,6 +30,19 @@ from douyin_fixed_runner import (
     main_feed_visible,
     parse_dwell,
 )
+
+
+# uiautomator2 defaults JSON-RPC calls to 300 seconds. A stalled hierarchy
+# read can therefore strand one device worker for several minutes before the
+# runner gets a chance to recover. Keep each transport attempt short; the
+# library's own bounded retries still absorb ordinary transient delays.
+UIA2_HTTP_TIMEOUT_SECONDS = 20.0
+u2.HTTP_TIMEOUT = UIA2_HTTP_TIMEOUT_SECONDS
+
+# A search video can sit five Android-back layers above the home feed:
+# immersive video -> video results -> general results -> focused search page ->
+# unfocused search page -> home.  Keep one extra bounded step for minor overlays.
+FEED_RECOVERY_BACK_ATTEMPTS = 6
 
 
 BOUNDS_PATTERN = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
@@ -105,18 +122,42 @@ BLOCK_MARKERS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-MINOR_MODE_TITLES = ("未成年人模式", "青少年模式")
-MINOR_MODE_ACTIONS = (
-    "开启未成年人模式",
-    "开启青少年模式",
-    "未成年人保护",
-    "青少年保护",
-)
 COMMENT_PANEL_MARKERS = (
     "分享你此刻的想法",
     "有什么想法",
     "留下你的精彩评论",
+    "爱评论的人",
+    "期待你的评论",
+    "暂无评论",
 )
+
+COMMENT_INPUT_MARKERS = (
+    "评论",
+    "想法",
+    "说点",
+    "分享",
+    "运气不会差",
+    "友善",
+)
+
+SHARE_SHEET_PRIMARY_MARKERS = (
+    "转发到日常",
+    "不感兴趣",
+)
+
+SHARE_SHEET_SECONDARY_MARKERS = (
+    "倍速",
+    "清屏播放",
+    "添加至稍后再看",
+    "合拍",
+)
+
+
+def share_sheet_visible(xml_source: str) -> bool:
+    """Match Douyin's long-press/share sheet using stable, distinctive labels."""
+    return all(marker in xml_source for marker in SHARE_SHEET_PRIMARY_MARKERS) and any(
+        marker in xml_source for marker in SHARE_SHEET_SECONDARY_MARKERS
+    )
 
 
 def foreground_package(device) -> str:
@@ -180,9 +221,8 @@ def find_control_bounds(
 
 def minor_mode_overlay_visible(xml_source: str) -> bool:
     """Recognize only the known youth-protection modal, not incidental video text."""
-    return any(title in xml_source for title in MINOR_MODE_TITLES) and any(
-        action in xml_source for action in MINOR_MODE_ACTIONS
-    )
+    rule = match_verified_recovery_rule(xml_source)
+    return bool(rule and rule.rule_id == "douyin-minor-mode-overlay")
 
 
 def comment_panel_source_visible(xml_source: str) -> bool:
@@ -224,6 +264,8 @@ def find_bottom_navigation_bounds(
             or bottom > height
             or right <= left
             or bottom <= top
+            or right - left < max(72, int(width * 0.08))
+            or bottom - top < max(32, int(height * 0.02))
         ):
             continue
         bounds = (left, top, right, bottom)
@@ -253,6 +295,89 @@ def find_editable_bounds(
     return None
 
 
+def find_comment_input_bounds(
+    xml_source: str, width: int = 1080, height: int = 2400
+) -> tuple[int, int, int, int] | None:
+    """Find a bottom comment entry by semantics, without device coordinates."""
+    root = ET.fromstring(xml_source)
+    parents = {
+        child: parent for parent in root.iter("node") for child in list(parent)
+    }
+    candidates: list[tuple[int, int, int, tuple[int, int, int, int]]] = []
+    for node in root.iter("node"):
+        if node.get("package") != DOUYIN_PACKAGE:
+            continue
+        if node.get("visible-to-user", "true") != "true":
+            continue
+        label = " ".join(
+            " ".join(node.get(attribute, "").split())
+            for attribute in ("text", "content-desc", "hint")
+        )
+        is_editor = node.get("class") == "android.widget.EditText"
+        semantic_hits = sum(marker in label for marker in COMMENT_INPUT_MARKERS)
+        if not is_editor and not semantic_hits:
+            continue
+        target = node
+        promoted = False
+        if not is_editor and node.get("clickable") != "true":
+            target = parents.get(node)
+            while target is not None and (
+                target.get("package") != DOUYIN_PACKAGE
+                or target.get("visible-to-user", "true") != "true"
+                or target.get("clickable") != "true"
+            ):
+                target = parents.get(target)
+            if target is None:
+                continue
+            promoted = True
+        match = BOUNDS_PATTERN.fullmatch(target.get("bounds", ""))
+        if not match:
+            continue
+        left, top, right, bottom = (int(value) for value in match.groups())
+        if not (
+            0 <= left < right <= width
+            and int(height * 0.55) <= top < bottom <= height
+            and right - left >= int(width * 0.20)
+            and bottom - top <= int(height * 0.14)
+        ):
+            continue
+        priority = 0 if is_editor else 2 if promoted else 1
+        candidates.append(
+            (priority, -semantic_hits, -(right - left), (left, top, right, bottom))
+        )
+    return min(candidates, default=(0, 0, 0, None))[3]
+
+
+def comment_input_activation_source_confirmed(
+    xml_source: str, width: int = 1080, height: int = 2400
+) -> bool:
+    """Confirm that a comment prompt click opened a real editing state."""
+    try:
+        root = ET.fromstring(xml_source)
+    except ET.ParseError:
+        return False
+    if find_editable_bounds(xml_source, width, height) is not None:
+        return True
+    for node in root.iter("node"):
+        if (
+            node.get("package") != DOUYIN_PACKAGE
+            or node.get("visible-to-user", "true") != "true"
+            or node.get("focused") != "true"
+        ):
+            continue
+        match = BOUNDS_PATTERN.fullmatch(node.get("bounds", ""))
+        if match and int(match.group(2)) >= int(height * 0.55):
+            return True
+    keyboard_packages = (
+        "com.baidu.input",
+        "com.sohu.inputmethod",
+        "com.google.android.inputmethod",
+        "com.iflytek.inputmethod",
+        "com.android.inputmethod",
+    )
+    return any(package in xml_source for package in keyboard_packages)
+
+
 def find_search_result_bounds(
     xml_source: str, width: int = 1080, height: int = 2400
 ) -> tuple[int, int, int, int] | None:
@@ -275,16 +400,31 @@ def find_search_result_bounds(
             and bool(descendant.get("text", "").strip())
             for descendant in descendants
         )
-        if not has_caption and not any(marker in labels for marker in ("视频", "作品")):
+        has_video_cover = any(
+            descendant.get("resource-id", "").endswith("/cover")
+            for descendant in descendants
+        )
+        has_duration = any(
+            re.fullmatch(r"\d{1,2}:\d{2}(?::\d{2})?", descendant.get("text", "").strip())
+            for descendant in descendants
+        )
+        if (
+            not has_caption
+            and not any(marker in labels for marker in ("视频", "作品"))
+            and not (has_video_cover and has_duration)
+        ):
             continue
         match = BOUNDS_PATTERN.fullmatch(node.get("bounds", ""))
         if not match:
             continue
         left, top, right, bottom = (int(value) for value in match.groups())
         area = (right - left) * (bottom - top)
+        minimum_top = int(
+            height * (0.12 if has_caption or (has_video_cover and has_duration) else 0.18)
+        )
         if (
             0 <= left < right <= width
-            and int(height * 0.18) <= top < bottom <= int(height * 0.94)
+            and minimum_top <= top < bottom <= int(height * 0.94)
             and area >= int(width * height * 0.02)
             and area <= int(width * height * 0.65)
         ):
@@ -406,6 +546,198 @@ def _missing_feed_controls(signals: list[str]) -> list[str]:
     ]
 
 
+def _home_image_note_source_visible(
+    xml_source: str,
+    signals: list[str] | None = None,
+    width: int = 1080,
+    height: int = 2400,
+) -> bool:
+    """Recognize a browsable home image-note without granting video actions."""
+    current_signals = signals or _visible_aweme_signals(xml_source, width, height)
+    if find_bottom_navigation_bounds(xml_source, "首页", width, height) is None:
+        return False
+    has_image_note = any(signal == "图文" for signal in current_signals)
+    has_image_page = any(
+        re.match(r"^图片\s*\d+", signal) for signal in current_signals
+    )
+    reaction_controls = {
+        "like": any("喜欢" in signal and "按钮" in signal for signal in current_signals),
+        "comment": any("评论" in signal and "按钮" in signal for signal in current_signals),
+        "favorite": any("收藏" in signal and "按钮" in signal for signal in current_signals),
+    }
+    return bool(has_image_note and has_image_page and all(reaction_controls.values()))
+
+
+def _profile_page_source_visible(signals: list[str]) -> bool:
+    """Recognize a user profile from a combination of profile-only labels."""
+    joined = "\n".join(signals)
+    strong_markers = (
+        "编辑主页",
+        "添加朋友",
+        "我的订单",
+        "我的客服",
+        "全部功能",
+        "获赞",
+        "互关",
+        "粉丝",
+    )
+    tab_markers = ("作品", "日常", "商家", "收藏", "喜欢")
+    return (
+        sum(marker in joined for marker in strong_markers) >= 2
+        and sum(marker in joined for marker in tab_markers) >= 2
+    )
+
+
+def main_feed_shell_source_confirmed(
+    xml_source: str, width: int = 1080, height: int = 2400
+) -> bool:
+    """Confirm the visible home feed from UI semantics without using pixels."""
+    if minor_mode_overlay_visible(xml_source) or any(
+        marker in xml_source
+        for marker in (
+            "登录后，体验完整功能",
+            "请输入手机号",
+            "验证并登录",
+            "发送消息",
+            "快捷回复",
+            "一键留资",
+            "会话可能会被记录",
+        )
+    ):
+        return False
+    if comment_panel_source_visible(xml_source):
+        return False
+    root = ET.fromstring(xml_source)
+    for node in root.iter("node"):
+        label = " ".join(
+            value.strip()
+            for value in (node.get("text", ""), node.get("content-desc", ""))
+            if value.strip()
+        )
+        match = BOUNDS_PATTERN.fullmatch(node.get("bounds", ""))
+        if label == "消息" and match and int(match.group(2)) < int(height * 0.2):
+            return False
+    signals = _visible_aweme_signals(xml_source, width, height)
+    if _profile_page_source_visible(signals):
+        return False
+    if _search_results_grid_visible(xml_source, width, height):
+        return False
+    if _search_session_shell_visible(xml_source):
+        return False
+    home_bounds = find_bottom_navigation_bounds(xml_source, "首页", width, height)
+    if home_bounds is None:
+        return False
+    # Home image notes are a valid browsing shell but never a video mutation
+    # target.  Sparse discovery/profile shells remain rejected above.
+    return _home_image_note_source_visible(
+        xml_source, signals, width, height
+    ) or not _missing_feed_controls(signals)
+
+
+def _search_results_grid_visible(
+    xml_source: str, width: int = 1080, height: int = 2400
+) -> bool:
+    """Recognize the search-results shell without mistaking it for a video feed."""
+    try:
+        signals = _visible_aweme_signals(xml_source, width, height)
+    except ET.ParseError:
+        return False
+    search_tabs = {"综合", "视频", "用户", "图文", "商品", "直播", "音乐"}
+    exact_tabs = {signal for signal in signals if signal in search_tabs}
+    # The home recommendation header itself currently exposes the exact
+    # labels “视频 / 图文 / 直播”.  Three tabs are therefore not enough to
+    # prove a search-results grid; require the wider results taxonomy.
+    return len(exact_tabs) >= 4
+
+
+def _search_session_shell_visible(xml_source: str) -> bool:
+    """Require the stable semantic shell shared by immersive search videos."""
+    try:
+        root = ET.fromstring(xml_source)
+    except ET.ParseError:
+        return False
+    visible_resource_ids = {
+        node.get("resource-id", "")
+        for node in root.iter("node")
+        if node.get("package") == DOUYIN_PACKAGE
+        and node.get("visible-to-user", "true") == "true"
+    }
+    return any(
+        resource_id.endswith("/back_btn") for resource_id in visible_resource_ids
+    ) and any(
+        resource_id.endswith("/et_search_kw") for resource_id in visible_resource_ids
+    )
+
+
+def _search_continuation_marker_visible(
+    xml_source: str, width: int = 1080, height: int = 2400
+) -> bool:
+    """Recognize later search videos after Douyin collapses the top search bar."""
+    try:
+        root = ET.fromstring(xml_source)
+    except ET.ParseError:
+        return False
+    if find_bottom_navigation_bounds(xml_source, "首页", width, height) is not None:
+        return False
+    for node in root.iter("node"):
+        if (
+            node.get("package") != DOUYIN_PACKAGE
+            or node.get("visible-to-user", "true") != "true"
+        ):
+            continue
+        label = " ".join(
+            value.strip()
+            for value in (node.get("text", ""), node.get("content-desc", ""))
+            if value.strip()
+        )
+        if not (label == "相关搜索" or label.startswith("相关搜索 ")):
+            continue
+        match = BOUNDS_PATTERN.fullmatch(node.get("bounds", ""))
+        if match and int(match.group(2)) >= int(height * 0.65):
+            return True
+    return False
+
+
+def _search_context_evidence_visible(
+    xml_source: str, width: int = 1080, height: int = 2400
+) -> bool:
+    return _search_session_shell_visible(
+        xml_source
+    ) or _search_continuation_marker_visible(xml_source, width, height)
+
+
+def classify_douyin_page_source(
+    xml_source: str,
+    foreground: str,
+    width: int = 1080,
+    height: int = 2400,
+) -> str:
+    """Classify navigation state before any browse or mutation action."""
+    if foreground != DOUYIN_PACKAGE:
+        return "external"
+    try:
+        signals = _visible_aweme_signals(xml_source, width, height)
+    except ET.ParseError:
+        return "unknown"
+    if comment_panel_source_visible(xml_source):
+        return "comment_panel"
+    if _profile_page_source_visible(signals):
+        return "profile"
+    if minor_mode_overlay_visible(xml_source):
+        return "known_skip"
+    joined = "\n".join(signals)
+    if any(any(marker in joined for marker in markers) for markers in BLOCK_MARKERS.values()):
+        return "known_skip"
+    if _home_image_note_source_visible(xml_source, signals, width, height):
+        return "home_image_note"
+    missing = _missing_feed_controls(signals)
+    if _search_context_evidence_visible(xml_source, width, height) and not missing:
+        return "search_feed"
+    if main_feed_shell_source_confirmed(xml_source, width, height):
+        return "home_feed"
+    return "unknown"
+
+
 def classify_mutation_gate(
     xml_source: str,
     foreground_package: str,
@@ -424,6 +756,8 @@ def classify_mutation_gate(
         return GateDecision(False, ("invalid_ui_tree",), ())
 
     joined = "\n".join(signals)
+    if _home_image_note_source_visible(xml_source, signals, width, height):
+        reasons.append("non_video_feed_item")
     missing = _missing_feed_controls(signals)
     if require_feed_controls and missing:
         reasons.append("missing_feed_controls:" + ",".join(missing))
@@ -474,8 +808,102 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         serial = device_id or str(getattr(device, "serial", ""))
         self.device_profile: DeviceProfile | None = get_device_profile(serial)
         self.allow_search_feed = False
+        self.search_query = ""
+        self.feed_phase = "home"
+        self._search_visual_fallback_active = False
         self.control_bounds: dict[str, tuple[int, int, int, int]] = {}
         self.control_states: dict[str, bool | None] = {}
+        self.recovery_events: list[dict[str, Any]] = []
+        self._pending_overlay_recovery: dict[str, Any] | None = None
+
+    def _record_recovery(
+        self,
+        *,
+        rule_id: str,
+        rule_version: str,
+        action: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        event = {
+            "rule_id": rule_id,
+            "rule_version": rule_version,
+            "action": action,
+            "reason": reason,
+            "verified": True,
+        }
+        self.recovery_events.append(event)
+        self.recorder.emit("verified_recovery", **event)
+        return event
+
+    def drain_recovery_events(self) -> list[dict[str, Any]]:
+        events = [dict(event) for event in self.recovery_events]
+        self.recovery_events.clear()
+        return events
+
+    def _complete_pending_overlay_recovery(self) -> None:
+        if self._pending_overlay_recovery is None:
+            return
+        self._record_recovery(**self._pending_overlay_recovery)
+        self._pending_overlay_recovery = None
+
+    def try_verified_overlay_recovery(self, source: str, reason: str) -> bool:
+        """Apply one whitelisted overlay rule and verify the resulting feed."""
+        rule = match_verified_recovery_rule(source)
+        if rule is None:
+            return False
+        attempts = 0
+        current_source = source
+        for action in rule.actions:
+            if attempts >= rule.max_attempts:
+                break
+            bounds = find_action_bounds(
+                current_source,
+                action.labels,
+                self.profile.width,
+                self.profile.height,
+            )
+            if bounds is None:
+                continue
+            left, top, right, bottom = bounds
+            x, y = round((left + right) / 2), round((top + bottom) / 2)
+            self.recorder.emit(
+                "verified_recovery_attempt",
+                rule_id=rule.rule_id,
+                rule_version=rule.version,
+                action=action.action_id,
+                reason=reason,
+                attempt=attempts + 1,
+                x=x,
+                y=y,
+                bounds=list(bounds),
+            )
+            self.device.click(x, y)
+            attempts += 1
+            time.sleep(0.8)
+            image = self.device.screenshot(format="pillow").convert("RGB")
+            try:
+                current_source = self.device.dump_hierarchy(
+                    compressed=True, pretty=False
+                )
+            except Exception:
+                current_source = ""
+            if self.main_feed_shell_confirmed(image, current_source):
+                self._record_recovery(
+                    rule_id=rule.rule_id,
+                    rule_version=rule.version,
+                    action=action.action_id,
+                    reason=reason,
+                )
+                return True
+            if not rule.matches(current_source):
+                self._pending_overlay_recovery = {
+                    "rule_id": rule.rule_id,
+                    "rule_version": rule.version,
+                    "action": action.action_id,
+                    "reason": reason,
+                }
+                return False
+        return False
 
     def tap(self, point: tuple[float, float], action: str) -> None:
         x, y = self.profile.absolute(point)
@@ -491,16 +919,37 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             standard_feed = (
                 foreground_package(self.device) == DOUYIN_PACKAGE
                 and "首页" in source
+                and not _home_image_note_source_visible(
+                    source, signals, self.profile.width, self.profile.height
+                )
                 and not _missing_feed_controls(signals)
             )
             search_feed = (
-                self.allow_search_feed
+                (self.feed_phase == "search" or self.allow_search_feed)
                 and foreground_package(self.device) == DOUYIN_PACKAGE
                 and any(marker in source for marker in ("暂停视频，按钮", "播放视频，按钮"))
             )
-            return standard_feed or search_feed
+            return search_feed if self.feed_phase == "search" else standard_feed
         except Exception:
-            return main_feed_visible(image)
+            return bool(self.feed_phase == "home" and main_feed_visible(image))
+
+    def _home_feed_shell_confirmed(
+        self, image: Image.Image, source: str | None = None
+    ) -> bool:
+        try:
+            current_source = source
+            if current_source is None:
+                current_source = self.device.dump_hierarchy(
+                    compressed=True, pretty=False
+                )
+            return bool(
+                foreground_package(self.device) == DOUYIN_PACKAGE
+                and main_feed_shell_source_confirmed(
+                    current_source, self.profile.width, self.profile.height
+                )
+            )
+        except Exception:
+            return False
 
     def main_feed_shell_confirmed(
         self, image: Image.Image, source: str | None = None
@@ -514,40 +963,40 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                 )
             if foreground_package(self.device) != DOUYIN_PACKAGE:
                 return False
-            if (
-                comment_panel_source_visible(current_source)
-                or minor_mode_overlay_visible(current_source)
-                or any(
-                    marker in current_source
-                    for marker in (
-                        "登录后，体验完整功能",
-                        "请输入手机号",
-                        "验证并登录",
-                    )
+            if minor_mode_overlay_visible(current_source) or any(
+                marker in current_source
+                for marker in (
+                    "登录后，体验完整功能",
+                    "请输入手机号",
+                    "验证并登录",
                 )
             ):
-                return False
-            home_bounds = find_bottom_navigation_bounds(
-                current_source,
-                "首页",
-                self.profile.width,
-                self.profile.height,
-            )
-            if home_bounds is None:
                 return False
             signals = _visible_aweme_signals(
                 current_source, self.profile.width, self.profile.height
             )
-            has_complete_feed_controls = not _missing_feed_controls(signals)
-            feed_tabs = ("推荐", "关注", "精选", "同城")
-            has_exact_feed_tab = any(
-                signal == tab or signal.startswith(f"{tab}，")
-                for signal in signals
-                for tab in feed_tabs
-            )
-            return has_complete_feed_controls or has_exact_feed_tab
+            if comment_panel_source_visible(current_source) and not (
+                self.allow_search_feed and not _missing_feed_controls(signals)
+            ):
+                return False
+            search_required = self.feed_phase == "search" or self.allow_search_feed
+            if search_required and self.search_feed_confirmed(
+                current_source,
+                image,
+                allow_visual_fallback=self._search_visual_fallback_active,
+            ):
+                return True
+            if search_required:
+                return False
+            return self._home_feed_shell_confirmed(image, current_source)
         except Exception:
             return False
+
+    def required_feed_confirmed(
+        self, image: Image.Image, source: str | None = None
+    ) -> bool:
+        """Confirm exactly the feed required by the current orchestration phase."""
+        return self.main_feed_shell_confirmed(image, source)
 
     def wait_for_main_feed_shell(
         self, reason: str, *, attempts: int = 16, delay_s: float = 0.75
@@ -558,7 +1007,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                 image = self.device.screenshot(format="pillow").convert("RGB")
                 self.ensure_profile(image)
                 source = self.device.dump_hierarchy(compressed=True, pretty=False)
-                if self.main_feed_shell_confirmed(image, source):
+                if self._home_feed_shell_confirmed(image, source):
                     self.recorder.emit(
                         "feed_recovery_wait",
                         reason=reason,
@@ -590,14 +1039,45 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         )
         return False
 
-    def search_feed_confirmed(self, source: str) -> bool:
+    def search_feed_confirmed(
+        self,
+        source: str,
+        image: Image.Image | None = None,
+        *,
+        allow_visual_fallback: bool = False,
+    ) -> bool:
+        """Confirm read-only search browsing without granting mutation access."""
         try:
+            if foreground_package(self.device) != DOUYIN_PACKAGE:
+                return False
+            if _search_results_grid_visible(
+                source, self.profile.width, self.profile.height
+            ):
+                return False
             signals = _visible_aweme_signals(
                 source, self.profile.width, self.profile.height
             )
-            return (
-                foreground_package(self.device) == DOUYIN_PACKAGE
-                and any(marker in source for marker in ("暂停视频，按钮", "播放视频，按钮"))
+            has_douyin_nodes = DOUYIN_PACKAGE in source
+            if has_douyin_nodes and not _search_context_evidence_visible(
+                source, self.profile.width, self.profile.height
+            ):
+                return False
+            if has_douyin_nodes and not _missing_feed_controls(signals):
+                return True
+            if has_douyin_nodes and any(
+                marker in source for marker in ("暂停视频，按钮", "播放视频，按钮")
+            ):
+                return True
+            # Some devices render the app correctly but expose only SystemUI
+            # nodes through uiautomator.  Accept the existing conservative
+            # visual feed shell only after a verified search-result transition.
+            # If any Douyin node is present, semantic verification remains
+            # authoritative and a missing play marker fails closed.
+            return bool(
+                image is not None
+                and not has_douyin_nodes
+                and allow_visual_fallback
+                and main_feed_visible(image)
             )
         except Exception:
             return False
@@ -605,6 +1085,13 @@ class Uia2DouyinRunner(FixedDouyinRunner):
     def require_main_feed(self, image: Image.Image, stage: str) -> None:
         if not self.main_feed_confirmed(image):
             raise RuntimeError(f"Main feed precondition failed before {stage}")
+
+    def require_main_feed_shell(self, image: Image.Image, stage: str) -> None:
+        if not (
+            self.main_feed_confirmed(image)
+            or self.main_feed_shell_confirmed(image)
+        ):
+            raise RuntimeError(f"Browsable feed precondition failed before {stage}")
 
     def tap_control(self, control: str, action: str) -> None:
         bounds = self.control_bounds.get(control)
@@ -619,28 +1106,34 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         self.device.click(x, y)
 
     def close_comment_panel(self, video: int, screenshot_name: str) -> Image.Image:
-        def panel_still_open() -> bool:
-            current_source = self.device.dump_hierarchy(
-                compressed=True, pretty=False
+        def accept_closed_state(
+            current_image: Image.Image,
+            current_source: str,
+            evidence_suffix: str,
+        ) -> Image.Image | None:
+            # A generic “关闭” control can also belong to search overlays or
+            # video cards. Only comment-panel semantics prove the panel is
+            # still open. Once the panel is gone, do not keep pressing Back:
+            # the close action can leave Douyin on a search landing/results
+            # page and further Back presses only unwind more valid context.
+            if comment_panel_source_visible(current_source):
+                return None
+            if self.main_feed_shell_confirmed(current_image, current_source):
+                return current_image
+
+            self.recorder.emit(
+                "comment_close_recovery",
+                video=video,
+                action="rebuild_required_feed",
+                reason="panel_closed_navigation_drift",
             )
-            if any(
-                marker in current_source
-                for marker in (
-                    "分享你此刻的想法",
-                    "有什么想法",
-                    "留下你的精彩评论",
+            if self.recover_required_feed(f"comment-panel-close-drift-{video}"):
+                return self.recorder.screenshot(
+                    self.device,
+                    f"{screenshot_name}-{evidence_suffix}-feed-recovered",
                 )
-            ):
-                return True
-            return (
-                find_control_bounds(
-                    current_source,
-                    "关闭",
-                    self.profile.width,
-                    self.profile.height,
-                    require_button_label=False,
-                )
-                is not None
+            raise RuntimeError(
+                "Comment panel closed but required feed could not be recovered"
             )
 
         source = self.device.dump_hierarchy(compressed=True, pretty=False)
@@ -667,8 +1160,10 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         self.device.click(x, y)
         time.sleep(0.7)
         closed = self.recorder.screenshot(self.device, screenshot_name)
-        if self.main_feed_confirmed(closed) and not panel_still_open():
-            return closed
+        closed_source = self.device.dump_hierarchy(compressed=True, pretty=False)
+        accepted = accept_closed_state(closed, closed_source, "close")
+        if accepted is not None:
+            return accepted
 
         # The close button occasionally only dismisses the editor/keyboard.
         # Recover in small verified steps instead of continuing on a stale panel.
@@ -684,8 +1179,14 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             closed = self.recorder.screenshot(
                 self.device, f"{screenshot_name}-recovery-{attempt}"
             )
-            if self.main_feed_confirmed(closed) and not panel_still_open():
-                return closed
+            closed_source = self.device.dump_hierarchy(
+                compressed=True, pretty=False
+            )
+            accepted = accept_closed_state(
+                closed, closed_source, f"back-{attempt}"
+            )
+            if accepted is not None:
+                return accepted
 
             # If back only hid the keyboard, the panel X should still be present.
             retry_source = self.device.dump_hierarchy(compressed=True, pretty=False)
@@ -713,8 +1214,14 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                 closed = self.recorder.screenshot(
                     self.device, f"{screenshot_name}-retry-close-{attempt}"
                 )
-                if self.main_feed_confirmed(closed) and not panel_still_open():
-                    return closed
+                closed_source = self.device.dump_hierarchy(
+                    compressed=True, pretty=False
+                )
+                accepted = accept_closed_state(
+                    closed, closed_source, f"retry-close-{attempt}"
+                )
+                if accepted is not None:
+                    return accepted
         raise RuntimeError("Comment panel did not close after bounded recovery")
 
     def recover_main_feed(self, reason: str) -> bool:
@@ -740,7 +1247,13 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             image = self.recorder.screenshot(
                 self.device, f"feed-recovery-{reason}-home-tab"
             )
-            if self.main_feed_shell_confirmed(image):
+            if self._home_feed_shell_confirmed(image):
+                self._record_recovery(
+                    rule_id="douyin-navigation-drift",
+                    rule_version="1.0.0",
+                    action="home_tab",
+                    reason=reason,
+                )
                 return True
 
         fallback = (
@@ -759,10 +1272,16 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             image = self.recorder.screenshot(
                 self.device, f"feed-recovery-{reason}-home-fallback"
             )
-            if self.main_feed_shell_confirmed(image):
+            if self._home_feed_shell_confirmed(image):
+                self._record_recovery(
+                    rule_id="douyin-navigation-drift",
+                    rule_version="1.0.0",
+                    action="home_tab_fallback",
+                    reason=reason,
+                )
                 return True
 
-        for attempt in range(1, 4):
+        for attempt in range(1, FEED_RECOVERY_BACK_ATTEMPTS + 1):
             self.recorder.emit(
                 "feed_recovery", reason=reason, attempt=attempt, action="back"
             )
@@ -771,10 +1290,31 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             image = self.recorder.screenshot(
                 self.device, f"feed-recovery-{reason}-back-{attempt}"
             )
-            if self.main_feed_shell_confirmed(image):
+            if self._home_feed_shell_confirmed(image):
+                self._record_recovery(
+                    rule_id="douyin-navigation-drift",
+                    rule_version="1.0.0",
+                    action="back",
+                    reason=reason,
+                )
                 return True
 
-            source = self.device.dump_hierarchy(compressed=True, pretty=False)
+            try:
+                source = self.device.dump_hierarchy(
+                    compressed=True, pretty=False
+                )
+            except Exception as exc:
+                # UIAutomator can transiently return an empty hierarchy while
+                # Douyin is animating between search layers.  A failed read is
+                # not evidence of page drift; continue the already bounded
+                # read-only unwind and verify again after the next step.
+                self.recorder.emit(
+                    "feed_recovery_observation_failed",
+                    reason=reason,
+                    attempt=attempt,
+                    error_type=type(exc).__name__,
+                )
+                continue
             close_bounds = find_control_bounds(
                 source,
                 "关闭",
@@ -799,7 +1339,13 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                 image = self.recorder.screenshot(
                     self.device, f"feed-recovery-{reason}-close-{attempt}"
                 )
-                if self.main_feed_shell_confirmed(image):
+                if self._home_feed_shell_confirmed(image):
+                    self._record_recovery(
+                        rule_id="douyin-navigation-drift",
+                        rule_version="1.0.0",
+                        action="close_button",
+                        reason=reason,
+                    )
                     return True
 
         self.recorder.emit("feed_recovery", reason=reason, action="app_restart")
@@ -808,7 +1354,72 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         except Exception:
             pass
         self.device.app_start(DOUYIN_PACKAGE, wait=False, stop=False)
-        return self.wait_for_main_feed_shell(reason)
+        recovered = self.wait_for_main_feed_shell(reason)
+        if recovered:
+            self._record_recovery(
+                rule_id="douyin-navigation-drift",
+                rule_version="1.0.0",
+                action="app_restart",
+                reason=reason,
+            )
+        return recovered
+
+    def recover_required_feed(self, reason: str) -> bool:
+        """Recover the required browsing origin, including search re-entry."""
+        target_phase = self.feed_phase
+        target_query = self.search_query
+        if target_phase == "home":
+            self.allow_search_feed = False
+            self.search_query = ""
+            self._search_visual_fallback_active = False
+        if not self.recover_main_feed(reason):
+            return False
+        if target_phase != "search":
+            self.feed_phase = "home"
+            return True
+        for attempt in range(1, 3):
+            try:
+                self.enter_topic_search(target_query)
+                self._record_recovery(
+                    rule_id="douyin-search-context-drift",
+                    rule_version="1.1.0",
+                    action="search_reentry",
+                    reason=reason,
+                )
+                return True
+            except Exception as exc:
+                self.recorder.emit(
+                    "feed_recovery",
+                    reason=reason,
+                    action="search_reentry_failed",
+                    attempt=attempt,
+                    error_type=type(exc).__name__,
+                    error=str(exc),
+                )
+                if attempt >= 2 or not self.recover_main_feed(
+                    f"{reason}-search-retry"
+                ):
+                    return False
+        return False
+
+    def prepare_feed_phase(self, phase: str, query: str, reason: str) -> bool:
+        """Enter a phase from a verified home feed without carrying stale state."""
+        if phase not in {"home", "search"}:
+            raise ValueError(f"unsupported feed phase: {phase}")
+        self.feed_phase = "home"
+        self.allow_search_feed = False
+        self.search_query = ""
+        self._search_visual_fallback_active = False
+        if not self.recover_main_feed(reason):
+            return False
+        if phase == "home":
+            self.recorder.emit("feed_phase_ready", phase="home", reason=reason)
+            return True
+        self.enter_topic_search(query)
+        self.recorder.emit(
+            "feed_phase_ready", phase="search", reason=reason, query=query
+        )
+        return True
 
     def ensure_app_ready(self) -> None:
         started = time.monotonic()
@@ -840,21 +1451,20 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                 for marker in ("登录后，体验完整功能", "请输入手机号", "验证并登录")
             )
             minor_mode_overlay = minor_mode_overlay_visible(source)
-            if close_bounds is not None and minor_mode_overlay and close_attempts < 2:
-                left, top, right, bottom = close_bounds
-                x = round((left + right) / 2)
-                y = round((top + bottom) / 2)
-                self.recorder.emit(
-                    "startup_overlay_recovery",
-                    overlay="minor_mode",
-                    action="close_button",
-                    x=x,
-                    y=y,
-                    bounds=list(close_bounds),
+            if minor_mode_overlay and close_attempts < 2:
+                recovered_now = self.try_verified_overlay_recovery(
+                    source, "app-ready-overlay"
                 )
-                self.device.click(x, y)
                 close_attempts += 1
-                time.sleep(0.8)
+                if recovered_now:
+                    self.recorder.emit(
+                        "app_ready",
+                        launch_needed=launch_needed,
+                        close_attempts=close_attempts,
+                        recovered=True,
+                        elapsed_s=round(time.monotonic() - started, 3),
+                    )
+                    return
                 continue
             if close_bounds is not None and login_overlay and close_attempts < 2:
                 left, top, right, bottom = close_bounds
@@ -869,6 +1479,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                     action="bounded_feed_recovery",
                 )
                 if self.recover_main_feed("app-ready-comment-panel"):
+                    self._complete_pending_overlay_recovery()
                     self.recorder.emit(
                         "app_ready",
                         launch_needed=launch_needed,
@@ -911,6 +1522,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                         time.sleep(0.8)
                         continue
                 if self.main_feed_shell_confirmed(verify_image, verify_source):
+                    self._complete_pending_overlay_recovery()
                     self.recorder.emit(
                         "app_ready",
                         launch_needed=launch_needed,
@@ -920,6 +1532,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                     return
             time.sleep(0.5)
         if self.recover_main_feed("app-ready"):
+            self._complete_pending_overlay_recovery()
             self.recorder.emit(
                 "app_ready",
                 launch_needed=launch_needed,
@@ -1031,6 +1644,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         time.sleep(1.0)
         image = None
         last_source = ""
+        retried_result_card = False
         for _attempt in range(1, 9):
             image = self.recorder.screenshot(
                 self.device, f"topic-search-entered-video-{_attempt}"
@@ -1038,11 +1652,40 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             last_source = self.device.dump_hierarchy(
                 compressed=False, pretty=False
             )
-            if self.main_feed_confirmed(image) or self.search_feed_confirmed(last_source):
+            if self.search_feed_confirmed(
+                last_source, image, allow_visual_fallback=True
+            ):
                 self.allow_search_feed = True
+                self.search_query = query
+                self.feed_phase = "search"
+                self._search_visual_fallback_active = DOUYIN_PACKAGE not in last_source
                 return
+            if (
+                not retried_result_card
+                and _search_results_grid_visible(
+                    last_source, self.profile.width, self.profile.height
+                )
+            ):
+                # The first click has a known non-effect: the same verified
+                # search-results grid is still visible.  A single repeat is
+                # safe here; ambiguous or changed states are never replayed.
+                self.device.click(
+                    round((left + right) / 2), round((top + bottom) / 2)
+                )
+                retried_result_card = True
+                self.recorder.emit(
+                    "topic_search",
+                    action="open_video_result_retry",
+                    query=query,
+                    bounds=list(result_bounds),
+                    reason="verified_search_grid_still_visible",
+                )
+                time.sleep(1.0)
+                continue
             time.sleep(0.8)
-        if image is None or not self.main_feed_confirmed(image):
+        if image is None or not self.search_feed_confirmed(
+            last_source, image, allow_visual_fallback=True
+        ):
             (self.recorder.run_dir / "topic-search-entered-video.xml").write_text(
                 last_source, encoding="utf-8"
             )
@@ -1052,8 +1695,22 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         before = self.recorder.screenshot(
             self.device, f"video-{from_video}-pre-swipe-state"
         )
-        if not self.main_feed_shell_confirmed(before):
-            if not self.recover_main_feed(f"before-swipe-{from_video}"):
+        self.ensure_profile(before)
+        search_mode = bool(self.allow_search_feed and self.search_query)
+        if search_mode:
+            try:
+                source = self.device.dump_hierarchy(compressed=True, pretty=False)
+                feed_ready = self.search_feed_confirmed(
+                    source,
+                    before,
+                    allow_visual_fallback=self._search_visual_fallback_active,
+                )
+            except Exception:
+                feed_ready = False
+        else:
+            feed_ready = self.main_feed_shell_confirmed(before)
+        if not feed_ready:
+            if not self.recover_required_feed(f"before-swipe-{from_video}"):
                 raise RuntimeError("Could not recover the main feed before swipe")
         start_x, start_y = self.profile.absolute(self.profile.swipe_start)
         end_x, end_y = self.profile.absolute(self.profile.swipe_end)
@@ -1067,18 +1724,98 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             elapsed_s=round(time.monotonic() - started, 3),
         )
 
-    def capture_gate(self, video: int, action: str) -> tuple[Image.Image, GateDecision]:
+    def capture_gate(
+        self,
+        video: int,
+        action: str,
+        *,
+        evidence_name: str | None = None,
+    ) -> tuple[Image.Image, GateDecision]:
         before = self.recorder.screenshot(
-            self.device, f"video-{video}-{action}-before"
+            self.device, f"video-{video}-{evidence_name or action}-before"
         )
         self.ensure_profile(before)
-        read_only_search_gate = action == "topic-analysis" and self.allow_search_feed
-        if not self.main_feed_confirmed(before) and not read_only_search_gate:
+        source: str | None = None
+        search_mode = bool(self.allow_search_feed and self.search_query)
+        if search_mode:
+            try:
+                source = self.device.dump_hierarchy(compressed=True, pretty=False)
+                search_feed = self.search_feed_confirmed(
+                    source,
+                    before,
+                    allow_visual_fallback=self._search_visual_fallback_active,
+                )
+            except Exception:
+                search_feed = False
+            if not search_feed:
+                recovered = self.recover_required_feed(
+                    f"search-context-before-{action}-{video}"
+                )
+                if recovered:
+                    before = self.recorder.screenshot(
+                        self.device,
+                        f"video-{video}-{evidence_name or action}-search-recovered",
+                    )
+                    self.ensure_profile(before)
+                    try:
+                        source = self.device.dump_hierarchy(
+                            compressed=True, pretty=False
+                        )
+                        search_feed = self.search_feed_confirmed(
+                            source,
+                            before,
+                            allow_visual_fallback=self._search_visual_fallback_active,
+                        )
+                    except Exception:
+                        search_feed = False
+            if not search_feed:
+                return before, GateDecision(False, ("search_context_drift",), ())
+        strict_feed = self.main_feed_confirmed(before)
+        browsable_feed = search_feed if search_mode else strict_feed
+        if action == "topic-analysis" and not browsable_feed:
+            try:
+                source = self.device.dump_hierarchy(compressed=True, pretty=False)
+                browsable_feed = self.main_feed_shell_confirmed(before, source)
+            except Exception:
+                browsable_feed = False
+        if (
+            action == "topic-analysis"
+            and not browsable_feed
+            and source is not None
+            and share_sheet_visible(source)
+        ):
+            recovered = self.recover_required_feed(f"share-sheet-before-topic-{video}")
+            if recovered:
+                before = self.recorder.screenshot(
+                    self.device, f"video-{video}-topic-analysis-recovered"
+                )
+                self.ensure_profile(before)
+                try:
+                    source = self.device.dump_hierarchy(compressed=True, pretty=False)
+                    browsable_feed = self.main_feed_shell_confirmed(before, source)
+                except Exception:
+                    browsable_feed = False
+            if not browsable_feed:
+                return before, GateDecision(False, ("share_sheet",), ())
+        if action == "topic-analysis" and not browsable_feed and source is not None:
+            known_skip = classify_mutation_gate(
+                source,
+                foreground_package(self.device),
+                before.width,
+                before.height,
+                require_feed_controls=False,
+            )
+            if known_skip.reasons and all(
+                reason in BLOCK_MARKERS for reason in known_skip.reasons
+            ):
+                return before, known_skip
+        if not browsable_feed:
             decision = GateDecision(False, ("visual_main_feed_check_failed",), ())
         else:
             started = time.monotonic()
             try:
-                source = self.device.dump_hierarchy(compressed=True, pretty=False)
+                if source is None:
+                    source = self.device.dump_hierarchy(compressed=True, pretty=False)
                 foreground = foreground_package(self.device)
                 decision = classify_mutation_gate(
                     source,
@@ -1136,6 +1873,76 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         )
         return before, decision
 
+    def _retry_confirmed_inactive_reaction_once(
+        self,
+        video: int,
+        action: str,
+        *,
+        color: str,
+        threshold: float,
+    ) -> bool:
+        retry_before, retry_gate = self.capture_gate(
+            video,
+            action,
+            evidence_name=f"{action}-retry",
+        )
+        if not retry_gate.allowed:
+            self.recorder.emit(
+                "reaction_retry_aborted",
+                video=video,
+                action=action,
+                reason="gate_not_allowed",
+                gate_reasons=list(retry_gate.reasons),
+            )
+            return False
+
+        bounds = self.control_bounds[action]
+        semantic_active = self.control_states.get(action)
+        visual_active = color_active_in_bounds(
+            retry_before, bounds, color, threshold
+        )
+        if semantic_active is True or visual_active:
+            self.recorder.emit(
+                f"{action}_state_after",
+                video=video,
+                active=True,
+                verification_attempt=2,
+                resolved_without_replay=True,
+            )
+            return True
+        if semantic_active is not False:
+            self.recorder.emit(
+                "reaction_retry_aborted",
+                video=video,
+                action=action,
+                reason="state_unknown",
+            )
+            return False
+
+        self.recorder.emit(
+            "reaction_retry",
+            video=video,
+            action=action,
+            attempt=2,
+            reason="confirmed_inactive",
+        )
+        self.tap_control(action, f"{action}_retry")
+        time.sleep(0.8)
+        retry_after = self.recorder.screenshot(
+            self.device, f"video-{video}-{action}-after-retry"
+        )
+        retry_active = color_active_in_bounds(
+            retry_after, bounds, color, threshold
+        )
+        self.recorder.emit(
+            f"{action}_state_after",
+            video=video,
+            active=retry_active,
+            verification_attempt=2,
+            resolved_without_replay=False,
+        )
+        return retry_active
+
     def like_verified(self, video: int, before: Image.Image) -> bool:
         bounds = self.control_bounds["like"]
         visual_active = color_active_in_bounds(before, bounds, "red", 0.035)
@@ -1156,7 +1963,9 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         after = self.recorder.screenshot(self.device, f"video-{video}-like-after")
         after_active = color_active_in_bounds(after, bounds, "red", 0.035)
         self.recorder.emit("like_state_after", video=video, active=after_active)
-        if not after_active:
+        if not after_active and not self._retry_confirmed_inactive_reaction_once(
+            video, "like", color="red", threshold=0.035
+        ):
             raise RuntimeError("Like verification failed; stopping")
         return True
 
@@ -1186,7 +1995,9 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         self.recorder.emit(
             "favorite_state_after", video=video, active=after_active
         )
-        if not after_active:
+        if not after_active and not self._retry_confirmed_inactive_reaction_once(
+            video, "favorite", color="yellow", threshold=0.025
+        ):
             raise RuntimeError("Favorite verification failed; stopping")
         return True
 

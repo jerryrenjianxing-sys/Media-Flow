@@ -8,6 +8,8 @@
 **/*.sqlite3
 **/*.log
 **/*.pid
+**/*.lock
+/fixed_runner/platform_profiles.json
 
 # Local credentials and environment overrides
 .env
@@ -34,18 +36,32 @@
 /control_console/.wrangler/
 /control_console/dist/
 /control_console/coverage/
+/device_stream_host/node_modules/
+/device_stream_host/.npm-cache/
+/launcher/packages/
+/.device-setup-cache/
+/RiskFlow.exe.WebView2/
+/MediaFlow.exe
+/Microsoft.Web.WebView2.Core.dll
+/Microsoft.Web.WebView2.WinForms.dll
+/WebView2Loader.dll
 
 # Local browsers, tools, packages, and generated launchers
 /.edge-*/
 /.chrome-*/
 /work/
 /RiskFlow.exe
+/packaging/out/
+/packaging/tools/
 *.apk
 *.zip
+*.nupkg
+*Setup.exe
 *.part[0-9]*
 
 # Verification screenshots and editor/OS noise
 /verify-*.png
+**/verify-*.png
 Thumbs.db
 .DS_Store
 *.tmp

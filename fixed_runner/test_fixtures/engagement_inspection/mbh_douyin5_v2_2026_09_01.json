@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "device_scope": "douyin5-only",
+  "app_version": "33.0.0",
+  "display_signature": "1080x2340x480x0x100",
+  "passes": 3,
+  "semantic_path": [
+    "首页",
+    "消息",
+    "互动消息",
+    "全部消息",
+    "赞与收藏",
+    "收到的评论",
+    "收到的弹幕",
+    "我",
+    "主页访客",
+    "首页"
+  ],
+  "aliases": {
+    "received_likes": ["赞与收藏", "赞与其他"],
+    "received_comments": ["收到的评论", "评论弹幕"],
+    "received_danmaku": ["收到的弹幕"]
+  },
+  "visitor_scroll_attempts": 5,
+  "visitor_effective_scrolls": 4,
+  "later_passes_semantically_equal": true,
+  "prohibited_action_taken": false,
+  "retained_sensitive_content": false
+}

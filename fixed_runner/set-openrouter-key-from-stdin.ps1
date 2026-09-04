@@ -1,6 +1,10 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path
+)
+
 $ErrorActionPreference = 'Stop'
-$projectRoot = Split-Path $PSScriptRoot -Parent
-$savedKeyPath = Join-Path $projectRoot '.secrets\openrouter-api-key.dpapi'
+$savedKeyPath = [IO.Path]::GetFullPath($Path)
 $secretDirectory = Split-Path -Parent $savedKeyPath
 $plainKey = [Console]::In.ReadToEnd().Trim()
 

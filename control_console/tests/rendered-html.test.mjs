@@ -4,9 +4,8 @@ import test from "node:test";
 
 async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}-${Math.random()}`);
   const { default: worker } = await import(workerUrl.href);
-
   return worker.fetch(
     new Request(new URL(path, "http://localhost"), { headers: { accept: "text/html" } }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
@@ -14,108 +13,281 @@ async function render(path = "/") {
   );
 }
 
-test("server-renders the RiskFlow control console", async () => {
+async function source(path) {
+  return readFile(new URL(path, import.meta.url), "utf8");
+}
+
+test("renders the five-workspace shell and persisted presentation controls", async () => {
   const response = await render();
   assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-
   const html = await response.text();
-  assert.match(html, /<title>RiskFlow 社媒风控实验台<\/title>/);
-  assert.match(html, /策略控制台/);
-  assert.match(html, /不限主题/);
-  assert.match(html, /混合主题/);
-  assert.match(html, /搜索主题/);
-  assert.match(html, /匹配主题内容/);
-  assert.match(html, /其他安全内容/);
-  assert.match(html, /匹配必须带画面证据/);
-  assert.match(html, /暂停领取新任务/);
-  assert.match(html, /安全停止已选设备/);
-  assert.match(html, /取消 0 个等待任务/);
-  assert.match(html, /检索所有可用设备/);
-  assert.match(html, /清空全部任务/);
-  assert.match(html, /首页固定显示最近 5 条/);
-  assert.match(html, /参数预设/);
-  assert.match(html, /应用预设/);
-  assert.match(html, /保存当前参数/);
-  assert.match(html, /删除预设/);
+  assert.match(html, /MediaFlow 媒体自动化平台/);
+  for (const label of ["任务台", "运行", "结果", "设备", "资产与设置"]) assert.match(html, new RegExp(label));
+  assert.match(html, /workspace-sidebar-toggle/);
+  assert.match(html, /workspace-sidebar-scrim/);
+  assert.match(html, /workspace-sidebar-head/);
+  assert.match(html, /workspace-menu-icon/);
+  assert.match(html, /workspace-nav-copy/);
   assert.match(html, /切换到浅色主题/);
-  assert.match(html, /ADB 在线/);
+  assert.match(html, /mediaflow-asset-recovery/);
+  assert.match(html, /asset_reload/);
+  assert.match(html, /正在准备任务台/);
   assert.doesNotMatch(html, /Building your site|Your site is taking shape/);
+
+  const shell = await source("../app/components/console-shell.tsx");
+  assert.match(shell, /mediaflow-sidebar-collapsed/);
+  assert.match(shell, /gsap\.fromTo/);
+  assert.doesNotMatch(shell, /gsap\/Flip|Flip\.getState|Flip\.from/);
+  assert.match(shell, /sidebarFromWidthRef/);
+  assert.doesNotMatch(shell, /scale: 0\.9/);
+  assert.match(shell, /stagger: 0\.015/);
+  assert.match(shell, /max-width: 1180px/);
+  assert.match(shell, /power3\.inOut/);
+  assert.match(shell, /clipPath/);
+  assert.match(shell, /function collapseSidebarFromWorkspace/);
+  assert.match(shell, /document\.addEventListener\("click", collapseSidebarFromWorkspace\)/);
+  assert.match(shell, /sidebarRef\.current\?\.contains\(target\)/);
+  assert.match(shell, /sidebarScrimRef\.current\?\.contains\(target\)/);
+  assert.match(shell, /pathname === "\/interactions"/);
+  assert.match(shell, /pathname === "\/governance"/);
 });
 
-test("renders the lightweight correction monitor in the main console", async () => {
-  const response = await render();
+test("task workbench follows the four decisions and server-owned planning contract", async () => {
+  const page = await source("../app/page.tsx");
+  for (const text of ["从哪里开始", "关注什么", "如何运行", "在哪些设备运行"]) assert.match(page, new RegExp(text));
+  for (const mode of ["搜索＋主页交替", "主页不限主题", "主页主题筛选", "搜索主题视频"]) assert.match(page, new RegExp(mode));
+  for (const field of ["search_segment_min", "search_segment_max", "home_segment_min", "home_segment_max"]) assert.match(page, new RegExp(field));
+  assert.match(page, /推荐主模式/);
+  assert.match(page, /备用模式/);
+  assert.match(page, /\/api\/workbench\/draft/);
+  assert.match(page, /method: "PUT"/);
+  assert.match(page, /\/api\/workbench\/preview/);
+  assert.match(page, /\/api\/workbench\/submit/);
+  assert.match(page, /plan_hash/);
+  assert.match(page, /requires_confirmation \? setConfirmOpen/);
+  assert.match(page, /评论仅生成预览/);
+  assert.match(page, /允许真实发送评论/);
+  assert.match(page, /所有修改已自动保存/);
+  assert.match(page, /提交后冻结参数与内容版本/);
+  assert.doesNotMatch(page, /\/api\/run/);
+});
+
+test("task workbench preserves precise controls behind progressive disclosure", async () => {
+  const page = await source("../app/page.tsx");
+  assert.match(page, /高级设置/);
+  assert.match(page, /连续异常停止阈值/);
+  assert.match(page, /轮次间隔/);
+  assert.match(page, /互动巡检/);
+  assert.match(page, /评论发送前约束/);
+  assert.match(page, /search_trust_results/);
+  assert.match(page, /matched_like_probability/);
+  assert.match(page, /matched_favorite_probability/);
+  assert.match(page, /matched_comment_probability/);
+  assert.match(page, /device_ids: config\.device_ids/);
+  assert.match(page, /preview_only: config\.preview_only/);
+});
+
+test("visual system uses real capsule switches, responsive layout and reduced motion", async () => {
+  const css = await source("../app/globals.css");
+  assert.match(css, /\.capsule-switch i \{/);
+  assert.match(css, /border-radius: 999px/);
+  assert.match(css, /\.capsule-switch input:checked \+ i::after/);
+  assert.match(css, /prefers-reduced-motion: reduce/);
+  assert.match(css, /grid-template-columns: var\(--sidebar-rail\) minmax\(0, 1fr\)/);
+  assert.doesNotMatch(css, /--sidebar-width/);
+  assert.match(css, /\.workspace-sidebar-scrim/);
+  assert.match(css, /position: fixed/);
+  assert.match(css, /--sidebar-expanded: 280px/);
+  assert.match(css, /--sidebar-inset: 16px/);
+  assert.match(css, /--sidebar-rail: 64px;[^}]*--sidebar-inset: 12px/);
+  assert.match(css, /padding: 12px var\(--sidebar-inset\) 14px/);
+  assert.match(css, /\.sidebar-collapsed \.workspace-sidebar-status \{ width: 40px/);
+  assert.match(css, /grid-template-columns: 40px minmax\(0, 1fr\)/);
+  assert.match(css, /\.sidebar-collapsed \.workspace-nav a \{ grid-template-columns: 40px 0/);
+  assert.match(css, /\.sidebar-collapsed \.workspace-nav a\.active \{ background: transparent/);
+  assert.match(css, /\.sidebar-collapsed \.workspace-nav a\.active > \.workspace-nav-mark \{ background:/);
+  assert.doesNotMatch(css, /\.sidebar-collapsed \.workspace-sidebar-head \{[^}]*justify-content: center/s);
+  assert.doesNotMatch(css, /\.sidebar-collapsed \.workspace-sidebar \{[^}]*padding-(?:right|left): 10px/s);
+  assert.doesNotMatch(css, /\.workspace-sidebar-scrim \{[^}]*backdrop-filter/s);
+  assert.doesNotMatch(css, /\.workspace-shell \{[^}]*transition: grid-template-columns/s);
+  assert.match(css, /@media \(max-width: 520px\)/);
+  assert.match(css, /device-selection-count \{ white-space: nowrap/);
+
+  const tokens = await source("../app/design-tokens.css");
+  const design = await source("../DESIGN.md");
+  assert.match(css, /@import "\.\/design-tokens\.css"/);
+  assert.match(tokens, /--primary: #5e6ad2/);
+  assert.match(design, /status: active/);
+  assert.match(design, /GSAP/);
+  assert.match(design, /主工作区宽度不变/);
+  assert.match(css, /\.workspace-nav h2 \{ height: 16px;[^}]*white-space: nowrap/);
+  assert.doesNotMatch(css, /\.sidebar-collapsed \.workspace-nav \{[^}]*gap:/s);
+  assert.match(design, /并在展开前、动画中和展开后保持完全一致/);
+  assert.match(css, /container-name: workbench/);
+  assert.match(css, /@container workbench \(max-width: 1100px\)/);
+  assert.match(css, /container-name: segment-flow/);
+  assert.match(css, /@container segment-flow \(max-width: 720px\)/);
+  assert.match(css, /\.segment-config > div > span \{[^}]*white-space: nowrap/s);
+
+  const sidebar = await source("../app/components/workspace-sidebar.tsx");
+  assert.match(sidebar, /workspaceGroups/);
+  assert.match(sidebar, /WorkspaceIcon/);
+  assert.match(sidebar, /viewBox="0 0 24 24"/);
+  assert.doesNotMatch(sidebar, /mark: "(?:录|机|文)"/);
+});
+
+test("run workspace only monitors and safely controls existing work", async () => {
+  const response = await render("/run");
+  assert.equal(response.status, 200);
   const html = await response.text();
-
-  assert.match(html, /纠错监控/);
-  assert.match(html, /异常自动留档/);
-  assert.match(html, /已恢复/);
-  assert.match(html, /已跳过/);
-  assert.match(html, /需处理/);
-  assert.match(html, /暂无异常记录，固定程序运行正常/);
+  assert.match(html, /运行/);
+  assert.match(html, /暂停领取新任务/);
+  assert.match(html, /安全停止运行中设备/);
+  assert.match(html, /当前设备进度/);
+  const page = await source("../app/run/page.tsx");
+  assert.match(page, /\/api\/tasks\/stop/);
+  assert.match(page, /\/api\/tasks\/cancel-pending/);
+  assert.match(page, /active_tasks/);
+  assert.match(page, /status\?\.active_tasks \|\| status\?\.tasks/);
+  assert.doesNotMatch(page, /\/api\/run/);
+  assert.doesNotMatch(page, /\/api\/model-key/);
 });
 
-test("links registered comment screenshots without exposing local paths", async () => {
-  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-  assert.match(source, /\/api\/comment-image\?task_id=/);
-  assert.match(source, /评论截图 · 第/);
-  assert.doesNotMatch(source, /href=\{[^\n]*screenshot_path/);
-});
-
-test("preset application preserves execution-specific fields", async () => {
-  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-  assert.match(source, /\/api\/presets/);
-  assert.match(source, /device_ids: current\.device_ids/);
-  assert.match(source, /seed: current\.seed/);
-  assert.match(source, /preview_only: current\.preview_only/);
-});
-
-test("homepage uses probability-only actions and links to complete records", async () => {
-  const response = await render();
-  const html = await response.text();
-  assert.match(html, /主题点赞概率/);
-  assert.match(html, /通用点赞概率/);
-  assert.match(html, /连续异常停止阈值/);
-  assert.match(html, /查看所有/);
-  assert.doesNotMatch(html, /点赞上限|收藏上限|评论上限|每轮最多/);
-  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-  assert.match(source, /slice\(0, 5\)/);
-  assert.match(source, /\/records#tasks/);
-  assert.match(source, /\/records#incidents/);
-  assert.doesNotMatch(source, /主题判断阈值/);
-  assert.match(source, /\/api\/tasks\/stop/);
-  assert.match(source, /\/api\/tasks\/cancel-pending/);
-  assert.match(source, /\/api\/workers\/restart/);
-  assert.match(source, /已结束 · 安全停止/);
-  assert.match(source, /已结束 · 已取消/);
-});
-
-test("server-renders the complete task and correction records page", async () => {
+test("results workspace joins tasks, incidents and interaction evidence", async () => {
   const response = await render("/records");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /全部任务与纠错记录/);
-  assert.match(html, /全部任务/);
-  assert.match(html, /全部纠错记录/);
-  assert.match(html, /展开全部/);
-  const source = await readFile(new URL("../app/records/page.tsx", import.meta.url), "utf8");
-  assert.match(source, /tasksExpanded/);
-  assert.match(source, /incidentsExpanded/);
-  assert.match(source, /SUMMARY_SIZE = 5/);
+  assert.match(html, /结果/);
+  assert.match(html, /任务/);
+  assert.match(html, /纠错记录/);
+  assert.match(html, /互动凭证/);
+  const page = await source("../app/records/page.tsx");
+  assert.match(page, /SUMMARY_SIZE = 5/);
+  assert.match(page, /\/api\/records\/task-groups/);
+  assert.match(page, /TaskGroupDetail/);
+  assert.match(page, /已恢复并继续/);
+  assert.match(page, /已跳过当前视频/);
 });
 
-test("server-renders human topic review and non-destructive evidence governance", async () => {
-  const response = await render("/governance");
+test("task details retain verified action and recovery evidence", async () => {
+  const groups = await source("../app/components/task-groups.tsx");
+  assert.match(groups, /\/api\/task-image\?task_id=/);
+  assert.match(groups, /evidence_groups/);
+  assert.match(groups, /查看报错截图/);
+  assert.match(groups, /action_routing/);
+  assert.match(groups, /搜索来源可信/);
+  assert.match(groups, /主题不符已拦截/);
+  assert.match(groups, /互动消息记录/);
+  assert.match(groups, /刷视频记录/);
+  assert.match(groups, /task-phase-grid/);
+  assert.match(groups, /搜索视频流/);
+  assert.match(groups, /主页视频流/);
+  assert.match(groups, /开始只读自动复验/);
+  assert.match(groups, /处理后继续复验/);
+  assert.match(groups, /const continuation = .*"\/continue"/);
+  assert.match(groups, /\/api\/tasks\/\$\{encodeURIComponent\(inspection\.id\)\}\/recover\$\{continuation\}/);
+  assert.doesNotMatch(groups, /href=\{[^\n]*screenshot_path/);
+});
+
+test("device workspace uses the shared physical and virtual onboarding entry", async () => {
+  const response = await render("/devices");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /评测与证据/);
-  assert.match(html, /主题人工复核/);
-  assert.match(html, /不计入正式准确率/);
-  assert.match(html, /只盘点和备份，不自动删除/);
-  const source = await readFile(new URL("../app/governance/page.tsx", import.meta.url), "utf8");
-  assert.match(source, /创建数据库备份/);
-  assert.match(source, /\/api\/topic-reviews\/confirm/);
-  assert.match(source, /人工真值独立保存/);
-  assert.match(source, /只记录政策，不自动删除任何证据/);
-  assert.doesNotMatch(source, /api\/evidence\/delete|api\/evidence\/cleanup/);
+  assert.match(html, /设备与实时画面/);
+  assert.match(html, /添加设备/);
+  assert.match(html, /检索已有设备/);
+  assert.match(html, /返回任务台/);
+  const page = await source("../app/devices/page.tsx");
+  assert.match(page, /\/api\/device-image\?device_id=/);
+  assert.match(page, /开始初始化/);
+  assert.match(page, /继续初始化/);
+  assert.match(page, /DeviceOnboardingDialog/);
+  assert.match(page, /\/api\/virtual-devices\/batch/);
+  assert.match(page, /\/api\/virtual-device-backups/);
+  assert.match(page, /恢复为新虚拟机/);
+  assert.match(page, /批量启动/);
+  assert.match(page, /批量停止/);
+  assert.match(page, /问题与待办/);
+  assert.match(page, /virtualDevice\.user_message/);
+  assert.match(page, /virtualDevice\.suggested_action/);
+  assert.match(page, /安装完成，继续检查/);
+  assert.match(page, /查看就绪检查/);
+  assert.match(page, /诊断编号/);
+  assert.doesNotMatch(page, /\/api\/run/);
+});
+
+test("shared add-device dialog exposes physical guidance and MuMu handoff", async () => {
+  const dialog = await source("../app/components/device-onboarding-dialog.tsx");
+  for (const label of ["连接真机", "或者", "添加虚拟机", "前往MuMu官方下载", "复制Agent初始化文档"]) {
+    assert.match(dialog, new RegExp(label));
+  }
+  assert.match(dialog, /\/api\/device-onboarding\/scan/);
+  assert.match(dialog, /\/api\/virtual-devices/);
+  assert.match(dialog, /不会自动开始正式任务/);
+  assert.match(dialog, /waitForVirtualOperation\(API, result\.operation/);
+  assert.match(dialog, /waitForInitialization\(API, deviceId/);
+});
+
+test("live-view fallback closes the remote session and releases control", async () => {
+  const liveView = await source("../app/components/device-live-view.tsx");
+  assert.match(liveView, /const enterFallback = \(detail: string\)/);
+  assert.match(liveView, /closeSession\(\);\s*updateState\("fallback", detail\)/);
+  assert.doesNotMatch(liveView, /\.catch\(\(\) => updateState\("fallback"/);
+  assert.match(liveView, /if \(kind !== 0 && !firstFrameReceived\)/);
+  assert.match(liveView, /视频通道已连接，正在等待首帧/);
+});
+
+test("assets and settings workspace includes content, presets, model and governance", async () => {
+  const response = await render("/content");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  for (const label of ["资产与设置", "内容计划", "参数预设", "模型连接", "评测与证据"]) assert.match(html, new RegExp(label));
+  const page = await source("../app/content/page.tsx");
+  assert.match(page, /\/api\/content-plans/);
+  assert.match(page, /\/api\/presets/);
+  assert.match(page, /\/api\/workbench\/draft/);
+  assert.match(page, /\/api\/model-key/);
+  assert.match(page, /fetchLocalApi/);
+  assert.match(page, /modelAction/);
+  assert.doesNotMatch(page, /auth_status: "saving"/);
+  assert.match(page, /归档计划/);
+
+  const localApi = await source("../app/lib/local-api.ts");
+  assert.match(localApi, /AbortController/);
+  assert.match(localApi, /响应超时/);
+  const virtualOperations = await source("../app/lib/virtual-device-operations.ts");
+  assert.match(virtualOperations, /fetchLocalApi/);
+});
+
+test("prompt guide documents every user-authored content field and links from forms", async () => {
+  const response = await render("/content/guide");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  for (const label of ["内容与提示词填写规范", "目标主题与判定标准", "搜索词", "全局评论写作模板", "主题模板补充要求", "评论词池", "评论发送前约束", "固定生效顺序"]) {
+    assert.match(html, new RegExp(label));
+  }
+
+  const taskPage = await source("../app/page.tsx");
+  const assetPage = await source("../app/content/page.tsx");
+  for (const section of ["topic", "search", "comment-policy"]) assert.match(taskPage, new RegExp(`PromptGuideLink section="${section}"`));
+  for (const section of ["topic", "search", "comment-template", "theme-template", "comment-pool"]) assert.match(assetPage, new RegExp(`PromptGuideLink section="${section}"`));
+  assert.match(assetPage, /href="\/content\/guide"/);
+
+  const guide = await source("../../docs/content-prompt-guide.md");
+  for (const heading of ["目标主题与主题判定标准", "搜索词", "全局评论写作模板", "主题模板补充要求", "评论词池", "评论发送前约束"]) assert.match(guide, new RegExp(heading));
+  assert.match(guide, /固定安全规则/);
+});
+
+test("governance and legacy evidence routes remain available", async () => {
+  for (const path of ["/governance", "/interactions"]) {
+    const response = await render(path);
+    assert.equal(response.status, 200);
+  }
+  const governance = await source("../app/governance/page.tsx");
+  assert.match(governance, /创建数据库备份/);
+  assert.match(governance, /\/api\/topic-reviews\/confirm/);
+  assert.doesNotMatch(governance, /api\/evidence\/delete|api\/evidence\/cleanup/);
+  const interactions = await source("../app/interactions/page.tsx");
+  assert.match(interactions, /\/api\/interaction-inspections/);
+  assert.match(interactions, /互动凭证/);
 });

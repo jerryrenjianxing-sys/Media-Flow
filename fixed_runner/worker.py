@@ -12,9 +12,14 @@ from typing import Any
 
 from douyin_fixed_runner import RUNTIME_ROOT, DeviceLock
 from douyin_uia2_runner import Uia2RunRecorder
+from control_vision import VisionCandidateLocator
+from device_initialization import execute_initialization
+from engagement_recovery import recover_version_drift
+from engagement_inspection import EngagementInspector
 from execution_tasks import (
     ConsecutiveAnomalyLimitError,
     DeviceFatalError,
+    ModelChannelError,
     _comment_is_visible,
     _comment_screenshot_evidence,
     _comment_task_type,
@@ -23,6 +28,7 @@ from execution_tasks import (
     execute_task,
     healthcheck,
     process_current_comment,
+    routed_action_plan,
     routed_action_probabilities,
     send_comment,
     topic_session,
@@ -63,12 +69,16 @@ def run_worker(
     ).strip("-") or "host"
     worker_id = f"{hostname}-{os.getpid()}"
     recovered = store.recover_interrupted(device_id)
+    recovered_initializations = store.recover_interrupted_initializations(device_id)
+    interrupted_recoveries = store.close_interrupted_task_recoveries(device_id)
     print_json(
         {
             "event": "worker_start",
             "worker_id": worker_id,
             "device_id": device_id,
             "recovered_interrupted_tasks": recovered,
+            "recovered_interrupted_initializations": recovered_initializations,
+            "interrupted_task_recoveries_waiting_user": interrupted_recoveries,
         }
     )
     completed = 0
@@ -114,17 +124,107 @@ def run_worker(
                     device = None
                     time.sleep(offline_wait_seconds)
                     continue
-            if not store.has_ready(device_id):
+            if not (
+                store.has_initialization_ready(device_id)
+                or store.has_ready_recovery(device_id)
+                or store.has_ready(device_id)
+            ):
                 time.sleep(poll_seconds)
                 continue
             if not device_preflight(device):
                 device = None
+                continue
+            initialization = store.claim_initialization(device_id, worker_id)
+            if initialization is not None:
+                result = execute_initialization(
+                    device,
+                    initialization,
+                    store,
+                    artifacts_root=artifacts_root / "initializations",
+                    vision_locator=VisionCandidateLocator(),
+                )
+                print_json(
+                    {
+                        "event": "initialization_finished",
+                        "initialization_id": initialization.id,
+                        "device_id": device_id,
+                        "status": result.get("status"),
+                        "run_dir": result.get("run_dir"),
+                    }
+                )
+                continue
+            recovery_request = store.claim_task_recovery(device_id)
+            if recovery_request is not None:
+                origin_task = store.get(recovery_request["origin_task_id"])
+                recovery_result = origin_task.result or {}
+                if recovery_result.get("failure_class") != "recoverable_precondition":
+                    probe_recorder = Uia2RunRecorder(
+                        artifacts_root / "engagement-revalidation", origin_task.device_id
+                    )
+                    probe = EngagementInspector(
+                        device,
+                        probe_recorder,
+                        store=store,
+                        device_id=origin_task.device_id,
+                        task_id=f"{origin_task.id}-revalidation-probe",
+                    )
+                    recovery_result = probe.inspect(
+                        {**origin_task.payload, "_calibration_only": True}
+                    )
+                    probe.discard_v2_artifacts()
+                    if (
+                        recovery_result.get("failure_class")
+                        != "recoverable_precondition"
+                        or recovery_result.get("recovery_eligible") is not True
+                        or recovery_result.get("navigation_started") is not False
+                    ):
+                        recovery = store.finish_task_recovery(
+                            recovery_request["id"],
+                            status="waiting_user",
+                            progress_current=0,
+                            progress_total=3,
+                            message="当前页面或版本状态与原失败记录不一致，需要人工处理",
+                            evidence_dir=str(probe_recorder.run_dir),
+                            error=str(
+                                recovery_result.get("failure_reason")
+                                or "legacy_revalidation_probe_inconclusive"
+                            ),
+                        )
+                        print_json(
+                            {
+                                "event": "task_recovery_updated",
+                                "task_id": origin_task.id,
+                                "recovery_status": recovery.get("status"),
+                                "replacement_task_id": None,
+                            }
+                        )
+                        completed += 1
+                        continue
+                recovery = recover_version_drift(
+                    store=store,
+                    device=device,
+                    task=origin_task,
+                    result=recovery_result,
+                    artifacts_root=artifacts_root,
+                )
+                print_json(
+                    {
+                        "event": "task_recovery_updated",
+                        "task_id": origin_task.id,
+                        "recovery_status": recovery.get("status") if recovery else None,
+                        "replacement_task_id": (
+                            recovery.get("replacement_task_id") if recovery else None
+                        ),
+                    }
+                )
+                completed += 1
                 continue
             task = store.claim_next(device_id, worker_id)
             if task is None:
                 continue
             recorder = Uia2RunRecorder(artifacts_root, task.device_id)
             run_dir = str(recorder.run_dir)
+            store.attach_run_dir(task.id, run_dir)
             try:
                 def save_video_incident(incident: dict[str, Any]) -> None:
                     store.record_incident(
@@ -142,18 +242,74 @@ def run_worker(
                     ),
                     incident_sink=save_video_incident,
                     stop_checker=lambda: store.is_stop_requested(device_id),
+                    task_store=store,
                 )
-                task_status = "stopped" if result.get("stopped_by_user") else "completed"
+                task_status = (
+                    "stopped"
+                    if result.get("stopped_by_user")
+                    else "failed"
+                    if result.get("status") == "failed"
+                    else "degraded"
+                    if result.get("status") == "degraded"
+                    else "completed"
+                )
                 store.finish(
                     task.id,
                     status=task_status,
                     run_dir=run_dir,
                     result=result,
-                    error="stopped_by_user" if task_status == "stopped" else None,
+                    error=(
+                        "stopped_by_user"
+                        if task_status == "stopped"
+                        else str(result.get("failure_reason") or "failed")
+                        if task_status == "failed"
+                        else str(
+                            (result.get("degraded_reason") or {}).get(
+                                "code", "degraded"
+                            )
+                        )
+                        if task_status == "degraded"
+                        else None
+                    ),
                 )
+                if task_status == "failed":
+                    try:
+                        recovery = recover_version_drift(
+                            store=store,
+                            device=device,
+                            task=task,
+                            result=result,
+                            artifacts_root=artifacts_root,
+                        )
+                        if recovery is not None:
+                            print_json(
+                                {
+                                    "event": "task_recovery_updated",
+                                    "task_id": task.id,
+                                    "recovery_status": recovery.get("status"),
+                                    "replacement_task_id": recovery.get("replacement_task_id"),
+                                }
+                            )
+                    except Exception as recovery_error:
+                        print_json(
+                            {
+                                "event": "task_recovery_failed",
+                                "task_id": task.id,
+                                "error_type": type(recovery_error).__name__,
+                                "error": str(recovery_error),
+                            }
+                        )
                 print_json(
                     {
-                        "event": "task_stopped" if task_status == "stopped" else "task_completed",
+                        "event": (
+                            "task_stopped"
+                            if task_status == "stopped"
+                            else "task_failed"
+                            if task_status == "failed"
+                            else "task_degraded"
+                            if task_status == "degraded"
+                            else "task_completed"
+                        ),
                         "task_id": task.id,
                         **result,
                     }
@@ -164,21 +320,25 @@ def run_worker(
             except Exception as exc:
                 task_screenshot_path: str | None = None
                 task_ui_tree_path: str | None = None
-                try:
-                    recorder.screenshot(device, "task-incident")
-                    task_screenshot_path = str(recorder.run_dir / "task-incident.png")
-                except Exception:
-                    pass
-                try:
-                    source = device.dump_hierarchy(compressed=True, pretty=False)
-                    ui_path = recorder.run_dir / "task-incident.xml"
-                    ui_path.write_text(str(source), encoding="utf-8")
-                    task_ui_tree_path = str(ui_path)
-                except Exception:
-                    pass
+                if not isinstance(exc, ModelChannelError):
+                    try:
+                        recorder.screenshot(device, "task-incident")
+                        task_screenshot_path = str(recorder.run_dir / "task-incident.png")
+                    except Exception:
+                        pass
+                    try:
+                        source = device.dump_hierarchy(compressed=True, pretty=False)
+                        ui_path = recorder.run_dir / "task-incident.xml"
+                        ui_path.write_text(str(source), encoding="utf-8")
+                        task_ui_tree_path = str(ui_path)
+                    except Exception:
+                        pass
                 device_healthy = device_preflight(device)
-                needs_reconnect = isinstance(exc, DeviceFatalError) or not device_healthy
-                if not isinstance(exc, DeviceFatalError):
+                needs_reconnect = (
+                    isinstance(exc, DeviceFatalError)
+                    and not isinstance(exc, ModelChannelError)
+                ) or not device_healthy
+                if not isinstance(exc, (DeviceFatalError, ModelChannelError)):
                     try:
                         store.record_incident(
                             task_id=task.id,
@@ -203,6 +363,7 @@ def run_worker(
                     task.id,
                     status="failed",
                     run_dir=run_dir,
+                    result=getattr(exc, "result", None),
                     error=f"{type(exc).__name__}: {exc}",
                 )
                 print_json(
