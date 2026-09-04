@@ -12,8 +12,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("MediaFlow 媒体自动化平台安装向导")]
 [assembly: AssemblyCompany("MediaFlow")]
 [assembly: AssemblyProduct("MediaFlow")]
-[assembly: AssemblyVersion("0.4.0.0")]
-[assembly: AssemblyFileVersion("0.4.0.0")]
+[assembly: AssemblyVersion("0.4.1.0")]
+[assembly: AssemblyFileVersion("0.4.1.0")]
 
 namespace MediaFlow.Installation
 {
@@ -132,13 +132,22 @@ namespace MediaFlow.Installation
             try
             {
                 string installedVersion = ReadInstalledVersion(normalized);
-                string bundledVersion = Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
+                string bundledVersion = ReadBundledVersion();
                 if (!String.IsNullOrWhiteSpace(installedVersion))
                 {
-                    int comparison = CompareVersions(installedVersion, bundledVersion);
+                    int comparison = CompareSemanticVersions(installedVersion, bundledVersion);
                     if (comparison > 0)
                         throw new InvalidOperationException("当前电脑上的 MediaFlow " + installedVersion + " 比安装包 " + bundledVersion + " 更新。为避免误降级，本安装包不会覆盖它。");
                     sameVersionRepair = comparison == 0;
+                    if (sameVersionRepair)
+                    {
+                        string installedRevision = ReadInstalledSourceRevision(normalized);
+                        string bundledRevision = ReadBundledSourceRevision();
+                        if (String.IsNullOrWhiteSpace(installedRevision) ||
+                            String.IsNullOrWhiteSpace(bundledRevision) ||
+                            !String.Equals(installedRevision, bundledRevision, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException("检测到相同版本号但代码身份不同。为避免同号覆盖，请使用版本号更高的安装包；当前程序和用户数据未改动。");
+                    }
                     status.Text = sameVersionRepair
                         ? "正在准备同版本修复安装…"
                         : "正在从 " + installedVersion + " 升级到 " + bundledVersion + "…";
@@ -190,22 +199,100 @@ namespace MediaFlow.Installation
 
         private static string ReadInstalledVersion(string installRoot)
         {
+            return ReadInstalledManifestValue(installRoot, "version");
+        }
+
+        private static string ReadInstalledSourceRevision(string installRoot)
+        {
+            return ReadInstalledManifestValue(installRoot, "source_revision");
+        }
+
+        private static string ReadInstalledManifestValue(string installRoot, string field)
+        {
             string manifest = Path.Combine(installRoot, "current", "release-manifest.json");
             if (!File.Exists(manifest)) return null;
             try
             {
-                Match match = Regex.Match(File.ReadAllText(manifest), "\\\"version\\\"\\s*:\\s*\\\"(?<value>[^\\\"]+)\\\"");
+                string pattern = "\\\"" + Regex.Escape(field) + "\\\"\\s*:\\s*\\\"(?<value>[^\\\"]+)\\\"";
+                Match match = Regex.Match(File.ReadAllText(manifest), pattern);
                 return match.Success ? match.Groups["value"].Value.Trim() : null;
             }
             catch { return null; }
         }
 
-        private static int CompareVersions(string installed, string bundled)
+        private static string ReadBundledVersion()
         {
-            Version left;
-            Version right;
-            if (!Version.TryParse(installed, out left) || !Version.TryParse(bundled, out right)) return 0;
-            return left.CompareTo(right);
+            var attribute = (AssemblyInformationalVersionAttribute)Attribute.GetCustomAttribute(
+                Assembly.GetExecutingAssembly(), typeof(AssemblyInformationalVersionAttribute));
+            string value = attribute == null ? null : attribute.InformationalVersion;
+            if (!String.IsNullOrWhiteSpace(value)) return value.Split('+')[0];
+            return Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
+        }
+
+        private static string ReadBundledSourceRevision()
+        {
+            object[] attributes = Assembly.GetExecutingAssembly().GetCustomAttributes(typeof(AssemblyMetadataAttribute), false);
+            foreach (object item in attributes)
+            {
+                var metadata = item as AssemblyMetadataAttribute;
+                if (metadata != null && String.Equals(metadata.Key, "SourceRevision", StringComparison.OrdinalIgnoreCase))
+                    return metadata.Value;
+            }
+            return null;
+        }
+
+        private static int CompareSemanticVersions(string installed, string bundled)
+        {
+            string[] leftParts;
+            string[] rightParts;
+            string leftPrerelease;
+            string rightPrerelease;
+            if (!TryParseSemanticVersion(installed, out leftParts, out leftPrerelease) ||
+                !TryParseSemanticVersion(bundled, out rightParts, out rightPrerelease))
+                throw new InvalidOperationException("无法比较已安装版本与安装包版本，请重新下载安装包。");
+            for (int index = 0; index < 3; index++)
+            {
+                int comparison = Int32.Parse(leftParts[index]).CompareTo(Int32.Parse(rightParts[index]));
+                if (comparison != 0) return comparison;
+            }
+            if (leftPrerelease == null && rightPrerelease == null) return 0;
+            if (leftPrerelease == null) return 1;
+            if (rightPrerelease == null) return -1;
+            return ComparePrerelease(leftPrerelease, rightPrerelease);
+        }
+
+        private static bool TryParseSemanticVersion(string value, out string[] core, out string prerelease)
+        {
+            core = null;
+            prerelease = null;
+            Match match = Regex.Match(value ?? String.Empty, "^(?<core>\\d+\\.\\d+\\.\\d+)(?:-(?<prerelease>[0-9A-Za-z.-]+))?(?:\\+[0-9A-Za-z.-]+)?$");
+            if (!match.Success) return false;
+            core = match.Groups["core"].Value.Split('.');
+            prerelease = match.Groups["prerelease"].Success ? match.Groups["prerelease"].Value : null;
+            return true;
+        }
+
+        private static int ComparePrerelease(string left, string right)
+        {
+            string[] leftParts = left.Split('.');
+            string[] rightParts = right.Split('.');
+            int count = Math.Max(leftParts.Length, rightParts.Length);
+            for (int index = 0; index < count; index++)
+            {
+                if (index >= leftParts.Length) return -1;
+                if (index >= rightParts.Length) return 1;
+                int leftNumber;
+                int rightNumber;
+                bool leftNumeric = Int32.TryParse(leftParts[index], out leftNumber);
+                bool rightNumeric = Int32.TryParse(rightParts[index], out rightNumber);
+                int comparison;
+                if (leftNumeric && rightNumeric) comparison = leftNumber.CompareTo(rightNumber);
+                else if (leftNumeric) comparison = -1;
+                else if (rightNumeric) comparison = 1;
+                else comparison = String.Compare(leftParts[index], rightParts[index], StringComparison.Ordinal);
+                if (comparison != 0) return comparison;
+            }
+            return 0;
         }
 
         private static bool PrepareSameVersionRepair(string installRoot, out string error)

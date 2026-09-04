@@ -127,6 +127,16 @@ class WindowsEntrypointTests(unittest.TestCase):
         self.assertIn("PrepareSameVersionRepair", source)
         self.assertIn('"uninstall --silent"', source)
         self.assertIn("同版本修复安装", source)
+        self.assertIn("ReadBundledSourceRevision", source)
+        self.assertIn("相同版本号但代码身份不同", source)
+
+    def test_installer_compares_numbered_prerelease_versions(self) -> None:
+        source = (PROJECT_ROOT / "installer" / "MediaFlowInstaller.cs").read_text(
+            encoding="utf-8-sig"
+        )
+        self.assertIn("ReadBundledVersion", source)
+        self.assertIn("CompareSemanticVersions", source)
+        self.assertIn("prerelease", source)
 
     def test_installer_child_processes_have_bounded_waits(self) -> None:
         source = (PROJECT_ROOT / "installer" / "MediaFlowInstaller.cs").read_text(
@@ -141,6 +151,8 @@ class WindowsEntrypointTests(unittest.TestCase):
         payload = json.loads(version_file.read_text(encoding="utf-8-sig"))
         version = payload["version"]
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
+        self.assertEqual(version, "0.4.1")
+        self.assertEqual(payload["development_iteration"], 1)
         installer = (PROJECT_ROOT / "installer" / "MediaFlowInstaller.cs").read_text(
             encoding="utf-8-sig"
         )
@@ -157,12 +169,29 @@ class WindowsEntrypointTests(unittest.TestCase):
         self.assertIn("must match canonical version", build)
         self.assertIn("Refusing to create an installer from a dirty working tree", build)
         self.assertIn("git -c core.excludesfile=", build)
-        self.assertIn('"$Version-dev+$($sourceRevision.Trim())', build)
+        self.assertIn('"$canonicalVersion-dev.$developmentIteration"', build)
+        self.assertIn('"$packageVersion+$($sourceRevision.Trim())', build)
+        self.assertIn('--packVersion $packageVersion', build)
+        self.assertIn('$releaseTag = "mediaflow/v$packageVersion"', build)
+        self.assertIn('must point to the exact source revision', build)
         self.assertIn("[ValidateSet('development', 'release')]", build)
         self.assertIn("[string]$Channel = 'development'", build)
         self.assertIn("$developmentBuild = $Channel -eq 'development'", build)
         self.assertIn("A release-channel build must come from one clean committed source revision", build)
         self.assertIn("distribution_label = if ($developmentBuild) { 'development-stage' }", build)
+        self.assertIn("development_iteration = if ($developmentBuild)", build)
+        self.assertIn("target_version = $Version", build)
+
+        installer_build = (PROJECT_ROOT / "installer" / "build-installer.ps1").read_text(
+            encoding="utf-8-sig"
+        )
+        launcher_build = (PROJECT_ROOT / "launcher" / "build-launcher.ps1").read_text(
+            encoding="utf-8-sig"
+        )
+        self.assertIn("AssemblyInformationalVersion", installer_build)
+        self.assertIn("AssemblyInformationalVersion", launcher_build)
+        self.assertIn("AssemblyMetadata", installer_build)
+        self.assertIn("AssemblyMetadata", launcher_build)
 
     def test_release_build_never_restarts_the_running_local_ui(self) -> None:
         build = (PROJECT_ROOT / "packaging" / "build-windows-release.ps1").read_text(

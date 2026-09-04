@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$SetupPath,
-    [string]$OutputPath
+    [string]$OutputPath,
+    [Parameter(Mandatory = $true)][string]$PackageVersion,
+    [Parameter(Mandatory = $true)][string]$SourceRevision
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,8 +16,19 @@ $icon = Join-Path $projectRoot 'assets\brand\mediaflow.ico'
 $manifest = Join-Path $PSScriptRoot 'MediaFlowInstaller.exe.manifest'
 $source = Join-Path $PSScriptRoot 'MediaFlowInstaller.cs'
 New-Item -ItemType Directory -Force -Path (Split-Path $OutputPath -Parent) | Out-Null
-& $compiler /nologo /target:winexe /optimize+ /platform:x64 /win32manifest:$manifest /win32icon:$icon `
-    /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll `
-    "/resource:$SetupPath,MediaFlow.Setup.exe" "/out:$OutputPath" $source
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $OutputPath)) { throw 'MediaFlow installer compilation failed.' }
+$versionSource = [IO.Path]::ChangeExtension([IO.Path]::GetTempFileName(), '.cs')
+try {
+    @(
+        'using System.Reflection;'
+        ('[assembly: AssemblyInformationalVersion("{0}")]' -f $PackageVersion)
+        ('[assembly: AssemblyMetadata("SourceRevision", "{0}")]' -f $SourceRevision)
+    ) | Set-Content -LiteralPath $versionSource -Encoding utf8
+    & $compiler /nologo /target:winexe /optimize+ /platform:x64 /win32manifest:$manifest /win32icon:$icon `
+        /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll `
+        "/resource:$SetupPath,MediaFlow.Setup.exe" "/out:$OutputPath" $source $versionSource
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $OutputPath)) { throw 'MediaFlow installer compilation failed.' }
+}
+finally {
+    Remove-Item -LiteralPath $versionSource -Force -ErrorAction SilentlyContinue
+}
 Get-Item -LiteralPath $OutputPath | Select-Object FullName, Length, LastWriteTime

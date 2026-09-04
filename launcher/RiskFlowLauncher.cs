@@ -16,8 +16,8 @@ using Microsoft.Web.WebView2.WinForms;
 [assembly: AssemblyDescription("MediaFlow 媒体自动化平台")]
 [assembly: AssemblyCompany("MediaFlow")]
 [assembly: AssemblyProduct("MediaFlow")]
-[assembly: AssemblyVersion("0.4.0.0")]
-[assembly: AssemblyFileVersion("0.4.0.0")]
+[assembly: AssemblyVersion("0.4.1.0")]
+[assembly: AssemblyFileVersion("0.4.1.0")]
 
 internal static class MediaFlowLauncher
 {

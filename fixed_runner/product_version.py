@@ -24,7 +24,7 @@ def distribution_version(manifest: dict[str, Any]) -> dict[str, Any]:
     channel = str(manifest.get("channel") or ("development" if dirty else "release"))
     revision = str(manifest.get("source_revision") or "unknown")
     fallback_display = (
-        f"{version}-dev+{revision}{'.dirty' if dirty else ''}"
+        f"{version}+{revision}{'.dirty' if dirty else ''}"
         if channel == "development"
         else version
     )
@@ -32,10 +32,37 @@ def distribution_version(manifest: dict[str, Any]) -> dict[str, Any]:
     return {
         "channel": channel,
         "version": version,
+        "target_version": str(manifest.get("target_version") or version.split("-", 1)[0]),
+        "development_iteration": manifest.get("development_iteration"),
         "display_version": display_version,
         "source_revision": revision,
         "source_dirty": dirty,
         "build_identity": str(manifest.get("build_identity") or display_version),
+    }
+
+
+def source_version(
+    canonical: dict[str, Any], *, revision: str, dirty: bool
+) -> dict[str, Any]:
+    """Derive the numbered development identity from the canonical target."""
+    target_version = str(canonical.get("version") or "unknown")
+    try:
+        development_iteration = int(canonical.get("development_iteration"))
+    except (TypeError, ValueError):
+        development_iteration = 0
+    package_version = f"{target_version}-dev.{development_iteration}"
+    display_version = (
+        f"{package_version}+{revision}{'.dirty' if dirty else ''}"
+    )
+    return {
+        "channel": "development",
+        "version": package_version,
+        "target_version": target_version,
+        "development_iteration": development_iteration,
+        "display_version": display_version,
+        "source_revision": revision,
+        "source_dirty": dirty,
+        "build_identity": display_version,
     }
 
 
@@ -46,7 +73,6 @@ def product_version() -> dict[str, Any]:
         return distribution_version(_json(APP_ROOT / "release-manifest.json"))
 
     canonical = _json(APP_ROOT / "packaging" / "version.json")
-    version = str(canonical.get("version") or "unknown")
     revision = "unknown"
     dirty = False
     try:
@@ -69,12 +95,4 @@ def product_version() -> dict[str, Any]:
         dirty = dirty_result.returncode == 0 and bool(dirty_result.stdout.strip())
     except (OSError, subprocess.SubprocessError):
         pass
-    suffix = f"+{revision}{'.dirty' if dirty else ''}"
-    return {
-        "channel": "development",
-        "version": version,
-        "display_version": f"{version}-dev{suffix}",
-        "source_revision": revision,
-        "source_dirty": dirty,
-        "build_identity": f"{version}-dev{suffix}",
-    }
+    return source_version(canonical, revision=revision, dirty=dirty)

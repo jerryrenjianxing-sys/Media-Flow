@@ -11,21 +11,46 @@ $canonicalVersionPath = Join-Path $projectRoot 'packaging\version.json'
 if (-not (Test-Path -LiteralPath $canonicalVersionPath)) {
     throw 'Canonical release version is missing: packaging\version.json'
 }
-$canonicalVersion = (Get-Content -LiteralPath $canonicalVersionPath -Raw | ConvertFrom-Json).version
+$canonical = Get-Content -LiteralPath $canonicalVersionPath -Raw | ConvertFrom-Json
+$canonicalVersion = $canonical.version
 if ([string]::IsNullOrWhiteSpace($canonicalVersion)) {
     throw 'Canonical release version is empty.'
 }
-if (-not [string]::IsNullOrWhiteSpace($Version) -and $Version -ne $canonicalVersion) {
-    throw "Requested version $Version must match canonical version $canonicalVersion. Update packaging\version.json once instead of creating a parallel release line."
+$developmentIteration = [int]$canonical.development_iteration
+if ($developmentIteration -lt 1) {
+    throw 'Canonical development_iteration must be a positive integer.'
+}
+$developmentBuild = $Channel -eq 'development'
+$releaseBuild = $Channel -eq 'release'
+$packageVersion = if ($developmentBuild) {
+    "$canonicalVersion-dev.$developmentIteration"
+}
+else {
+    $canonicalVersion
+}
+if (-not [string]::IsNullOrWhiteSpace($Version) -and $Version -ne $packageVersion) {
+    throw "Requested version $Version must match canonical version $packageVersion. Update packaging\version.json once instead of creating a parallel release line."
 }
 $Version = $canonicalVersion
 $sourceRevision = (& git -c core.excludesfile= -C $projectRoot rev-parse --short=12 HEAD 2>$null)
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceRevision)) { $sourceRevision = 'unknown' }
+$sourceCommit = (& git -c core.excludesfile= -C $projectRoot rev-parse HEAD 2>$null)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceCommit)) { $sourceCommit = 'unknown' }
 $sourceDirty = [bool](& git -c core.excludesfile= -C $projectRoot status --porcelain --untracked-files=no 2>$null)
 $untrackedSource = [bool](& git -c core.excludesfile= -C $projectRoot ls-files --others --exclude-standard -- '*.py' '*.ps1' '*.cs' '*.ts' '*.tsx' '*.json' 2>$null)
 $sourceDirty = $sourceDirty -or $untrackedSource
 if ($sourceDirty -and -not $SkipVelopack) {
     throw 'Refusing to create an installer from a dirty working tree. Development runs may be dirty, but the single installable release must come from one committed source revision.'
+}
+$releaseTag = "mediaflow/v$packageVersion"
+if (-not $SkipVelopack) {
+    $tagCommit = (& git -c core.excludesfile= -C $projectRoot rev-list -n 1 $releaseTag 2>$null)
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tagCommit)) {
+        throw "Installable build tag $releaseTag is missing. Commit the source, create this immutable version tag, then build."
+    }
+    if ($tagCommit.Trim() -ne $sourceCommit.Trim()) {
+        throw "Installable build tag $releaseTag must point to the exact source revision $($sourceCommit.Trim()). Increment development_iteration for different code."
+    }
 }
 $assemblyVersion = "$Version.0"
 foreach ($sourcePath in @(
@@ -70,7 +95,8 @@ finally {
 # newly built assets are copied into the staging directory below; an already
 # running developer or installed UI is never restarted by the build itself.
 
-& (Join-Path $projectRoot 'launcher\build-launcher.ps1')
+& (Join-Path $projectRoot 'launcher\build-launcher.ps1') `
+    -PackageVersion $packageVersion -SourceRevision $sourceRevision.Trim()
 if ($LASTEXITCODE -ne 0) { throw 'MediaFlow launcher build failed.' }
 
 if (Test-Path -LiteralPath $stage) {
@@ -249,8 +275,6 @@ if ($visibleLegacyBrand) {
     throw "Release audit found a user-visible legacy brand reference: $($visibleLegacyBrand -join ', ')"
 }
 
-$developmentBuild = $Channel -eq 'development'
-$releaseBuild = $Channel -eq 'release'
 if ($releaseBuild -and $SkipVelopack) {
     throw 'A release-channel build must include the installable artifacts.'
 }
@@ -258,14 +282,16 @@ if ($releaseBuild -and $sourceDirty) {
     throw 'A release-channel build must come from one clean committed source revision.'
 }
 $displayVersion = if ($developmentBuild) {
-    "$Version-dev+$($sourceRevision.Trim())$(if ($sourceDirty) { '.dirty' } else { '' })"
+    "$packageVersion+$($sourceRevision.Trim())$(if ($sourceDirty) { '.dirty' } else { '' })"
 }
 else {
-    $Version
+    $packageVersion
 }
 $manifest = [ordered]@{
     product = 'MediaFlow'
-    version = $Version
+    version = $packageVersion
+    target_version = $Version
+    development_iteration = if ($developmentBuild) { $developmentIteration } else { $null }
     channel = if ($developmentBuild) { 'development' } else { 'release' }
     display_version = $displayVersion
     runtime = 'win-x64'
@@ -293,7 +319,7 @@ if (-not $SkipVelopack) {
         throw 'Velopack is missing. Run packaging/bootstrap-velopack.ps1 first.'
     }
     New-Item -ItemType Directory -Force -Path $releases | Out-Null
-    & $dotnet $vpk pack --packId RiskFlow.Internal --packVersion $Version `
+    & $dotnet $vpk pack --packId RiskFlow.Internal --packVersion $packageVersion `
         --packDir $stage --mainExe MediaFlow.exe --packTitle MediaFlow `
         --packAuthors MediaFlow --runtime win-x64 --outputDir $releases `
         --icon (Join-Path $projectRoot 'assets\brand\mediaflow.ico') `
@@ -315,7 +341,9 @@ if (-not $SkipVelopack) {
     if ($generatedMsi) { Copy-Item -LiteralPath $generatedMsi.FullName -Destination (Join-Path $releases 'MediaFlow-x64.msi') -Force }
     $generatedPortable = Get-ChildItem -LiteralPath $releases -Filter '*Portable.zip' -File | Where-Object { $_.Name -ne 'MediaFlow-Portable-x64.zip' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($generatedPortable) { Copy-Item -LiteralPath $generatedPortable.FullName -Destination (Join-Path $releases 'MediaFlow-Portable-x64.zip') -Force }
-    & (Join-Path $projectRoot 'installer\build-installer.ps1') -SetupPath $brandedSetup -OutputPath (Join-Path $releases 'MediaFlow-Installer.exe')
+    & (Join-Path $projectRoot 'installer\build-installer.ps1') -SetupPath $brandedSetup `
+        -OutputPath (Join-Path $releases 'MediaFlow-Installer.exe') `
+        -PackageVersion $packageVersion -SourceRevision $sourceRevision.Trim()
     if ($LASTEXITCODE -ne 0) { throw 'MediaFlow branded installer build failed.' }
 }
 

@@ -1,3 +1,8 @@
+param(
+    [string]$PackageVersion = '',
+    [string]$SourceRevision = ''
+)
+
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path $PSScriptRoot -Parent
@@ -9,6 +14,15 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $webViewVersion = '1.0.4191.47'
 $packageRoot = Join-Path $PSScriptRoot "packages\Microsoft.Web.WebView2.$webViewVersion"
 $packageFile = Join-Path $PSScriptRoot "packages\Microsoft.Web.WebView2.$webViewVersion.nupkg"
+
+if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
+    $canonical = Get-Content -LiteralPath (Join-Path $projectRoot 'packaging\version.json') -Raw | ConvertFrom-Json
+    $PackageVersion = "$($canonical.version)-dev.$([int]$canonical.development_iteration)"
+}
+if ([string]::IsNullOrWhiteSpace($SourceRevision)) {
+    $SourceRevision = (& git -c core.excludesfile= -C $projectRoot rev-parse --short=12 HEAD 2>$null).Trim()
+    if ([string]::IsNullOrWhiteSpace($SourceRevision)) { $SourceRevision = 'unknown' }
+}
 
 if (-not (Test-Path $compiler)) { $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
 if (-not (Test-Path $compiler)) { throw 'Windows C# compiler was not found.' }
@@ -34,10 +48,21 @@ foreach ($path in @($core, $winforms, $loader)) { if (-not (Test-Path $path)) { 
 if (-not (Test-Path $manifest)) { throw "MediaFlow launcher manifest is missing: $manifest" }
 if (-not (Test-Path $icon)) { throw "MediaFlow icon is missing: $icon" }
 
-& $compiler /nologo /target:winexe /optimize+ /platform:x64 /win32manifest:$manifest /win32icon:$icon `
-    /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll `
-    /reference:$core /reference:$winforms /out:$output $source
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path $output)) { throw 'MediaFlow launcher compilation failed.' }
+$versionSource = [IO.Path]::ChangeExtension([IO.Path]::GetTempFileName(), '.cs')
+try {
+    @(
+        'using System.Reflection;'
+        ('[assembly: AssemblyInformationalVersion("{0}")]' -f $PackageVersion)
+        ('[assembly: AssemblyMetadata("SourceRevision", "{0}")]' -f $SourceRevision)
+    ) | Set-Content -LiteralPath $versionSource -Encoding utf8
+    & $compiler /nologo /target:winexe /optimize+ /platform:x64 /win32manifest:$manifest /win32icon:$icon `
+        /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll `
+        /reference:$core /reference:$winforms /out:$output $source $versionSource
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $output)) { throw 'MediaFlow launcher compilation failed.' }
+}
+finally {
+    Remove-Item -LiteralPath $versionSource -Force -ErrorAction SilentlyContinue
+}
 
 function Copy-IfChanged([string]$sourcePath, [string]$targetDirectory) {
     $targetPath = Join-Path $targetDirectory (Split-Path $sourcePath -Leaf)
