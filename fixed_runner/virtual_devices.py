@@ -12,6 +12,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Protocol
 
+from adb_runtime import connect_loopback_adb
 from runtime_layout import DATA_ROOT
 
 
@@ -649,10 +650,23 @@ class MuMuProvider:
                 None,
             )
             if current and current.get("is_android_started"):
-                result = self._run("adb", "-v", str(instance_id), "-c", "connect", timeout=20)
-                matches = re.findall(r"(?:127\.0\.0\.1|localhost):\d+", f"{result.stdout}\n{result.stderr}")
+                result = self._run(
+                    "adb", "-v", str(instance_id), "-c", "connect", timeout=20,
+                    allow_nonzero=True,
+                )
+                matches = re.findall(
+                    r"(?:127\.0\.0\.1|localhost):\d+",
+                    f"{result.stdout}\n{result.stderr}",
+                )
                 if matches:
-                    return matches[-1].replace("localhost", "127.0.0.1")
+                    endpoint = matches[-1].replace("localhost", "127.0.0.1")
+                    if connect_loopback_adb(endpoint):
+                        return endpoint
+                host = str(current.get("adb_host_ip") or "127.0.0.1")
+                port = current.get("adb_port")
+                endpoint = f"{host}:{port}" if port else ""
+                if endpoint and connect_loopback_adb(endpoint):
+                    return endpoint.replace("localhost", "127.0.0.1")
             time.sleep(2)
         raise RuntimeError("虚拟机启动超时，已停止自动继续；不会重复创建实例")
 

@@ -18,9 +18,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+from adb_runtime import resolve_adb_executable
 from task_store import InitializationRecord, RunDraftConflict, TaskStore
 from worker import DEFAULT_ARTIFACTS, DEFAULT_DB
-from runtime_layout import APP_ROOT, RUNTIME_ROOT, ensure_stream_secret
+from runtime_layout import APP_ROOT, RUNTIME_ROOT, ensure_stream_secret, tool_environment
 from control_config import (
     BUILTIN_PRESETS,
     DEFAULT_CONFIG,
@@ -85,6 +86,13 @@ LEGACY_DEVELOPMENT_DEVICE_IDS = (
     "emulator-" + str(5556),
     *(f"127.0.0.1:{port}" for port in range(16448, 16545, 32)),
 )
+
+
+def _required_adb() -> str:
+    adb = resolve_adb_executable()
+    if not adb:
+        raise RuntimeError("MediaFlow没有找到ADB组件，请修复安装后重试")
+    return adb
 
 
 def write_response_bytes(writer: Any, payload: bytes) -> bool:
@@ -241,9 +249,13 @@ def ensure_workers(device_ids: list[str]) -> list[dict[str, Any]]:
 
 
 def adb_device_states() -> dict[str, str]:
+    adb = resolve_adb_executable()
+    if not adb:
+        return {}
     result = subprocess.run(
-        ["adb.exe", "devices"], capture_output=True, text=True, timeout=6,
+        [adb, "devices"], capture_output=True, text=True, timeout=6,
         check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        env=tool_environment(),
     )
     states: dict[str, str] = {}
     for line in result.stdout.splitlines()[1:]:
@@ -254,8 +266,9 @@ def adb_device_states() -> dict[str, str]:
 
 
 def _adb_shell_text(device_id: str, command: list[str], timeout: int = 4) -> str:
+    adb = _required_adb()
     completed = subprocess.run(
-        ["adb.exe", "-s", device_id, "shell", *command],
+        [adb, "-s", device_id, "shell", *command],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -263,6 +276,7 @@ def _adb_shell_text(device_id: str, command: list[str], timeout: int = 4) -> str
         timeout=timeout,
         check=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        env=tool_environment(),
     )
     if completed.returncode:
         raise RuntimeError("ADB runtime signature query failed")
@@ -364,12 +378,14 @@ def device_screenshot_png(device_id: str) -> bytes:
     device_id = str(device_id or "").strip()
     if not device_id or adb_device_states().get(device_id) != "device":
         raise KeyError("Device is not online and authorized")
+    adb = _required_adb()
     result = subprocess.run(
-        ["adb.exe", "-s", device_id, "exec-out", "screencap", "-p"],
+        [adb, "-s", device_id, "exec-out", "screencap", "-p"],
         capture_output=True,
         timeout=8,
         check=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        env=tool_environment(),
     )
     payload = bytes(result.stdout or b"")
     if result.returncode or not payload.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -477,8 +493,9 @@ def build_device_onboarding_payload(
 
 
 def _douyin_is_installed(adb_endpoint: str) -> bool:
+    adb = _required_adb()
     package = subprocess.run(
-        ["adb.exe", "-s", adb_endpoint, "shell", "pm", "path", DOUYIN_PACKAGE],
+        [adb, "-s", adb_endpoint, "shell", "pm", "path", DOUYIN_PACKAGE],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -486,6 +503,7 @@ def _douyin_is_installed(adb_endpoint: str) -> bool:
         timeout=12,
         check=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        env=tool_environment(),
     )
     return package.returncode == 0 and "package:" in package.stdout
 
@@ -529,8 +547,9 @@ def _install_approved_douyin_if_configured(adb_endpoint: str) -> bool:
         return False
     if not apk_path.is_file() or apk_path.suffix.lower() != ".apk":
         raise RuntimeError("公司批准的抖音APK路径无效")
+    adb = _required_adb()
     installed = subprocess.run(
-        ["adb.exe", "-s", adb_endpoint, "install", "-r", str(apk_path)],
+        [adb, "-s", adb_endpoint, "install", "-r", str(apk_path)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -538,6 +557,7 @@ def _install_approved_douyin_if_configured(adb_endpoint: str) -> bool:
         timeout=180,
         check=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        env=tool_environment(),
     )
     if installed.returncode or "success" not in installed.stdout.lower():
         detail = installed.stderr.strip() or installed.stdout.strip() or "安装命令失败"

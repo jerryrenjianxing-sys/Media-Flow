@@ -9,8 +9,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from adb_runtime import connect_loopback_adb, resolve_adb_executable
 from task_store import TaskStore
-from runtime_layout import BUNDLED_ADB, DATA_ROOT
+from runtime_layout import DATA_ROOT
 from virtual_devices import STANDARD_RECIPE, MuMuProvider, resolve_mumu_manager
 
 
@@ -62,9 +63,9 @@ def _instance_adb_candidates(instance: dict[str, Any]) -> list[str]:
 
 
 def _android_identity(adb_endpoint: str) -> str | None:
-    adb = str(BUNDLED_ADB) if BUNDLED_ADB.is_file() else (
-        shutil.which("adb.exe") or shutil.which("adb") or "adb.exe"
-    )
+    adb = resolve_adb_executable()
+    if not adb:
+        return None
     try:
         completed = subprocess.run(
             [
@@ -103,6 +104,7 @@ class VirtualDeviceInventory:
         manager_resolver: Callable[[str | None], Path | None] = resolve_mumu_manager,
         provider_factory: Callable[[Path | None], MuMuProvider] = MuMuProvider,
         identity_reader: Callable[[str], str | None] = _android_identity,
+        adb_connector: Callable[[str], bool] = connect_loopback_adb,
         identity_attempts: int = 10,
         identity_interval_seconds: float = 1.0,
     ) -> None:
@@ -110,6 +112,7 @@ class VirtualDeviceInventory:
         self._manager_resolver = manager_resolver
         self._provider_factory = provider_factory
         self._identity_reader = identity_reader
+        self._adb_connector = adb_connector
         self._identity_attempts = max(1, int(identity_attempts))
         self._identity_interval_seconds = max(0.0, float(identity_interval_seconds))
 
@@ -288,11 +291,25 @@ class VirtualDeviceInventory:
                 "",
             )
             endpoint_online = bool(recovered_endpoint)
+            connected_during_reconcile = False
+            if (
+                not endpoint_online
+                and bool(instance.get("is_android_started"))
+                and stored.get("presence_status") != "identity_conflict"
+            ):
+                for candidate in endpoint_candidates:
+                    if self._adb_connector(candidate):
+                        recovered_endpoint = candidate.replace("localhost:", "127.0.0.1:")
+                        endpoint_online = True
+                        connected_during_reconcile = True
+                        break
             profile_status = str((stored or {}).get("profile_status") or "requires_verification")
             android_identity = stored.get("android_identity")
             identity_conflict = False
             identity_error: str | None = None
-            if endpoint_online and recovered_endpoint != current_endpoint:
+            if endpoint_online and (
+                recovered_endpoint != current_endpoint or connected_during_reconcile
+            ):
                 observed_identity = self._identity_reader(recovered_endpoint)
                 if not observed_identity:
                     endpoint_online = False

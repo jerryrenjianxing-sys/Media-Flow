@@ -28,6 +28,14 @@
 - **WHEN** 同一Provider实例重启并取得不同ADB端口
 - **THEN** 系统保持原永久虚拟设备ID，更新当前端点并使历史任务保留当时地址
 
+#### Scenario: MuMu实例由用户手动启动
+- **WHEN** 托管实例已经完成Android启动并报告本机ADB端口，但该端口尚未登记到当前ADB服务
+- **THEN** 系统主动连接Provider报告的回环端点、读取Android身份并安全恢复映射，不要求用户在MuMu或命令行中手工连接
+
+#### Scenario: MuMu管理命令误报ADB不可连接
+- **WHEN** Provider实例状态和本机端口确认Android已运行，但MuMu管理命令没有返回可用ADB地址
+- **THEN** 系统使用安装包内ADB直接连接Provider报告的回环端点并复核设备状态；身份不一致时仍失败关闭并等待确认
+
 ## ADDED Requirements
 
 ### Requirement: 实时库存不得由草稿或历史记录生成

@@ -390,6 +390,7 @@ class ControlApiTest(unittest.TestCase):
         png = b"\x89PNG\r\n\x1a\nimage"
         with (
             patch("control_api.adb_device_states", return_value={"phone-1": "device"}),
+            patch("control_api.resolve_adb_executable", return_value="adb.exe"),
             patch("control_api.subprocess.run") as run,
         ):
             run.return_value = MagicMock(returncode=0, stdout=png)
@@ -414,6 +415,7 @@ class ControlApiTest(unittest.TestCase):
     def test_device_screenshot_rejects_invalid_or_failed_output(self) -> None:
         with (
             patch("control_api.adb_device_states", return_value={"phone-1": "device"}),
+            patch("control_api.resolve_adb_executable", return_value="adb.exe"),
             patch("control_api.subprocess.run") as run,
         ):
             run.return_value = MagicMock(returncode=1, stdout=b"")

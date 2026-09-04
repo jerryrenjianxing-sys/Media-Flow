@@ -229,6 +229,27 @@ class VirtualDeviceProviderTests(unittest.TestCase):
         self.assertEqual(endpoint, "127.0.0.1:16416")
         run.assert_not_called()
 
+    def test_resolve_adb_falls_back_to_reported_port_when_manager_connect_misreports(self) -> None:
+        provider = MuMuProvider(Path("MuMuManager.exe"))
+        instance = {
+            "provider_instance_id": "1",
+            "is_android_started": True,
+            "adb_host_ip": "127.0.0.1",
+            "adb_port": 16416,
+        }
+        manager_result = CommandResult(
+            ["adb", "-v", "1", "-c", "connect"],
+            0,
+            '{"errcode":-201,"errmsg":"vm not running"}',
+            "",
+        )
+        with patch.object(provider, "list_instances", return_value=[instance]), patch.object(
+            provider, "_run", return_value=manager_result
+        ), patch("virtual_devices.connect_loopback_adb", return_value=True) as connect:
+            endpoint = provider.resolve_adb_endpoint("1", timeout_seconds=1)
+        self.assertEqual(endpoint, "127.0.0.1:16416")
+        connect.assert_called_once_with("127.0.0.1:16416")
+
 
 class VirtualOperationStoreTests(unittest.TestCase):
     def test_create_operation_is_idempotent(self) -> None:
@@ -667,6 +688,60 @@ class VirtualDeviceInventoryTests(unittest.TestCase):
             ).reconcile(online_adb_ids={"127.0.0.1:16416"})["devices"][0]
         self.assertEqual(result["adb_endpoint"], "127.0.0.1:16416")
         self.assertEqual(result["last_adb_endpoint"], "127.0.0.1:16416")
+        self.assertEqual(result["state"], "adb_ready")
+        self.assertIsNone(result["last_error"])
+
+    def test_reconcile_running_instance_actively_connects_provider_endpoint(self) -> None:
+        """A manually started MuMu must not require an external adb connect command."""
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            store.save_virtual_device(
+                {
+                    "virtual_device_id": "virtual-1",
+                    "provider": "mumu",
+                    "provider_instance_id": "1",
+                    "name": "MediaFlow虚拟机1",
+                    "state": "running",
+                    "recipe": dict(STANDARD_RECIPE),
+                    "provider_snapshot": {},
+                    "adb_endpoint": None,
+                    "last_adb_endpoint": "127.0.0.1:16416",
+                    "android_identity": "android-one",
+                    "profile_status": "requires_verification",
+                    "presence_status": "present",
+                    "managed": True,
+                    "display_index": 1,
+                }
+            )
+            provider = FakeMuMuProvider(
+                [
+                    {
+                        "provider_instance_id": "1",
+                        "name": "MediaFlow虚拟机1",
+                        "state": "running",
+                        "is_process_started": True,
+                        "is_android_started": True,
+                        "adb_host_ip": "127.0.0.1",
+                        "adb_port": 16416,
+                        "android_version": "15",
+                    }
+                ]
+            )
+            connect_attempts: list[str] = []
+
+            def connect(endpoint: str) -> bool:
+                connect_attempts.append(endpoint)
+                return endpoint == "127.0.0.1:16416"
+
+            result = VirtualDeviceInventory(
+                store,
+                manager_resolver=lambda _path: Path(directory) / "MuMuManager.exe",
+                provider_factory=lambda _manager: provider,
+                identity_reader=lambda _endpoint: "android-one",
+                adb_connector=connect,
+            ).reconcile(online_adb_ids=set())["devices"][0]
+        self.assertEqual(connect_attempts, ["127.0.0.1:16416"])
+        self.assertEqual(result["adb_endpoint"], "127.0.0.1:16416")
         self.assertEqual(result["state"], "adb_ready")
         self.assertIsNone(result["last_error"])
 
