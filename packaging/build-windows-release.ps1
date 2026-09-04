@@ -223,7 +223,7 @@ if ($LASTEXITCODE -eq 0 -and $secretMatches) {
     throw 'Release audit found an OpenRouter key-like value.'
 }
 
-$developmentDeviceMatches = & rg -l 'emulator-5556|127\.0\.0\.1:16448|127\.0\.0\.1:16480|127\.0\.0\.1:16512|127\.0\.0\.1:16544' $stage `
+$developmentDeviceMatches = & rg -l 'P7HUDEKF4XVODY4D|emulator-5556|127\.0\.0\.1:16448|127\.0\.0\.1:16480|127\.0\.0\.1:16512|127\.0\.0\.1:16544' $stage `
     -g '*.py' -g '*.ps1' -g '*.json' -g '*.md' 2>$null
 if ($LASTEXITCODE -eq 0 -and $developmentDeviceMatches) {
     throw 'Release audit found a development ADB serial or port.'

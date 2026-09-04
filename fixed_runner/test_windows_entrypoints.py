@@ -172,6 +172,19 @@ class WindowsEntrypointTests(unittest.TestCase):
         self.assertIn("Packaging is deliberately side-effect free", build)
         self.assertIn("running developer or installed UI is never restarted", build)
 
+    def test_release_entrypoints_do_not_default_to_a_development_device(self) -> None:
+        for relative_path in (
+            "fixed_runner/worker.py",
+            "fixed_runner/douyin_fixed_runner.py",
+            "fixed_runner/douyin_uia2_runner.py",
+        ):
+            source = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8-sig")
+            self.assertNotIn("P7HUDEKF4XVODY4D", source)
+        build = (PROJECT_ROOT / "packaging" / "build-windows-release.ps1").read_text(
+            encoding="utf-8-sig"
+        )
+        self.assertIn("P7HUDEKF4XVODY4D", build)
+
     def test_desktop_shell_offers_confirmed_uninstall(self) -> None:
         source = (PROJECT_ROOT / "launcher" / "RiskFlowLauncher.cs").read_text(
             encoding="utf-8-sig"

@@ -324,7 +324,7 @@ def parse_dwell(value: str) -> list[float]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fixed Douyin internal-test benchmark")
-    parser.add_argument("--device-id", default="P7HUDEKF4XVODY4D")
+    parser.add_argument("--device-id", required=True)
     parser.add_argument("--dwell", type=parse_dwell, default=parse_dwell("4,5,4,5"))
     parser.add_argument(
         "--output-root",

@@ -1567,7 +1567,7 @@ class WorkerSupportTest(unittest.TestCase):
 
     def test_parser_accepts_two_video_demo_task(self) -> None:
         args = build_parser().parse_args(
-            ["submit", "douyin_two_video_demo", "--dwell", "4,7"]
+            ["submit", "douyin_two_video_demo", "--device-id", "device-1", "--dwell", "4,7"]
         )
         self.assertEqual(args.task_type, "douyin_two_video_demo")
         self.assertEqual(args.dwell, [4.0, 7.0])

@@ -46,7 +46,6 @@ from worker_runtime import (
 )
 
 
-DEFAULT_DEVICE_ID = "P7HUDEKF4XVODY4D"
 DEFAULT_DB = RUNTIME_ROOT / "tasks.db"
 DEFAULT_ARTIFACTS = RUNTIME_ROOT / "artifacts"
 DEFAULT_REPORT = RUNTIME_ROOT / "latest-report.md"
@@ -395,7 +394,7 @@ def build_parser() -> argparse.ArgumentParser:
             "douyin_two_video_demo",
         ),
     )
-    submit.add_argument("--device-id", default=DEFAULT_DEVICE_ID)
+    submit.add_argument("--device-id", required=True)
     submit.add_argument(
         "--dwell", type=parse_worker_dwell, default=parse_worker_dwell("4,5,4,5")
     )
@@ -405,7 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--interval-seconds", type=float, default=0.0)
 
     worker = subparsers.add_parser("worker")
-    worker.add_argument("--device-id", default=DEFAULT_DEVICE_ID)
+    worker.add_argument("--device-id", required=True)
     worker.add_argument("--artifacts-root", type=Path, default=DEFAULT_ARTIFACTS)
     worker.add_argument("--poll-seconds", type=float, default=0.5)
     worker.add_argument("--max-tasks", type=int, default=0)
