@@ -10,6 +10,7 @@
 **/*.pid
 **/*.lock
 /fixed_runner/platform_profiles.json
+/fixed_runner/device_profiles.json
 
 # Local credentials and environment overrides
 .env
