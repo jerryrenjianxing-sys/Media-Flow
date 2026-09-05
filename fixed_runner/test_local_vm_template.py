@@ -9,6 +9,32 @@ from template_apks import package_paths, install_bundle
 
 
 class TemplateTests(unittest.TestCase):
+    def test_fresh_creation_can_reuse_missing_number_without_inheriting_identity(self):
+        old = {"virtual_device_id": "old", "provider": "mumu", "provider_instance_id": "3",
+               "name": "old account VM", "state": "stopped", "presence_status": "missing",
+               "android_identity": "old-android", "recipe": {"old": True}}
+        self.store.save_virtual_device(old)
+        op, _ = self.store.create_virtual_operation("template_prepare", {}, idempotency_key="fresh")
+        self.store.update_virtual_operation(op["id"], status="running", stage="template_creating", progress=20)
+        new = {"virtual_device_id": "new", "provider": "mumu", "provider_instance_id": "3",
+               "name": "clean template", "state": "stopped", "recipe": {"is_template": True}}
+        self.store.save_virtual_device(new, fresh_creation={"operation_id": op["id"], "before_ids": ["0", "1", "2"], "created_ids": ["3"]})
+        self.assertIsNone(self.store.get_virtual_device("new")["android_identity"])
+        previous = next(item for item in self.store.list_virtual_devices() if item["virtual_device_id"] == "old")
+        self.assertEqual(previous["android_identity"], "old-android")
+        self.assertEqual(previous["recipe"], {"old": True})
+        self.assertEqual(previous["state"], "retired")
+
+    def test_creation_proof_does_not_replace_present_or_ambiguous_instance(self):
+        self.store.save_virtual_device({"virtual_device_id": "old", "provider": "mumu", "provider_instance_id": "3", "name": "existing"})
+        op, _ = self.store.create_virtual_operation("template_prepare", {}, idempotency_key="proof")
+        self.store.update_virtual_operation(op["id"], status="running", stage="template_creating", progress=20)
+        new = {"virtual_device_id": "new", "provider": "mumu", "provider_instance_id": "3", "name": "new"}
+        for before, created in ((["1"], ["3"]), (["3"], ["3"]), (["1"], ["3", "4"])):
+            with self.assertRaises(ValueError):
+                self.store.save_virtual_device(new, fresh_creation={"operation_id": op["id"], "before_ids": before, "created_ids": created})
+        self.assertEqual(self.store.get_virtual_device("old")["provider_instance_id"], "3")
+
     def test_clean_android_absent_app_is_not_adb_failure(self):
         import template_apks
         with patch("template_apks.adb", return_value="") as command:

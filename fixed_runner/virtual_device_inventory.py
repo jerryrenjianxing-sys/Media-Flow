@@ -1006,6 +1006,7 @@ class VirtualDeviceInventory:
         self.store.update_virtual_operation(
             operation_id, status="running", stage="cloning", progress=25
         )
+        before_instance_ids = [str(item["provider_instance_id"]) for item in provider.list_instances()]
         instance = provider.clone(str(source["provider_instance_id"]))
         instance_id = str(instance["provider_instance_id"])
         provider.rename(instance_id, name)
@@ -1029,8 +1030,9 @@ class VirtualDeviceInventory:
                 "display_index": display_index,
                 "last_seen_at": _now_iso(),
                 "last_connected_at": None,
-                "last_error": "克隆已完成，需要登录检查和初始化复验",
-            }
+                "last_error": "克隆已完成，请自行登录；任务所需能力将在运行时检查",
+            }, fresh_creation={"operation_id": operation_id, "before_ids": before_instance_ids,
+                               "created_ids": [instance_id]}
         )
         return created
 

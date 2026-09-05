@@ -866,7 +866,7 @@ class TaskStore:
             raise KeyError(operation_id)
         return self._virtual_operation(row)
 
-    def save_virtual_device(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def save_virtual_device(self, payload: dict[str, Any], *, fresh_creation: dict[str, Any] | None = None) -> dict[str, Any]:
         timestamp = now_iso()
         discovery_source = str(payload.get("discovery_source") or "mediaflow_created")
         managed = payload.get("managed")
@@ -884,6 +884,25 @@ class TaskStore:
                 (payload["provider"], payload["provider_instance_id"]),
             ).fetchone()
             if existing is not None and str(existing["id"]) != str(payload["virtual_device_id"]):
+                if fresh_creation and str(existing["state"]) != "retired":
+                    operation = connection.execute("SELECT * FROM virtual_device_operations WHERE id=?",
+                                                   (fresh_creation.get("operation_id"),)).fetchone()
+                    instance_id = str(payload["provider_instance_id"])
+                    proven_new = (
+                        operation is not None and operation["status"] == "running"
+                        and operation["operation_type"] in {"create", "clone", "template_prepare", "template_create"}
+                        and isinstance(fresh_creation.get("before_ids"), list)
+                        and instance_id not in fresh_creation["before_ids"]
+                        and fresh_creation.get("created_ids") == [instance_id]
+                        and existing["presence_status"] == "missing"
+                        and not existing["adb_endpoint"] and existing["state"] != "running"
+                    )
+                    if proven_new:
+                        # Retain the old UUID, account identity and evidence. Only its
+                        # no-longer-present inventory incarnation is retired.
+                        connection.execute("UPDATE virtual_devices SET state='retired', presence_status='retired', updated_at=? WHERE id=?",
+                                           (timestamp, existing["id"]))
+                        existing = connection.execute("SELECT * FROM virtual_devices WHERE id=?", (existing["id"],)).fetchone()
                 if str(existing["state"]) != "retired":
                     raise ValueError(
                         "Provider实例号已经属于另一台未退休虚拟机，需要先确认身份冲突"

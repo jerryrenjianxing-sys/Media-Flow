@@ -94,11 +94,14 @@ class LocalVmTemplate:
                     else extract_installation(source["adb_endpoint"], directory / "apks"))
         self._checkpoint(operation_id, "template_creating", 20, "正在创建全新、未登录的模板实例")
         before = {path.resolve() for path in vm_root.iterdir() if path.is_dir()}
+        before_instance_ids = [str(item["provider_instance_id"]) for item in self.provider.list_instances()]
         template = self.provider.create_from_recipe("MediaFlow本机模板")
         template.update(recipe={**template["recipe"], "is_template": True, "template_version": version},
                         managed=True, discovery_source="local_template", presence_status="present",
                         provider_install_id=manager_identity(self.manager), profile_status="template_only")
-        self.store.save_virtual_device(template)
+        self.store.save_virtual_device(template, fresh_creation={"operation_id": operation_id,
+                                      "before_ids": before_instance_ids,
+                                      "created_ids": [str(template["provider_instance_id"])]})
         # Retain the exact newly-created identity immediately, even if a later step fails.
         state.update(virtual_device_id=template["virtual_device_id"], manifest=manifest)
         self.store.save_profile(PROFILE, state)
