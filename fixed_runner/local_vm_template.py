@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import shutil
+import logging
 import subprocess
 import threading
 import time
@@ -173,6 +174,7 @@ class LocalVmTemplate:
                 raise RuntimeError("实例已创建但连接尚未完成，请在设备卡片重试连接；不会再次克隆")
             return {**clone, "template_version": state["template_version"]}
         except Exception as exc:
+            logging.getLogger(__name__).exception("Local template operation failed: %s", operation_id)
             state = self.store.get_profile(PROFILE) or {}
             if state.get("status") == "preparing":
                 self.store.save_profile(PROFILE, {**state, "status": "failed", "message": str(exc)})

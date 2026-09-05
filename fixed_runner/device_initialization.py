@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import hashlib
 import re
-import shutil
 import subprocess
 import time
 from dataclasses import asdict
@@ -12,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import uiautomator2
+from adb_runtime import resolve_adb_executable
 
 from control_vision import VisionCandidateLocator
 from device_profiles import (
@@ -29,7 +29,7 @@ from platform_profiles import (
     profile_key,
     save_platform_profile,
 )
-from runtime_layout import BUNDLED_ADB, INITIALIZATION_ARTIFACTS_ROOT
+from runtime_layout import INITIALIZATION_ARTIFACTS_ROOT
 from task_store import InitializationRecord, TaskStore
 from task_preparation import PreparationWaitingForUser
 from worker_runtime import device_preflight
@@ -175,9 +175,7 @@ def _preferred_original_ime(device) -> str:
 
 
 def _adb_executable() -> str:
-    if BUNDLED_ADB.is_file():
-        return str(BUNDLED_ADB)
-    discovered = shutil.which("adb.exe") or shutil.which("adb")
+    discovered = resolve_adb_executable()
     if discovered:
         return discovered
     raise RuntimeError("未找到 ADB；请修复 MediaFlow 安装或将 adb.exe 加入 PATH")
@@ -235,6 +233,8 @@ def _enable_fast_input(
         device.set_input_ime(True)
         active = _current_ime(device)
     except Exception as exc:
+        if isinstance(exc, InitializationWaitingForUser):
+            raise
         if _device_is_rooted(device) and _u2_input_package_installed(device):
             return {
                 "original_ime": original_ime,
@@ -251,7 +251,7 @@ def _enable_fast_input(
                 "请重新开启 USB 调试（安全设置）或关闭权限监控后点击继续"
             ) from exc
         raise InitializationWaitingForUser(
-            "手机可能正在等待安装或安全确认；请在对应手机上允许 MediaFlow 输入组件后点击继续"
+            f"输入组件准备未完成（{type(exc).__name__}）；请查看诊断详情后重试"
         ) from exc
     if not _is_u2_input_ime(active):
         if _device_is_rooted(device) and _u2_input_package_installed(device):

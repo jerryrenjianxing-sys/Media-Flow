@@ -9,6 +9,11 @@ from template_apks import package_paths, install_bundle
 
 
 class TemplateTests(unittest.TestCase):
+    def test_input_component_uses_same_adb_as_template_without_path_dependency(self):
+        import device_initialization
+        with patch("device_initialization.resolve_adb_executable", return_value="packaged-or-venv-adb.exe"):
+            self.assertEqual(device_initialization._adb_executable(), "packaged-or-venv-adb.exe")
+
     def test_fresh_creation_can_reuse_missing_number_without_inheriting_identity(self):
         old = {"virtual_device_id": "old", "provider": "mumu", "provider_instance_id": "3",
                "name": "old account VM", "state": "stopped", "presence_status": "missing",
