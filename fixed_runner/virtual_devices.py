@@ -343,6 +343,7 @@ class MuMuProvider:
             raise RuntimeError("MuMu尚未安装或安装目录无效")
         completed = subprocess.run(
             [str(self.manager_path), *args],
+            cwd=str(self.manager_path.resolve().parent),
             capture_output=True,
             timeout=timeout,
             check=False,

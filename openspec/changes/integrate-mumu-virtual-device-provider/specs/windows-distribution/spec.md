@@ -100,3 +100,9 @@ MediaFlow品牌安装器 MUST 按SemVer正确比较正式版和预发布版，�
 #### Scenario: 显式核验旧版留下的唯一导入结果
 - **WHEN** 操作者明确指定上次失败导入产生的实例编号
 - **THEN** 只有编号在原导入前不存在、当前唯一新增且创建时间落在原操作期间时，才能创建新的核验操作；旧失败操作保持原终态，不重放导入，通过实际检查才切换默认
+### Requirement: Provider child working directories are independent of application upgrades
+MuMu management commands SHALL use the MuMu installation directory as their working directory, never inherit MediaFlow's versioned program directory. An upgrade SHALL NOT need to stop user virtual machines merely to release a directory held by a management helper.
+
+#### Scenario: MuMu starts a persistent helper during template import
+- **WHEN** MediaFlow invokes MuMuManager from the installed application
+- **THEN** its descendants inherit the MuMu directory, not MediaFlow/current, and do not prevent replacing MediaFlow during the next upgrade

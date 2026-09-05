@@ -39,6 +39,15 @@ class SettingsInputTests(unittest.TestCase):
 
 
 class MuMuAsyncArchiveTests(unittest.TestCase):
+    def test_manager_child_does_not_hold_mediaflow_install_directory(self):
+        from virtual_devices import MuMuProvider
+        with tempfile.TemporaryDirectory() as directory:
+            manager = Path(directory) / 'MuMuManager.exe'
+            manager.touch()
+            with patch('virtual_devices.subprocess.run', return_value=Mock(returncode=0, stdout=b'{}', stderr=b'')) as run:
+                MuMuProvider(manager)._run('info', '-v', 'all')
+        self.assertEqual(Path(run.call_args.kwargs['cwd']), manager.parent)
+
     def test_actual_remote_nested_timeout_continues_observation_not_reimport(self):
         from mumu_archive import accept_dispatch
         from virtual_devices import CommandResult
