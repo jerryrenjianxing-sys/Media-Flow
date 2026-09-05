@@ -26,8 +26,16 @@ def adb(endpoint, *args, timeout=30):
                             text=True, encoding="utf-8", errors="replace", timeout=timeout,
                             creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)))
     if result.returncode:
-        raise RuntimeError("ADB安装文件操作失败；请检查连接后重试：" + result.stderr[-500:])
+        detail = (result.stderr or result.stdout).strip()[-500:]
+        raise RuntimeError(f"ADB安装文件操作失败（退出码{result.returncode}）；" + (detail or "命令未返回详情，请检查设备连接"))
     return result.stdout.strip()
+
+
+def package_installed(endpoint):
+    # `pm path` exits 1 for an absent package on clean Android; list is a query
+    # whose empty successful response is distinguishable from transport failure.
+    output = adb(endpoint, "shell", "pm", "list", "packages", PACKAGE)
+    return f"package:{PACKAGE}" in {line.strip() for line in output.splitlines()}
 
 
 def package_paths(endpoint):

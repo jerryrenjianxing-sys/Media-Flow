@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 
 from runtime_layout import DATA_ROOT
-from template_apks import PACKAGE, adb, extract_installation, import_installation, install_bundle, file_hash
+from template_apks import adb, package_installed, extract_installation, import_installation, install_bundle, file_hash
 from virtual_device_inventory import VirtualDeviceInventory, manager_identity
 from virtual_devices import MuMuProvider, resolve_mumu_manager
 
@@ -75,7 +75,7 @@ class LocalVmTemplate:
         source = None
         for item in candidates:
             try:
-                if "package:" in adb(item["adb_endpoint"], "shell", "pm", "path", PACKAGE):
+                if package_installed(item["adb_endpoint"]):
                     source = item
                     break
             except (OSError, RuntimeError, subprocess.TimeoutExpired):
@@ -108,7 +108,7 @@ class LocalVmTemplate:
         storage = new_dirs.pop()
         self._checkpoint(operation_id, "template_installing", 35, "正在安装已校验的抖音及控制组件")
         endpoint = self.provider.start_and_resolve_adb(str(template["provider_instance_id"]))
-        if "package:" in adb(endpoint, "shell", "pm", "path", PACKAGE):
+        if package_installed(endpoint):
             raise RuntimeError("新模板已存在抖音数据，无法证明干净；不会继续使用")
         manifest.update(install_bundle(endpoint, directory / "apks", manifest))
         import uiautomator2 as u2

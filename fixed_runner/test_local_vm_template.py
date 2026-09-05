@@ -9,6 +9,21 @@ from template_apks import package_paths, install_bundle
 
 
 class TemplateTests(unittest.TestCase):
+    def test_clean_android_absent_app_is_not_adb_failure(self):
+        import template_apks
+        with patch("template_apks.adb", return_value="") as command:
+            self.assertFalse(template_apks.package_installed("new-vm"))
+        command.assert_called_once_with("new-vm", "shell", "pm", "list", "packages", template_apks.PACKAGE)
+
+    def test_package_presence_exact_match_and_transport_errors(self):
+        import template_apks
+        with patch("template_apks.adb", return_value="package:com.ss.android.ugc.aweme.lite"):
+            self.assertFalse(template_apks.package_installed("new-vm"))
+        with patch("template_apks.adb", return_value="package:com.ss.android.ugc.aweme"):
+            self.assertTrue(template_apks.package_installed("new-vm"))
+        with patch("template_apks.adb", side_effect=RuntimeError("device offline")), self.assertRaises(RuntimeError):
+            template_apks.package_installed("new-vm")
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
