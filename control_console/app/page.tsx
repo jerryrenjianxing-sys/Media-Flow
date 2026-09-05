@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import PromptGuideLink from "./components/prompt-guide-link";
+import AgentWorkbench from "./components/agent-workbench";
 import { DeviceOnboardingDialog } from "./components/device-onboarding-dialog";
 import { API, type ContentMode, type ContentPlan, type Preset, type RunDraft, type StatusPayload, type VirtualDevice, type WorkbenchConfig, type WorkbenchPreview } from "./components/workbench-types";
 import { fetchLocalApi } from "./lib/local-api";
@@ -140,13 +141,14 @@ export default function TaskWorkbenchPage() {
   }
   async function submit(confirmWrites: boolean) { if (!preview || !draft) return; setSubmitting(true); setNotice("正在提交不可变任务快照…"); try { const response = await fetchLocalApi(`${API}/api/workbench/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision: draft.revision, plan_hash: preview.plan_hash, confirm_writes: confirmWrites }) }, 20_000); const result = await response.json() as { error?: string; task_ids?: string[] }; if (!response.ok) throw new Error(result.error || "提交失败"); setConfirmOpen(false); setNotice(`已创建 ${result.task_ids?.length || preview.total_task_count} 个任务，快照不会再被草稿修改`); window.setTimeout(() => { window.location.href = "/run"; }, 700); } catch (error) { setNotice(error instanceof Error ? error.message : "提交失败"); await refreshPreview(revisionRef.current).catch(() => undefined); } finally { setSubmitting(false); } }
 
-  if (!config || !draft) return <main className="app-shell"><div className="page-shell"><section className="panel workbench-loading"><strong>正在准备任务台</strong><span>{notice}</span></section></div></main>;
+  if (!config || !draft) return <main className="app-shell"><div className="page-shell"><AgentWorkbench/><section className="panel workbench-loading"><strong>正在准备任务台</strong><span>{notice}</span></section></div></main>;
   const activeProbabilities = config.content_mode === "search" ? [config.matched_like_probability, config.matched_favorite_probability, config.matched_comment_probability] : config.content_mode === "hybrid" ? [Math.max(config.like_probability, config.matched_like_probability), Math.max(config.favorite_probability, config.matched_favorite_probability), Math.max(config.comment_probability, config.matched_comment_probability)] : [config.like_probability, config.favorite_probability, config.comment_probability];
   const virtualDevices = status?.devices.filter((device) => device.device_type === "virtual") || [];
   const physicalDevices = status?.device_preferences?.physical_devices_enabled ? status.devices.filter((device) => (device.device_type || "physical") === "physical") : [];
   const knownVirtuals = status?.virtualization?.devices || [];
   const hasAnyVirtual = knownVirtuals.some((virtualDevice) => virtualDevice.state !== "retired");
   return <main className="app-shell task-workbench-page"><div className="page-shell">
+    <AgentWorkbench/>
     <section className="workbench-hero" data-motion><div><p className="eyebrow">TASK WORKBENCH</p><h1>创建并启动任务</h1><p>从目标到设备在一页完成；每次修改自动保存，提交后冻结为独立快照。</p></div><div className={`draft-state ${saveState}`}><i/><span>{saveState === "saving" ? "正在自动保存" : saveState === "dirty" ? "有修改待保存" : saveState === "conflict" ? "已同步其他页面修改" : saveState === "error" ? "保存失败" : `草稿 v${draft.revision} 已保存`}</span></div></section>
     <div className="workbench-layout"><div className="workbench-flow">
       <section className="panel workbench-step" data-motion><header><span>01</span><div><h2>从哪里开始</h2><p>推荐使用搜索与主页交替；旧模式完整保留在备用区。</p></div></header><button type="button" className={`primary-mode-choice ${config.content_mode === "hybrid" ? "selected" : ""}`} onClick={() => setMode("hybrid")}><span>{modeCopy.hybrid.badge}</span><strong>{modeCopy.hybrid.title}</strong><small>{modeCopy.hybrid.detail}</small></button><details className="backup-mode-choice" open={config.content_mode !== "hybrid"}><summary>备用模式</summary><div className="mode-choice-grid">{(["general", "mixed", "search"] as ContentMode[]).map((mode) => <button type="button" key={mode} className={config.content_mode === mode ? "selected" : ""} onClick={() => setMode(mode)}><span>{modeCopy[mode].badge}</span><strong>{modeCopy[mode].title}</strong><small>{modeCopy[mode].detail}</small></button>)}</div></details></section>

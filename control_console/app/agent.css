@@ -1,0 +1,30 @@
+.agent-workbench { padding: 24px; margin-bottom: 24px; }
+.agent-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.agent-heading h2 { margin: 4px 0 10px; font-size: 1.6rem; }
+.agent-state { font-size: .9rem; white-space: nowrap; }
+.agent-scope { font-size: .95rem; line-height: 1.6; opacity: .8; }
+.agent-toolbar, .agent-model-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.agent-toolbar label, .agent-model-row label, .agent-question label { display: grid; gap: 6px; font-size: .9rem; }
+.agent-model-row label { flex: 1; min-width: 200px; }
+.agent-workbench select, .agent-workbench input, .agent-workbench textarea { color: inherit; background: transparent; border: 1px solid var(--hairline, #999); border-radius: 8px; padding: 10px; font: inherit; }
+.agent-workbench select { max-width: 100%; }
+.agent-workbench textarea { width: 100%; resize: vertical; box-sizing: border-box; }
+.agent-messages { min-height: 130px; max-height: 480px; overflow: auto; border-block: 1px solid var(--hairline, #999); padding: 18px 0; }
+.agent-message { padding: 14px 16px; border-radius: 10px; margin-bottom: 12px; }
+.agent-message.user { background: rgba(99, 102, 241, .09); }
+.agent-message p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; margin: 8px 0; }
+.agent-tool { font-size: .9rem; opacity: .75; padding: 6px 0; }
+.agent-notice { line-height: 1.6; padding: 12px; border-left: 3px solid #d39436; }
+.agent-question { display: grid; gap: 12px; padding: 16px 0; }
+.agent-auth { border: 1px solid var(--hairline, #999); border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+.agent-auth h3 { margin: 0 0 10px; font-size: 1.1rem; }
+.agent-auth p { line-height: 1.6; }
+.agent-auth label { display: grid; gap: 6px; margin-block: 12px; font-size: .95rem; }
+.agent-auth input, .agent-auth select { width: 100%; min-width: 0; box-sizing: border-box; }
+.agent-auth-flow { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.agent-auth-flow p { flex-basis: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-memory { margin-top: 20px; }
+.agent-memory label { display: grid; gap: 6px; margin-block: 12px; }
+.agent-memory-item { padding: 12px 0; border-bottom: 1px solid var(--hairline, #999); }
+.agent-memory-item p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+@media (max-width: 640px) { .agent-workbench { padding: 16px; } .agent-heading { align-items: flex-start; flex-direction: column; } .agent-model-row { align-items: stretch; flex-direction: column; } }

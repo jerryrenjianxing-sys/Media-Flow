@@ -90,7 +90,18 @@ if (-not (Test-Path -LiteralPath $sourcePython)) {
     throw 'Project Python is missing. Run setup-mediaflow.ps1 first.'
 }
 
-Push-Location (Join-Path $projectRoot 'control_console')
+# Build browser assets away from the developer service's currently served dist.
+$consoleBuildParent = Join-Path $outRoot ('console-build-' + [guid]::NewGuid().ToString('N'))
+$consoleBuildRoot = Join-Path $consoleBuildParent 'control_console'
+New-Item -ItemType Directory -Force -Path $consoleBuildRoot | Out-Null
+& robocopy.exe (Join-Path $projectRoot 'control_console') $consoleBuildRoot /E `
+    /XD node_modules dist .next .wrangler .git /XF .env .env.local /NFL /NDL /NJH /NJS /NP | Out-Null
+if ($LASTEXITCODE -ge 8) { throw 'Isolated frontend source copy failed.' }
+New-Item -ItemType Junction -Path (Join-Path $consoleBuildRoot 'node_modules') `
+    -Target (Join-Path $projectRoot 'control_console\node_modules') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $consoleBuildParent 'docs') | Out-Null
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\content-prompt-guide.md') -Destination (Join-Path $consoleBuildParent 'docs')
+Push-Location $consoleBuildRoot
 try {
     npm.cmd run build
     if ($LASTEXITCODE -ne 0) { throw 'Frontend standalone build failed.' }
@@ -167,7 +178,7 @@ if ($invalidVirtualProfiles) {
 }
 
 $consoleTarget = Join-Path $stage 'control_console\standalone'
-Copy-Tree (Join-Path $projectRoot 'control_console\dist\standalone') $consoleTarget
+Copy-Tree (Join-Path $consoleBuildRoot 'dist\standalone') $consoleTarget
 # Vinext's standalone output currently assumes these peer/runtime packages can
 # be resolved from the source tree. Copy them explicitly so an installed build
 # has no hidden dependency on control_console/node_modules.
@@ -234,6 +245,10 @@ $adb = (Get-Command adb -ErrorAction Stop).Source
 $adbRoot = Split-Path $adb -Parent
 Copy-Tree $adbRoot (Join-Path $stage 'runtime\platform-tools')
 
+$agentSourceIdentity = "$($sourceCommit.Trim())$(if ($sourceDirty) { '.dirty' } else { '' })"
+& $sourcePython (Join-Path $PSScriptRoot 'build-agent-resources.py') --stage $stage --revision $agentSourceIdentity
+if ($LASTEXITCODE -ne 0) { throw 'Embedded Agent or repair source assembly failed.' }
+
 $forbiddenNames = @(
     'tasks.db',
     'openrouter-api-key.dpapi',
@@ -242,6 +257,11 @@ $forbiddenNames = @(
     'device_profiles.json',
     'platform_profiles.json',
     'installation.json'
+    'auth.json'
+    'sessions.db'
+    'memories.db'
+    'repairs.db'
+    'calls.db'
 )
 $forbidden = Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object {
     $_.Name -in $forbiddenNames -or
@@ -264,6 +284,8 @@ if ($LASTEXITCODE -eq 0 -and $developmentDeviceMatches) {
 }
 
 $legacyBrandAllowlist = @(
+    # Hash manifest retains historical source filenames, not user-visible branding.
+    'assets\agent\repair-source-manifest.json',
     'install-mediaflow-background.ps1',
     'fixed_runner\background_host.py',
     'fixed_runner\brand.py',
@@ -309,6 +331,10 @@ $manifest = [ordered]@{
     contains_local_state = $false
     standalone_device_initialization = $true
     mumu_realtime_stream = 'experimental'
+    embedded_agent = 'experimental'
+    embedded_agent_engine = 'OpenCode 1.18.29'
+    repair_source_revision = $agentSourceIdentity
+    repair_test_capability = 'python-unit-and-syntax; native-and-device-tests-require-release-validation'
     stream_protocol = 1
     scrcpy_server = '3.3.3'
     desktop_shell = 'WinForms WebView2 Evergreen'

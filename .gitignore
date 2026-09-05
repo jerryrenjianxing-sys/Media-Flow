@@ -54,6 +54,7 @@
 /RiskFlow.exe
 /packaging/out/
 /packaging/tools/
+/packaging/agent-engine/node_modules/
 *.apk
 *.zip
 *.nupkg

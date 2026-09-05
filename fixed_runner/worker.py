@@ -95,7 +95,7 @@ def run_worker(
             if (store.get_profile("automation-stop") or {}).get("stopped"):
                 time.sleep(poll_seconds)
                 continue
-            if store.is_paused() and not maintenance_may_run(store, device_id):
+            if store.is_paused() and not maintenance_may_run(store, device_id) and not store.has_ready(device_id):
                 time.sleep(poll_seconds)
                 continue
             if store.has_active_control_session(device_id):
@@ -155,10 +155,10 @@ def run_worker(
                     }
                 )
                 continue
-            if store.is_paused():
+            if store.is_paused() and not store.has_ready(device_id):
                 time.sleep(poll_seconds)
                 continue
-            recovery_request = store.claim_task_recovery(device_id)
+            recovery_request = None if store.is_paused() else store.claim_task_recovery(device_id)
             if recovery_request is not None:
                 origin_task = store.get(recovery_request["origin_task_id"])
                 recovery_result = origin_task.result or {}
@@ -248,10 +248,10 @@ def run_worker(
                     task,
                     recorder,
                     pause_waiter=lambda: wait_while_paused(
-                        store, poll_seconds, recorder, device_id
+                        store, poll_seconds, recorder, device_id, task_id=task.id
                     ),
                     incident_sink=save_video_incident,
-                    stop_checker=lambda: store.is_stop_requested(device_id),
+                    stop_checker=lambda: store.is_stop_requested(device_id) or store.agent_task_stop_requested(task.id),
                     task_store=store,
                 )
                 task_status = (

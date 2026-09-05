@@ -17,6 +17,30 @@ async function source(path) {
   return readFile(new URL(path, import.meta.url), "utf8");
 }
 
+test("homepage adds Agent without replacing the existing workbench or claiming full control", async () => {
+  const response = await render();
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(html, /告诉助手你要做什么/);
+  assert.match(html, /正在准备任务台/);
+  assert.match(html, /不会假装执行成功/);
+  const page = await source("../app/components/agent-workbench.tsx");
+  assert.match(page, /request_id: id/);
+  assert.match(page, /failures.current >= 3/);
+  const api = await source('../app/lib/agent-api.ts');
+  assert.match(api, /当前后台尚未提供助手接口/);
+  assert.match(api, /无法连接本机对话服务/);
+  assert.match(page, /尚未完成的接入/);
+});
+
+test('Agent settings keep native authentication and expose recoverable OAuth progress', async () => {
+  const page = await source('../app/components/agent-provider-settings.tsx');
+  for (const text of ['auth_methods', '保存 Key', '开始网页登录', '已完成登录，继续', '取消登录', '刷新登录状态', 'autoComplete="new-password"']) assert.ok(page.includes(text));
+  assert.ok(page.includes('failures >= 3'));
+  assert.ok(page.includes('使用现有 MediaFlow 千问配置'));
+  assert.ok(!page.includes('localStorage'));
+});
+
 test("model settings expose isolated experimental Token Plan save test and enable", async () => {
   const response = await render("/content");
   assert.equal(response.status, 200);

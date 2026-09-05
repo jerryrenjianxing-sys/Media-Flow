@@ -1,0 +1,9 @@
+{
+  "version": "1.18.29",
+  "platform": "windows-x64-baseline",
+  "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.29/opencode-windows-x64-baseline.zip",
+  "archive_sha256": "81ea8263923572e3e40cbd22f89d0008efa567b8a812389db042082b03bd2582",
+  "archive_bytes": 60655377,
+  "license": "MIT",
+  "license_url": "https://github.com/anomalyco/opencode/blob/v1.18.29/LICENSE"
+}

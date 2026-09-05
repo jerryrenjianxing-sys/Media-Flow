@@ -5,6 +5,8 @@ import hashlib
 import re
 import sqlite3
 import uuid
+import time
+from agent_queue import AgentQueueMixin
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -181,7 +183,7 @@ class InitializationRecord:
     cancel_requested: bool
 
 
-class TaskStore:
+class TaskStore(AgentQueueMixin):
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -205,6 +207,7 @@ class TaskStore:
     def initialize(self) -> None:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode = WAL")
+            self.initialize_agent_queue(connection)
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tasks (
@@ -2012,6 +2015,8 @@ class TaskStore:
 
     def set_paused(self, paused: bool) -> None:
         with self.connection() as connection:
+            if paused:
+                connection.execute("UPDATE agent_task_batches SET state='paused' WHERE state='active'")
             connection.execute(
                 "INSERT INTO system_state(key, value, updated_at) VALUES ('paused', ?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value, "
@@ -2560,6 +2565,9 @@ class TaskStore:
 
     def recover_interrupted(self, device_id: str) -> int:
         with self.connection() as connection:
+            interrupted = connection.execute("SELECT id FROM tasks WHERE device_id=? AND status='running'", (device_id,)).fetchall()
+            for row in interrupted:
+                self.close_agent_batch_after_failure(connection, row['id'])
             cursor = connection.execute(
                 "UPDATE tasks SET status='failed', finished_at=?, "
                 "error='worker_interrupted; task was not retried automatically' "
@@ -2601,6 +2609,7 @@ class TaskStore:
         connection = self.connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            self.expire_agent_batches(connection)
             self._expire_device_view_sessions(connection)
             control = connection.execute(
                 "SELECT 1 FROM device_view_sessions WHERE device_id=? AND mode='control' "
@@ -2613,9 +2622,7 @@ class TaskStore:
             paused = connection.execute(
                 "SELECT value FROM system_state WHERE key='paused'"
             ).fetchone()
-            if paused and paused["value"] == "1":
-                connection.commit()
-                return None
+            queue_filter = self.agent_queue_filter(bool(paused and paused["value"] == "1"))
             stopped = connection.execute(
                 "SELECT value FROM system_state WHERE key=?",
                 (f"stop:{device_id}",),
@@ -2625,8 +2632,8 @@ class TaskStore:
                 return None
             row = connection.execute(
                 "SELECT id FROM tasks WHERE device_id=? AND status='pending' "
-                "AND not_before<=? ORDER BY not_before, created_at, id LIMIT 1",
-                (device_id, now_iso()),
+                "AND not_before<=? AND " + queue_filter + " ORDER BY not_before, created_at, id LIMIT 1",
+                (device_id, now_iso(), time.time()),
             ).fetchone()
             if row is None:
                 connection.commit()
@@ -2644,6 +2651,7 @@ class TaskStore:
 
     def has_ready(self, device_id: str) -> bool:
         with self.connection() as connection:
+            self.expire_agent_batches(connection)
             self._expire_device_view_sessions(connection)
             control = connection.execute(
                 "SELECT 1 FROM device_view_sessions WHERE device_id=? AND mode='control' "
@@ -2655,8 +2663,7 @@ class TaskStore:
             paused = connection.execute(
                 "SELECT value FROM system_state WHERE key='paused'"
             ).fetchone()
-            if paused and paused["value"] == "1":
-                return False
+            queue_filter = self.agent_queue_filter(bool(paused and paused["value"] == "1"))
             stopped = connection.execute(
                 "SELECT value FROM system_state WHERE key=?",
                 (f"stop:{device_id}",),
@@ -2665,8 +2672,8 @@ class TaskStore:
                 return False
             row = connection.execute(
                 "SELECT 1 FROM tasks WHERE device_id=? AND status='pending' "
-                "AND not_before<=? LIMIT 1",
-                (device_id, now_iso()),
+                "AND not_before<=? AND " + queue_filter + " LIMIT 1",
+                (device_id, now_iso(), time.time()),
             ).fetchone()
         return row is not None
 
@@ -2711,6 +2718,8 @@ class TaskStore:
             )
             if cursor.rowcount != 1:
                 raise RuntimeError(f"Task is not running or does not exist: {task_id}")
+            if status in {'failed', 'stopped'}:
+                self.close_agent_batch_after_failure(connection, task_id)
 
     @staticmethod
     def _task_recovery_payload(row: sqlite3.Row) -> dict[str, Any]:

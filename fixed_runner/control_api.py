@@ -69,6 +69,7 @@ from product_version import product_version
 
 HOST = "127.0.0.1"
 PORT = 48138
+_AGENT_SERVICE_LOCK = threading.Lock()
 PROFILE_NAME = "default"
 DEVICE_PREFERENCES_PROFILE = "device-preferences"
 
@@ -736,6 +737,12 @@ def _run_virtual_device_continue(store: TaskStore, operation_id: str) -> None:
             progress=100,
             error=f"{type(exc).__name__}: {exc}",
         )
+
+
+def submit_vm_command(store, virtual_device_id, body):
+    from virtual_commands import submit_virtual_command
+    target = _run_virtual_device_lifecycle if body.get('action') in {'start', 'stop', 'restart'} else _run_virtual_device_extended_operation
+    return submit_virtual_command(store, virtual_device_id, body, executor=target)
 
 
 def _run_virtual_device_lifecycle(
@@ -2857,6 +2864,19 @@ def comment_screenshot_path(
 
 
 class Handler(BaseHTTPRequestHandler):
+    def agent_service(self):
+        # Lazy: an unused Agent must not add processes or block the legacy UI.
+        from agent_service import AgentService
+        with _AGENT_SERVICE_LOCK:
+            service = getattr(self.server, '_mediaflow_agent', None)
+            if service is None:
+                store = self.store
+                service = AgentService(lambda: build_status_payload(store, normalized_config(store.get_profile(PROFILE_NAME) or {})),
+                                       store=store, model_status_reader=openrouter_key_status, worker_launcher=ensure_workers,
+                                       virtual_dispatch=lambda device_id, body: submit_vm_command(store, device_id, body), evidence_root=DEFAULT_ARTIFACTS)
+                self.server._mediaflow_agent = service
+            return service
+
     store = TaskStore(DEFAULT_DB)
     review_store = TopicReviewStore(DEFAULT_DB, PROJECT_ROOT)
     review_store.seed_manifests(TOPIC_MANIFESTS)
@@ -2907,6 +2927,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        if path.startswith('/api/agent/'):
+            from agent_service import handle_agent_http
+            handle_agent_http(self, 'GET', path)
+            return
         initialization_match = re.fullmatch(
             r"/api/devices/([^/]+)/initialization(?:/(report))?", path
         )
@@ -3406,6 +3430,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             path = urlparse(self.path).path
+            if path.startswith('/api/agent/'):
+                from agent_service import handle_agent_http
+                handle_agent_http(self, 'POST', path, body)
+                return
             if path == "/api/virtual-device-template/cancel":
                 operation = self.store.request_template_cancellation(str(body.get("operation_id") or ""))
                 self._json({"ok": True, "operation": operation}, 202)
@@ -3928,55 +3956,8 @@ class Handler(BaseHTTPRequestHandler):
                 action = str(body.get("action") or "").strip().lower()
                 if action not in {"start", "stop", "restart", "clone", "backup", "repair_standard"}:
                     raise ValueError("虚拟机操作不受支持")
-                virtual_device = self.store.get_virtual_device(virtual_device_id)
-                # A stopped/failed setup can wait for human input indefinitely.
-                # Stop is the explicit escape hatch: operation creation below
-                # atomically cancels that waiting setup before the provider call.
-                if action != "stop":
-                    VirtualDeviceInventory(self.store).assert_idle(virtual_device)
-                custom_path = str(body.get("mumu_path") or "").strip() or None
-                key = str(body.get("idempotency_key") or "").strip()
-                if not key:
-                    raise ValueError("虚拟机操作缺少幂等键")
-                request = {
-                    "virtual_device_id": virtual_device_id,
-                    "action": action,
-                    "mumu_path": custom_path,
-                }
-                if action == "clone":
-                    request.update(
-                        provider="mumu",
-                        provider_install_id=virtual_device["provider_install_id"],
-                    )
-                    operation, created = self.store.create_numbered_virtual_operation(
-                        action, request, idempotency_key=key
-                    )
-                else:
-                    operation, created = self.store.create_virtual_operation(
-                        action, request, idempotency_key=key
-                    )
-                if created:
-                    target = (
-                        _run_virtual_device_lifecycle
-                        if action in {"start", "stop", "restart"}
-                        else _run_virtual_device_extended_operation
-                    )
-                    threading.Thread(
-                        target=target,
-                        kwargs={
-                            "store": self.store,
-                            "operation_id": operation["id"],
-                            "virtual_device_id": virtual_device_id,
-                            "action": action,
-                            "custom_path": custom_path,
-                        },
-                        daemon=True,
-                        name=f"virtual-{action}-{operation['id'][:8]}",
-                    ).start()
-                self._json(
-                    {"ok": True, "created": created, "operation": operation},
-                    202 if created else 200,
-                )
+                result = submit_vm_command(self.store, virtual_device_id, {**body, 'action': action})
+                self._json(result, 202 if result['created'] else 200)
                 return
             if path == "/api/device-onboarding/scan":
                 config = normalized_config(self.store.get_profile(PROFILE_NAME) or {})

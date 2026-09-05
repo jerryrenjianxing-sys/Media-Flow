@@ -114,9 +114,12 @@ def wait_while_paused(
     poll_seconds: float,
     recorder: Uia2RunRecorder | None = None,
     device_id: str | None = None,
+    *, task_id: str | None = None,
 ) -> None:
     pause_seen = False
     while store.is_paused():
+        if task_id and (store.agent_task_may_run_paused(task_id) or store.agent_task_stop_requested(task_id)):
+            return
         if device_id and store.is_stop_requested(device_id):
             print_json({"event": "pause_interrupted_by_stop", "device_id": device_id})
             if recorder is not None:
