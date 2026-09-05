@@ -110,3 +110,14 @@ MuMu management commands SHALL use the MuMu installation directory as their work
 #### Scenario: MuMu finalizes the creation timestamp after inventory discovery
 - **WHEN** an unused auto-discovered import has slightly different provisional and finalized timestamps
 - **THEN** both timestamps must belong to the original import operation interval rather than compare exactly, and explicit verification retries preserve the original operation provenance and all failed receipts
+
+### Requirement: Private template execution uses the desktop backend
+The installer SHALL submit template operations to the same-version local backend rather than execute MuMu from an SSH session. A transient archive-process observation timeout SHALL retain the original operation and continue bounded observation, never resend its command.
+
+#### Scenario: SSH quiet installation
+- **WHEN** installation runs through SSH
+- **THEN** the same-version backend owns MuMu execution and the installer polls durable stages, cancellation and terminal results; a missing backend produces an actionable error without importing
+
+#### Scenario: Explicit replacement after proven control failure
+- **WHEN** the user explicitly requests a new attempt after the imported private template failed control validation and is stopped
+- **THEN** preserve the failed instance and receipt and create at most one new import; reject this option for an unknown import result

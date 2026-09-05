@@ -623,7 +623,7 @@ def _run_virtual_device_create(
             created = LocalVmTemplate(store, custom_path).create(
                 operation_id, name, int(request.get("display_index") or 0),
                 rebuild=request.get("rebuild") is True, prepare_only=request.get("prepare_only") is True,
-                private_manifest=request.get("private_manifest"), resume_instance_id=request.get("resume_instance_id"))
+                private_manifest=request.get("private_manifest"), resume_instance_id=request.get("resume_instance_id"), new_attempt=request.get("new_attempt") is True)
             store.update_virtual_operation(operation_id, status="completed", stage="completed", progress=100,
                                            result=created, message="已预装抖音；请打开模拟器登录，然后选择任务")
             return
@@ -3418,6 +3418,13 @@ class Handler(BaseHTTPRequestHandler):
                     if body.get("confirmation") != "导入私人快照，保留旧模板和实例":
                         raise ValueError("请确认私人快照可能有缓存与账号标识；旧模板和实例保留")
                     private_manifest = str(Path(str(body["private_manifest"])).resolve(strict=True))
+                    if body.get('new_attempt') and body.get('new_attempt_confirmation') != '保留失败副本并新建一次':
+                        raise ValueError('新建模板必须明确确认保留失败副本，不会自动重复导入')
+                    counts = self.store.task_status_counts()
+                    if not self.store.is_paused() or counts.get('running') or counts.get('pending'):
+                        raise ValueError('请先暂停业务队列并等待任务池为空')
+                    if self.store.list_active_virtual_operations():
+                        raise ValueError('已有虚拟机操作未结束，请在平台查看进度')
                 if body.get("rebuild") and body.get("confirmation") != "新建干净模板，保留旧实例":
                     raise ValueError("请确认新建干净模板；已有实例不会删除")
                 import_directory = None
@@ -3429,11 +3436,11 @@ class Handler(BaseHTTPRequestHandler):
                 operation, created = self.store.create_virtual_operation(
                     "template_prepare", {"virtual_device_id": "local-template-creation", "from_template": True,
                                          "prepare_only": True, "rebuild": body.get("rebuild") is True,
-                                         "import_directory": import_directory, "private_manifest": private_manifest, "resume_instance_id": body.get("resume_instance_id")},
+                                         "import_directory": import_directory, "private_manifest": private_manifest, "resume_instance_id": body.get("resume_instance_id"), "new_attempt": body.get('new_attempt') is True},
                     idempotency_key=str(body.get("idempotency_key") or ""))
                 if created:
                     threading.Thread(target=_run_virtual_device_create,
-                                     kwargs={"store": self.store, "operation_id": operation["id"], "name": "本机模板", "custom_path": None},
+                                     kwargs={"store": self.store, "operation_id": operation["id"], "name": "本机模板", "custom_path": body.get('mumu_path')},
                                      daemon=True).start()
                 self._json({"ok": True, "operation": operation}, 202)
                 return

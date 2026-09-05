@@ -63,11 +63,12 @@ def main():
     parser.add_argument('--mumu-manager')
     parser.add_argument('--cancel-file')
     parser.add_argument('--resume-instance')
+    parser.add_argument('--new-attempt', action='store_true')
     args = parser.parse_args()
-    from task_store import TaskStore
-    from runtime_layout import RUNTIME_ROOT
     try:
-        result = execute(args.manifest, TaskStore(RUNTIME_ROOT / 'tasks.db'), custom_path=args.mumu_manager, cancel_file=args.cancel_file, resume_instance_id=args.resume_instance)
+        from template_installer_bridge import execute as submit
+        result = submit(args.manifest, custom_path=args.mumu_manager, cancel_file=args.cancel_file,
+                        resume_instance_id=args.resume_instance, new_attempt=args.new_attempt)
         code = 0
     except Exception as exc:
         result = {'status': 'failed', 'stage': 'template_import', 'message': str(exc),

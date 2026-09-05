@@ -20,6 +20,7 @@ namespace MediaFlow.Installation
         private readonly TextBox templatePath = new TextBox();
         private readonly TextBox mumuPath = new TextBox();
         private readonly TextBox resumeInstance = new TextBox();
+        private readonly CheckBox newTemplateAttempt = new CheckBox();
         internal int ExitCode = 20;
 
         internal int RunQuiet() { Install(null, EventArgs.Empty); return ExitCode; }
@@ -27,10 +28,11 @@ namespace MediaFlow.Installation
         private void ConfigurePrivateInstall(string[] args, Button cancel)
         {
             quiet = Array.IndexOf(args, "--quiet") >= 0;
+            newTemplateAttempt.Checked = Array.IndexOf(args, "--new-template-attempt") >= 0;
             var options = new Dictionary<string, string>();
             for (int i = 0; i < args.Length; i++)
             {
-                if (args[i] == "--quiet") continue;
+                if (args[i] == "--quiet" || args[i] == "--new-template-attempt") continue;
                 if (i + 1 >= args.Length || (args[i] != "--install-dir" && args[i] != "--template-dir"
                     && args[i] != "--log-file" && args[i] != "--mumu-manager" && args[i] != "--resume-instance"))
                     throw new ArgumentException("未知安装参数或缺少参数值。");
@@ -47,6 +49,10 @@ namespace MediaFlow.Installation
             templatePath.Location = new Point(52, 364); templatePath.Size = new Size(652, 31);
             mumuPath.Location = new Point(52, 430); mumuPath.Size = new Size(652, 31);
             resumeInstance.Location = new Point(52, 500); resumeInstance.Size = new Size(652, 31);
+            newTemplateAttempt.Text = "上次已确定显示验收失败：保留失败副本并新建一次（不用于未知结果）";
+            newTemplateAttempt.Location = new Point(52, 539); newTemplateAttempt.Size = new Size(652, 28);
+            cancel.Location = new Point(432, 573);
+            Controls.Add(newTemplateAttempt);
             Controls.AddRange(new Control[] {
                 new Label { Text = "私人模板目录（留空则使用安装磁盘的 MediaFlowTemplates）", AutoSize = true, Location = new Point(52, 340) }, templatePath,
                 new Label { Text = "MuMu管理程序（私人模板导入需要确认实际存储盘）", AutoSize = true, Location = new Point(52, 407) }, mumuPath,
@@ -98,6 +104,8 @@ namespace MediaFlow.Installation
                 if (item.Key == "PrivateTemplateExpected" && item.Value == "true") required = true;
             var payload = PrivateTemplatePayload.Read(Application.ExecutablePath, required);
             if (payload == null) return null;
+            if (newTemplateAttempt.Checked && resumeInstance.Text.Length > 0)
+                throw new ArgumentException("新建一次与接续核验不能同时选择；旧副本始终保留。");
             if (resumeInstance.Text.Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(resumeInstance.Text, "^[0-9]+$"))
                 throw new ArgumentException("接续实例号只能填写数字；留空表示首次导入。");
             string directory = String.IsNullOrWhiteSpace(templatePath.Text)
@@ -129,7 +137,8 @@ namespace MediaFlow.Installation
             var info = new ProcessStartInfo(python, QuoteArgument(script) + " --manifest " + QuoteArgument(manifest)
                 + " --result " + QuoteArgument(result) + " --mumu-manager " + QuoteArgument(mumuPath.Text)
                 + " --cancel-file " + QuoteArgument(cancelFile)
-                + (resumeInstance.Text.Length > 0 ? " --resume-instance " + QuoteArgument(resumeInstance.Text) : "")) {
+                + (resumeInstance.Text.Length > 0 ? " --resume-instance " + QuoteArgument(resumeInstance.Text) : "")
+                + (newTemplateAttempt.Checked ? " --new-attempt" : "")) {
                 UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = root };
             info.EnvironmentVariables["TEMP"] = Path.GetDirectoryName(manifest);
             info.EnvironmentVariables["TMP"] = Path.GetDirectoryName(manifest);

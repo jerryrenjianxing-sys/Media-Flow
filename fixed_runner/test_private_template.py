@@ -39,6 +39,17 @@ class SettingsInputTests(unittest.TestCase):
 
 
 class MuMuAsyncArchiveTests(unittest.TestCase):
+    def test_transient_observation_timeout_does_not_fail_or_repeat_import(self):
+        import subprocess
+        from mumu_archive import wait_import
+        provider = Mock()
+        provider.list_instances.return_value = [{'provider_instance_id': '3'}]
+        with patch('mumu_archive.archive_busy', side_effect=[subprocess.TimeoutExpired('process observation', 15), False, False]), \
+                patch('mumu_archive.time.sleep'), patch('mumu_archive.time.monotonic', return_value=1):
+            result = wait_import(provider, Path('private.mumudata'), {'0','1','2'}, deadline=100)
+        self.assertEqual(result['provider_instance_id'], '3')
+        provider.import_backup.assert_not_called()
+
     def test_manager_child_does_not_hold_mediaflow_install_directory(self):
         from virtual_devices import MuMuProvider
         with tempfile.TemporaryDirectory() as directory:
@@ -271,6 +282,33 @@ class PrivateImportTests(PayloadTests):
         self.setup_service()
         with patch('private_vm_template.shutil.disk_usage', return_value=Mock(free=0)), self.assertRaises(ValueError):
             self.service.create(self.op['id'], 'template', 0, private_manifest=self.manifest_file)
+        self.service.provider.import_backup.assert_not_called()
+
+    def test_explicit_new_attempt_preserves_known_failed_copy(self):
+        self.setup_service()
+        reason = '模板实际显示不是900×1600、320 DPI'
+        with patch('private_vm_template.settings_input_check', side_effect=ValueError(reason)), self.assertRaises(ValueError):
+            self.service.create(self.op['id'], 'template', 0, private_manifest=self.manifest_file)
+        self.store.update_virtual_operation(self.op['id'], status='failed', stage='failed', progress=100, error=reason)
+        old = self.store.get_profile('private-template-import:' + self.manifest['sha256'])
+        old_vm = self.store.get_virtual_device(old['virtual_device_id'])
+        def second(_):
+            path = self.vmroot/'new-vm-2'; path.mkdir(); (path/'data.vdi').write_bytes(b'new private fixture')
+            self.service.provider.list_instances.return_value = [{'provider_instance_id':'0','state':'stopped'},{'provider_instance_id':'1','state':'stopped'}]
+            return {'provider_instance_id':'1','name':'private-new','state':'stopped'}
+        self.service.provider.import_backup.side_effect = second
+        op,_ = self.store.create_virtual_operation('template_prepare',{},idempotency_key='new-explicit-attempt')
+        with patch('mumu_archive.archive_busy',return_value=False), patch('private_vm_template.settings_input_check',return_value={'version_name':'test','chinese_input_verified':True}):
+            result = self.service.create(op['id'],'template',0,private_manifest=self.manifest_file,new_attempt=True)
+        self.assertEqual(result['status'],'ready')
+        self.assertEqual(self.store.get_virtual_device(old['virtual_device_id']),old_vm)
+        self.assertEqual(self.store.get_profile('private-template-import:'+self.manifest['sha256']+':failed:'+self.op['id']),old)
+        self.assertEqual(self.service.provider.import_backup.call_count,2)
+
+    def test_unknown_import_cannot_use_new_attempt(self):
+        self.failed_import_fixture()
+        with self.assertRaisesRegex(ValueError,'未知导入'):
+            self.service.create(self.recovery['id'],'template',0,private_manifest=self.manifest_file,new_attempt=True)
         self.service.provider.import_backup.assert_not_called()
 
     def test_cancel_before_import_does_not_call_provider(self):

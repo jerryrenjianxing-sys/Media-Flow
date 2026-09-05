@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -98,7 +98,7 @@ class ProcessSpec:
     log_path: str
     expected_executable: str
     required_markers: tuple[str, ...] = ()
-    env: dict[str, str] | None = None
+    env: dict[str, str] | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)

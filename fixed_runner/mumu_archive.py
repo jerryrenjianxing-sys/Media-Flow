@@ -73,7 +73,7 @@ def wait_export(manager, directory, before, *, deadline):
             raise RuntimeError('出现多个导出结果，无法唯一确认；不会重放')
         if len(changed) == 1:
             archive = changed[0]
-            if archive.stat().st_size > 0 and not archive_busy(archive):
+            if archive.stat().st_size > 0 and not observation_pending(archive):
                 test_archive(manager, archive)
                 return archive
         time.sleep(2)
@@ -86,7 +86,7 @@ def wait_import(provider, archive, before, *, deadline):
         created = [item for item in provider.list_instances() if item['provider_instance_id'] not in before]
         if len(created) > 1:
             raise RuntimeError('出现多个新实例，导入结果不唯一；现场保留，不重放')
-        if len(created) == 1 and not archive_busy(archive):
+        if len(created) == 1 and not observation_pending(archive):
             current = str(created[0]['provider_instance_id'])
             if stable == current:
                 return created[0]
@@ -95,3 +95,12 @@ def wait_import(provider, archive, before, *, deadline):
             stable = None
         time.sleep(2)
     raise RuntimeError('导入截止时间已到，实际结果待确认；保留实例，不重复导入')
+
+
+def observation_pending(archive):
+    try:
+        return archive_busy(archive)
+    except subprocess.TimeoutExpired:
+        # A slow process observer is not evidence that MuMu failed or finished.
+        # The caller retains its original overall deadline and command identity.
+        return True

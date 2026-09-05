@@ -144,7 +144,7 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:48138/api/resume -ContentTy
 ## 8. 变更验收顺序
 
 1. OpenSpec 严格校验。
-2. Python 离线测试。
+2. Python 离线测试使用 `.venv\Scripts\python.exe scripts/test-python.py`，隔离模型配置、凭证及调用计数；不要直接发现测试而读取本机活动模型配置。
 3. 控制台构建和渲染测试。
 4. 本地 API 状态检查。
 5. 浏览器页面和关键交互检查。

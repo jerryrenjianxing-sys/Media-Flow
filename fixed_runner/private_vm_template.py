@@ -31,8 +31,9 @@ def settings_input_check(endpoint, evidence_directory):
         device.http_timeout = 15
         image = device.screenshot(format='pillow')
         image.save(directory / 'connected.png')
-        if image.size != (900, 1600) or effective_density(adb(endpoint, 'shell', 'wm', 'density')) != 320:
-            raise ValueError('模板实际显示不是900×1600、320 DPI，未修改配置')
+        dpi = effective_density(adb(endpoint, 'shell', 'wm', 'density'))
+        if image.size != (900, 1600) or dpi != 320:
+            raise ValueError(f'模板实际显示不是900×1600、320 DPI：当前{image.size[0]}×{image.size[1]}、{dpi} DPI；未修改配置')
         if not package_installed(endpoint):
             raise ValueError('模板没有安装抖音，不能激活')
         app = package_version(endpoint)
@@ -104,13 +105,27 @@ def load_manifest(path):
     return value, snapshot
 
 
-def import_private(service, operation_id, manifest_path, *, validator=None, resume_instance_id=None):
+def import_private(service, operation_id, manifest_path, *, validator=None, resume_instance_id=None, new_attempt=False):
     from local_vm_template import PROFILE, disk_seal
     from virtual_device_inventory import manager_identity
     validator = validator or settings_input_check
     manifest, snapshot = load_manifest(manifest_path)
     receipt_key = 'private-template-import:' + manifest['sha256']
     previous = service.store.get_profile(receipt_key) or {}
+    if new_attempt:
+        old = service.store.get_virtual_operation(previous.get('operation_id', '')) if previous else None
+        known_control_failure = str((old or {}).get('error') or '').removeprefix('ValueError: ').startswith('模板实际显示不是900×1600、320 DPI')
+        if resume_instance_id is not None or previous.get('status') != 'failed' or not known_control_failure or not previous.get('virtual_device_id'):
+            raise ValueError('只能显式新建已确认显示验收失败的模板；未知导入结果不可重放')
+        current = next((v for v in service.provider.list_instances() if str(v['provider_instance_id']) == str(previous['provider_instance_id'])), None)
+        saved = service.store.get_virtual_device(previous['virtual_device_id'])
+        if not current or current.get('state') != 'stopped' or not saved.get('recipe', {}).get('is_template'):
+            raise ValueError('失败副本尚未停止或身份不符；请先停止该模板，不操作原有实例')
+        from mumu_archive import archive_busy
+        if archive_busy(snapshot):
+            raise ValueError('归档操作仍在进行，不允许新建')
+        service.store.save_profile(receipt_key + ':failed:' + previous['operation_id'], previous)
+        previous = {}  # Explicit new import only; old receipt/instance/operation retained.
     if resume_instance_id is not None and (not previous or previous.get('virtual_device_id')):
         raise ValueError('没有可接续的未登记导入现场；不会重新导入或覆盖已登记实例')
     resume = previous and resume_instance_id is not None
