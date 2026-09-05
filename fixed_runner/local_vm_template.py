@@ -171,14 +171,14 @@ class LocalVmTemplate:
         self.store.save_profile(PROFILE + ":" + version, state)
         return state
 
-    def create(self, operation_id, name, display_index, *, rebuild=False, prepare_only=False, private_manifest=None):
+    def create(self, operation_id, name, display_index, *, rebuild=False, prepare_only=False, private_manifest=None, resume_instance_id=None):
         if not _LOCK.acquire(blocking=False):
             raise ValueError("已有模板或新增虚拟机操作，请等待当前操作结束")
         try:
             self._checkpoint(operation_id, "template_verifying", 1, "正在检查本机模板状态")
             if private_manifest:
                 from private_vm_template import import_private
-                state = import_private(self, operation_id, private_manifest)
+                state = import_private(self, operation_id, private_manifest, resume_instance_id=resume_instance_id)
                 return {key: state.get(key) for key in ("template_version", "virtual_device_id", "source", "sha256", "status")}
             state = self.store.get_profile(PROFILE) or {}
             if state.get("status") not in {None, "ready"} and not rebuild:

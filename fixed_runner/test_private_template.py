@@ -39,6 +39,17 @@ class SettingsInputTests(unittest.TestCase):
 
 
 class MuMuAsyncArchiveTests(unittest.TestCase):
+    def test_actual_remote_nested_timeout_continues_observation_not_reimport(self):
+        from mumu_archive import accept_dispatch
+        from virtual_devices import CommandResult
+        accept_dispatch(CommandResult([], 1, '{"2":{"errcode":-502,"errmsg":"mainnx request failed"}}', ''))
+
+    def test_nested_real_failure_is_not_hidden_by_one_timeout(self):
+        from mumu_archive import accept_dispatch
+        from virtual_devices import CommandResult
+        with self.assertRaises(RuntimeError):
+            accept_dispatch(CommandResult([], 1, '{"2":{"errcode":-502},"3":{"errcode":-404}}', ''))
+
     def test_rpc_timeout_is_not_a_second_export_command(self):
         from virtual_devices import MuMuProvider, CommandResult
         with tempfile.TemporaryDirectory() as directory:
@@ -108,6 +119,74 @@ class PayloadTests(unittest.TestCase):
 
 
 class PrivateImportTests(PayloadTests):
+    def failed_import_fixture(self):
+        from datetime import datetime
+        self.setup_service()
+        self.store.update_virtual_operation(self.op['id'], status='failed', stage='template_failed', progress=100, error='nested -502')
+        self.original = self.store.get_virtual_operation(self.op['id'])
+        self.store.save_profile('private-template-import:' + self.manifest['sha256'], {
+            **self.manifest, 'status': 'failed', 'before_ids': [], 'operation_id': self.op['id']})
+        self.service.provider.list_instances.return_value = [{
+            'provider_instance_id': '0', 'name': 'retained-import', 'state': 'stopped',
+            'created_timestamp': int(datetime.fromisoformat(self.original['created_at']).timestamp()*1_000_000)+1000}]
+        disk = self.vmroot / 'MuMuPlayer-15.0-0'
+        disk.mkdir()
+        (disk / 'data.vdi').write_bytes(b'original import')
+        self.recovery, _ = self.store.create_virtual_operation('template_prepare', {'virtual_device_id': 'local-template-creation'}, idempotency_key='explicit-recovery')
+
+    def test_explicit_recovery_verifies_unique_import_without_replaying(self):
+        self.failed_import_fixture()
+        with patch('mumu_archive.archive_busy', return_value=False), patch('mumu_archive.test_archive') as archive_check, \
+                patch('private_vm_template.settings_input_check', return_value={'version_name': 'test', 'chinese_input_verified': True}):
+            result = self.service.create(self.recovery['id'], 'template', 0, private_manifest=self.manifest_file, resume_instance_id='0')
+        self.assertEqual(result['status'], 'ready')
+        self.assertEqual(self.store.get_profile('private-template-import:' + self.manifest['sha256'])['recovery_of'], self.original['id'])
+        self.service.provider.import_backup.assert_not_called()
+        archive_check.assert_called_once()
+        self.assertEqual(self.store.get_virtual_operation(self.original['id']), self.original)
+
+    def test_recovery_reuses_only_fresh_auto_discovered_identity(self):
+        self.failed_import_fixture()
+        observed = self.service.provider.list_instances.return_value[0]
+        self.store.save_virtual_device({**observed, 'provider': 'mumu', 'virtual_device_id': 'fresh-remote-id',
+            'discovery_source': 'provider_auto_discovery', 'provider_snapshot': observed})
+        with patch('mumu_archive.archive_busy', return_value=False), patch('mumu_archive.test_archive'), \
+                patch('private_vm_template.settings_input_check', return_value={'version_name': 'test', 'chinese_input_verified': True}):
+            result = self.service.create(self.recovery['id'], 'template', 0, private_manifest=self.manifest_file, resume_instance_id='0')
+        self.assertEqual(result['virtual_device_id'], 'fresh-remote-id')
+        self.assertEqual(len(self.store.list_virtual_devices()), 1)
+        self.service.provider.import_backup.assert_not_called()
+
+    def test_recovery_never_overwrites_connected_identity(self):
+        self.failed_import_fixture()
+        observed = self.service.provider.list_instances.return_value[0]
+        existing = self.store.save_virtual_device({**observed, 'provider': 'mumu', 'virtual_device_id': 'used-device',
+            'discovery_source': 'provider_auto_discovery', 'provider_snapshot': observed, 'android_identity': 'existing-account'})
+        with patch('mumu_archive.archive_busy', return_value=False), patch('mumu_archive.test_archive'), self.assertRaises(ValueError):
+            self.service.create(self.recovery['id'], 'template', 0, private_manifest=self.manifest_file, resume_instance_id='0')
+        self.assertEqual(self.store.get_virtual_device('used-device'), existing)
+        self.service.provider.start_and_resolve_adb.assert_not_called()
+
+    def test_recovery_rejects_missing_history_without_dispatch(self):
+        self.setup_service()
+        with self.assertRaisesRegex(ValueError, '没有可接续'):
+            self.service.create(self.op['id'], 'template', 0, private_manifest=self.manifest_file, resume_instance_id='0')
+        self.service.provider.import_backup.assert_not_called()
+
+    def test_recovery_rejects_ambiguous_wrong_time_or_active_archive(self):
+        self.failed_import_fixture()
+        original = self.service.provider.list_instances.return_value
+        cases = [([{**original[0], 'provider_instance_id': '1'}], False),
+                 (original + [{**original[0], 'provider_instance_id': '1'}], False),
+                 ([{**original[0], 'created_timestamp': 0}], False),
+                 ([{**original[0], 'state': 'running'}], False), (original, True)]
+        for instances, busy in cases:
+            self.service.provider.list_instances.return_value = instances
+            with self.subTest(instances=instances, busy=busy), patch('mumu_archive.archive_busy', return_value=busy), self.assertRaises(ValueError):
+                self.service.create(self.recovery['id'], 'template', 0, private_manifest=self.manifest_file, resume_instance_id='0')
+        self.service.provider.import_backup.assert_not_called()
+        self.service.provider.start_and_resolve_adb.assert_not_called()
+
     def setup_service(self):
         from local_vm_template import LocalVmTemplate, PROFILE
         from task_store import TaskStore

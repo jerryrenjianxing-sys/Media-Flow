@@ -623,7 +623,7 @@ def _run_virtual_device_create(
             created = LocalVmTemplate(store, custom_path).create(
                 operation_id, name, int(request.get("display_index") or 0),
                 rebuild=request.get("rebuild") is True, prepare_only=request.get("prepare_only") is True,
-                private_manifest=request.get("private_manifest"))
+                private_manifest=request.get("private_manifest"), resume_instance_id=request.get("resume_instance_id"))
             store.update_virtual_operation(operation_id, status="completed", stage="completed", progress=100,
                                            result=created, message="已预装抖音；请打开模拟器登录，然后选择任务")
             return
@@ -3429,7 +3429,7 @@ class Handler(BaseHTTPRequestHandler):
                 operation, created = self.store.create_virtual_operation(
                     "template_prepare", {"virtual_device_id": "local-template-creation", "from_template": True,
                                          "prepare_only": True, "rebuild": body.get("rebuild") is True,
-                                         "import_directory": import_directory, "private_manifest": private_manifest},
+                                         "import_directory": import_directory, "private_manifest": private_manifest, "resume_instance_id": body.get("resume_instance_id")},
                     idempotency_key=str(body.get("idempotency_key") or ""))
                 if created:
                     threading.Thread(target=_run_virtual_device_create,

@@ -15,12 +15,18 @@ from pathlib import Path
 def accept_dispatch(result):
     try:
         body = json.loads(result.stdout)
-        code = body.get('errcode', 0)
+        def codes(value):
+            if isinstance(value, dict):
+                return ([value['errcode']] if 'errcode' in value else []) + [code for child in value.values() for code in codes(child)]
+            if isinstance(value, list):
+                return [code for child in value for code in codes(child)]
+            return []
+        found = codes(body)
     except (ValueError, AttributeError):
-        code = None
-    if code == -502:
+        found = []
+    if found and -502 in found and all(code in {0, -502} for code in found):
         return  # Uncertain dispatch, NOT failure or permission to repeat.
-    if result.returncode or code not in {None, 0}:
+    if result.returncode or any(code != 0 for code in found):
         raise RuntimeError('MuMu导入/导出未确认；现场保留，不自动重放：' + (result.stderr or result.stdout)[:300])
 
 

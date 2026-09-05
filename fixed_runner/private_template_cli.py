@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 
-def execute(manifest_path, store, *, custom_path=None, cancel_file=None):
+def execute(manifest_path, store, *, custom_path=None, cancel_file=None, resume_instance_id=None):
     from local_vm_template import LocalVmTemplate
     from private_vm_template import load_manifest
     counts = store.task_status_counts()
@@ -27,8 +27,9 @@ def execute(manifest_path, store, *, custom_path=None, cancel_file=None):
         'virtual_device_id': 'local-template-creation', 'from_template': True, 'prepare_only': True,
         'private_manifest': str(Path(manifest_path).resolve()), 'installer_pid': os.getpid(), 'cancel_file': cancel_file,
         'installer_owner': asdict(owner),
+        'resume_instance_id': resume_instance_id,
         'progress_file': str(Path(manifest_path).parent / 'import-progress.json'),
-    }, idempotency_key='private-template-install:' + manifest['sha256'])
+    }, idempotency_key='private-template-install:' + manifest['sha256'] + (':resume:' + str(resume_instance_id) if resume_instance_id is not None else ''))
     if not created and operation['status'] != 'completed':
         raise ValueError('上次私人模板操作未完成；现场保留，请核对后处理，不会重复导入')
     if not created:
@@ -39,7 +40,7 @@ def execute(manifest_path, store, *, custom_path=None, cancel_file=None):
                 'template_version': result['template_version'], 'sha256': result['sha256']}
     try:
         result = LocalVmTemplate(store, custom_path).create(operation['id'], '私人模板', 0,
-                                                          prepare_only=True, private_manifest=manifest_path)
+                                                          prepare_only=True, private_manifest=manifest_path, resume_instance_id=resume_instance_id)
         store.update_virtual_operation(operation['id'], status='completed', stage='completed', progress=100,
                                        result=result, message='私人快照已验证并设为默认；旧模板和实例保留')
         return {'operation_id': operation['id'], 'status': 'completed', **result}
@@ -55,11 +56,12 @@ def main():
     parser.add_argument('--result', required=True)
     parser.add_argument('--mumu-manager')
     parser.add_argument('--cancel-file')
+    parser.add_argument('--resume-instance')
     args = parser.parse_args()
     from task_store import TaskStore
     from runtime_layout import RUNTIME_ROOT
     try:
-        result = execute(args.manifest, TaskStore(RUNTIME_ROOT / 'tasks.db'), custom_path=args.mumu_manager, cancel_file=args.cancel_file)
+        result = execute(args.manifest, TaskStore(RUNTIME_ROOT / 'tasks.db'), custom_path=args.mumu_manager, cancel_file=args.cancel_file, resume_instance_id=args.resume_instance)
         code = 0
     except Exception as exc:
         result = {'status': 'failed', 'stage': 'template_import', 'message': str(exc),

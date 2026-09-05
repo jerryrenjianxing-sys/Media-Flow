@@ -10,6 +10,7 @@ import shutil
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 
 from private_template_payload import digest, validate_manifest
@@ -103,14 +104,17 @@ def load_manifest(path):
     return value, snapshot
 
 
-def import_private(service, operation_id, manifest_path, *, validator=None):
+def import_private(service, operation_id, manifest_path, *, validator=None, resume_instance_id=None):
     from local_vm_template import PROFILE, disk_seal
     from virtual_device_inventory import manager_identity
     validator = validator or settings_input_check
     manifest, snapshot = load_manifest(manifest_path)
     receipt_key = 'private-template-import:' + manifest['sha256']
     previous = service.store.get_profile(receipt_key) or {}
-    if previous:
+    if resume_instance_id is not None and (not previous or previous.get('virtual_device_id')):
+        raise ValueError('没有可接续的未登记导入现场；不会重新导入或覆盖已登记实例')
+    resume = previous and resume_instance_id is not None
+    if previous and not resume:
         if previous.get('status') != 'ready':
             raise ValueError('此前模板导入结果未完成；请核对已保留的实例，不会自动重复导入')
         current = next((item for item in service.provider.list_instances()
@@ -130,12 +134,48 @@ def import_private(service, operation_id, manifest_path, *, validator=None):
     service._checkpoint(operation_id, 'template_importing', 10, '正在导入私人快照；可能包含历史缓存，不是公共干净模板')
     before_ids = [str(item['provider_instance_id']) for item in service.provider.list_instances()]
     before_dirs = {p.resolve() for p in vm_root.iterdir() if p.is_dir()}
+    resumed = None
+    recovery_of = None
+    if resume:
+        old = service.store.get_virtual_operation(previous['operation_id'])
+        if old['status'] != 'failed' or old['id'] == operation_id or previous['status'] != 'failed':
+            raise ValueError('只能用新核验操作接续已失败的导入，不修改旧终态')
+        before_ids = list(previous['before_ids'])
+        added = [v for v in service.provider.list_instances() if str(v['provider_instance_id']) not in before_ids]
+        if len(added) != 1 or str(added[0]['provider_instance_id']) != str(resume_instance_id) or not str(resume_instance_id).isdigit():
+            raise ValueError('指定实例不是原导入后唯一新增实例；不会自动接续或重复导入')
+        resumed = added[0]
+        if resumed.get('state') != 'stopped':
+            raise ValueError('待核验实例必须已停止；不会抢占运行中的实例')
+        created_at = float(resumed.get('created_timestamp') or 0) / 1_000_000
+        if not (datetime.fromisoformat(old['created_at']).timestamp() <= created_at <= datetime.fromisoformat(old['finished_at']).timestamp() + 60):
+            raise ValueError('实例创建时间与原导入操作不符；不能确认来源')
+        matches = [p.resolve() for p in vm_root.glob('MuMuPlayer-*-' + str(resume_instance_id)) if p.is_dir()]
+        if len(matches) != 1:
+            raise ValueError('已导入实例磁盘位置不唯一；现场保留')
+        from mumu_archive import archive_busy, test_archive
+        if archive_busy(snapshot):
+            raise ValueError('MuMu仍在解压；请等待结束后核验，不重复导入')
+        test_archive(service.manager, snapshot)
+        before_dirs.discard(matches[0])
+        recovery_of = old['id']
     state = {**manifest, 'status': 'importing', 'operation_id': operation_id,
-             'message': '私人模板导入尚未完成，原默认模板保留', 'before_ids': before_ids}
+             'message': '私人模板导入尚未完成，原默认模板保留', 'before_ids': before_ids, 'recovery_of': recovery_of}
     service.store.save_profile(receipt_key, state)  # Durable intent BEFORE the irreversible command.
     try:
-        new = service.provider.import_backup(snapshot)
-        new.update(virtual_device_id=uuid.uuid4().hex, provider='mumu',
+        new = resumed if resumed is not None else service.provider.import_backup(snapshot)
+        # The inventory may have observed the retained import after the failed
+        # installer exited. Reuse only its fresh, never-connected local identity.
+        registered = next((v for v in service.store.list_virtual_devices()
+                           if v['provider'] == 'mumu' and str(v['provider_instance_id']) == str(new['provider_instance_id'])), None)
+        if registered and (registered.get('discovery_source') != 'provider_auto_discovery'
+                           or registered.get('android_identity') or registered.get('last_adb_endpoint')
+                           or registered.get('adb_endpoint') or registered.get('display_index') is not None
+                           or registered.get('profile_status') != 'requires_verification'
+                           or not new.get('created_timestamp')
+                           or (registered.get('provider_snapshot') or {}).get('created_timestamp') != new['created_timestamp']):
+            raise ValueError('导入实例已有非空身份或历史状态；不会覆盖已有档案，请核对现场')
+        new.update(virtual_device_id=registered['virtual_device_id'] if registered else uuid.uuid4().hex, provider='mumu',
                    provider_install_id=manager_identity(service.manager), managed=True,
                    discovery_source='private_template', presence_status='present', profile_status='template_only',
                    adb_endpoint=None, last_adb_endpoint=None, android_identity=None,

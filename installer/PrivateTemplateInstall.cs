@@ -19,6 +19,7 @@ namespace MediaFlow.Installation
         private string cancelFile;
         private readonly TextBox templatePath = new TextBox();
         private readonly TextBox mumuPath = new TextBox();
+        private readonly TextBox resumeInstance = new TextBox();
         internal int ExitCode = 20;
 
         internal int RunQuiet() { Install(null, EventArgs.Empty); return ExitCode; }
@@ -31,7 +32,7 @@ namespace MediaFlow.Installation
             {
                 if (args[i] == "--quiet") continue;
                 if (i + 1 >= args.Length || (args[i] != "--install-dir" && args[i] != "--template-dir"
-                    && args[i] != "--log-file" && args[i] != "--mumu-manager"))
+                    && args[i] != "--log-file" && args[i] != "--mumu-manager" && args[i] != "--resume-instance"))
                     throw new ArgumentException("未知安装参数或缺少参数值。");
                 options.Add(args[i], args[++i]);
             }
@@ -39,14 +40,17 @@ namespace MediaFlow.Installation
             templatePath.Text = options.ContainsKey("--template-dir") ? options["--template-dir"] : "";
             mumuPath.Text = options.ContainsKey("--mumu-manager") ? options["--mumu-manager"] : FindMuMuManager();
             logFile = options.ContainsKey("--log-file") ? Path.GetFullPath(options["--log-file"]) : null;
-            ClientSize = new Size(760, 650);
-            status.Location = new Point(52, 532); status.Size = new Size(480, 90);
-            install.Location = new Point(568, 532); cancel.Location = new Point(432, 478);
+            resumeInstance.Text = options.ContainsKey("--resume-instance") ? options["--resume-instance"] : "";
+            ClientSize = new Size(760, 730);
+            status.Location = new Point(52, 612); status.Size = new Size(480, 90);
+            install.Location = new Point(568, 612); cancel.Location = new Point(432, 558);
             templatePath.Location = new Point(52, 364); templatePath.Size = new Size(652, 31);
             mumuPath.Location = new Point(52, 430); mumuPath.Size = new Size(652, 31);
+            resumeInstance.Location = new Point(52, 500); resumeInstance.Size = new Size(652, 31);
             Controls.AddRange(new Control[] {
                 new Label { Text = "私人模板目录（留空则使用安装磁盘的 MediaFlowTemplates）", AutoSize = true, Location = new Point(52, 340) }, templatePath,
-                new Label { Text = "MuMu管理程序（私人模板导入需要确认实际存储盘）", AutoSize = true, Location = new Point(52, 407) }, mumuPath });
+                new Label { Text = "MuMu管理程序（私人模板导入需要确认实际存储盘）", AutoSize = true, Location = new Point(52, 407) }, mumuPath,
+                new Label { Text = "接续核验实例号（通常留空；只核验上次导入现场，不重新导入）", AutoSize = true, Location = new Point(52, 477) }, resumeInstance });
             cancel.DialogResult = DialogResult.None;
             cancel.Click += delegate {
                 if (install.Enabled) { Close(); return; }
@@ -94,6 +98,8 @@ namespace MediaFlow.Installation
                 if (item.Key == "PrivateTemplateExpected" && item.Value == "true") required = true;
             var payload = PrivateTemplatePayload.Read(Application.ExecutablePath, required);
             if (payload == null) return null;
+            if (resumeInstance.Text.Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(resumeInstance.Text, "^[0-9]+$"))
+                throw new ArgumentException("接续实例号只能填写数字；留空表示首次导入。");
             string directory = String.IsNullOrWhiteSpace(templatePath.Text)
                 ? Path.Combine(Path.GetPathRoot(installDirectory), "MediaFlowTemplates") : Path.GetFullPath(templatePath.Text);
             templatePath.Text = directory;
@@ -122,7 +128,8 @@ namespace MediaFlow.Installation
             RecordStage("template_import", "正在导入并验证私人模板；请保持业务队列暂停，可安全请求取消");
             var info = new ProcessStartInfo(python, QuoteArgument(script) + " --manifest " + QuoteArgument(manifest)
                 + " --result " + QuoteArgument(result) + " --mumu-manager " + QuoteArgument(mumuPath.Text)
-                + " --cancel-file " + QuoteArgument(cancelFile)) {
+                + " --cancel-file " + QuoteArgument(cancelFile)
+                + (resumeInstance.Text.Length > 0 ? " --resume-instance " + QuoteArgument(resumeInstance.Text) : "")) {
                 UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = root };
             info.EnvironmentVariables["TEMP"] = Path.GetDirectoryName(manifest);
             info.EnvironmentVariables["TMP"] = Path.GetDirectoryName(manifest);
