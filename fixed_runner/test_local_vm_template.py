@@ -9,6 +9,26 @@ from template_apks import package_paths, install_bundle
 
 
 class TemplateTests(unittest.TestCase):
+    def test_fresh_template_restarts_once_to_register_installed_input(self):
+        service, operation, _ = self.template()
+        template = {"provider_instance_id": "0", "recipe": {"is_template": True}}
+        service.provider.start_and_resolve_adb.return_value = "new-endpoint"
+        with patch("device_initialization._install_fast_input_apk") as install, patch("local_vm_template.adb", side_effect=["other/.IME", "com.github.uiautomator/.AdbKeyboard"]):
+            self.assertEqual(service._prepare_input(operation["id"], template, "old-endpoint"), "new-endpoint")
+        install.assert_called_once_with("old-endpoint")
+        service.provider.stop.assert_called_once_with("0")
+        service.provider.start_and_resolve_adb.assert_called_once_with("0")
+
+    def test_registered_input_needs_no_restart_and_business_vm_is_never_restarted(self):
+        service, operation, _ = self.template()
+        template = {"provider_instance_id": "0", "recipe": {"is_template": True}}
+        with patch("device_initialization._install_fast_input_apk"), patch("local_vm_template.adb", return_value="com.github.uiautomator/.AdbKeyboard"):
+            self.assertEqual(service._prepare_input(operation["id"], template, "endpoint"), "endpoint")
+        service.provider.stop.assert_not_called()
+        with self.assertRaises(ValueError):
+            service._prepare_input(operation["id"], {"provider_instance_id": "1", "recipe": {}}, "existing")
+        service.provider.stop.assert_not_called()
+
     def test_input_component_uses_same_adb_as_template_without_path_dependency(self):
         import device_initialization
         with patch("device_initialization.resolve_adb_executable", return_value="packaged-or-venv-adb.exe"):

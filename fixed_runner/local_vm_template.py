@@ -47,6 +47,33 @@ class LocalVmTemplate:
         self.inventory = VirtualDeviceInventory(store)
         self.custom_path = custom_path
 
+    def _stop_confirmed(self, instance_id):
+        self.provider.stop(str(instance_id))
+        limit = time.monotonic() + 60
+        while time.monotonic() < limit:
+            actual = next((item for item in self.provider.list_instances() if str(item["provider_instance_id"]) == str(instance_id)), None)
+            if actual and actual.get("state") == "stopped":
+                return
+            time.sleep(1)
+        raise RuntimeError("模板未能确认停止，不会继续启动或克隆")
+
+    def _prepare_input(self, operation_id, template, endpoint):
+        # Only the newly-created account-free template may be restarted here.
+        if not template.get("recipe", {}).get("is_template"):
+            raise ValueError("输入组件注册重启仅用于本次新模板")
+        from device_initialization import _install_fast_input_apk, U2_INPUT_IME_COMPONENTS
+        _install_fast_input_apk(endpoint)
+        def registered(address):
+            return bool(set(adb(address, "shell", "ime", "list", "-a", "-s").splitlines()) & U2_INPUT_IME_COMPONENTS)
+        if registered(endpoint):
+            return endpoint
+        self._checkpoint(operation_id, "template_registering_input", 45, "输入组件已安装，正在重启新模板完成首次注册；不重启现有设备")
+        self._stop_confirmed(template["provider_instance_id"])
+        endpoint = self.provider.start_and_resolve_adb(str(template["provider_instance_id"]))
+        if not registered(endpoint):
+            raise RuntimeError("新模板输入组件已安装，但重启后仍未注册；已停止准备，不会反复安装")
+        return endpoint
+
     def _checkpoint(self, operation_id, stage, progress, message):
         operation = self.store.get_virtual_operation(operation_id)
         from datetime import datetime
@@ -115,6 +142,7 @@ class LocalVmTemplate:
         if package_installed(endpoint):
             raise RuntimeError("新模板已存在抖音数据，无法证明干净；不会继续使用")
         manifest.update(install_bundle(endpoint, directory / "apks", manifest))
+        endpoint = self._prepare_input(operation_id, template, endpoint)
         import uiautomator2 as u2
         from device_initialization import _enable_fast_input, _preferred_original_ime
         device = u2.connect(endpoint)
@@ -127,15 +155,7 @@ class LocalVmTemplate:
         if effective_density(adb(endpoint, "shell", "wm", "density")) != 320:
             raise RuntimeError("模板DPI回读不一致")
         self._checkpoint(operation_id, "template_sealing", 50, "正在停止并封存未登录模板")
-        self.provider.stop(str(template["provider_instance_id"]))
-        limit = time.monotonic() + 60
-        while time.monotonic() < limit:
-            actual = next((item for item in self.provider.list_instances() if str(item["provider_instance_id"]) == str(template["provider_instance_id"])), None)
-            if actual and actual.get("state") == "stopped":
-                break
-            time.sleep(1)
-        else:
-            raise RuntimeError("模板未能确认停止，不会开始克隆")
+        self._stop_confirmed(template["provider_instance_id"])
         seal = disk_seal(storage)
         self.store.save_virtual_device({**template, "state": "stopped", "adb_endpoint": None})
         state.update(status="ready", storage=str(storage), disk_seal=seal,
