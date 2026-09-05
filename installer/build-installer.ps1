@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)][string]$SetupPath,
     [string]$OutputPath,
     [Parameter(Mandatory = $true)][string]$PackageVersion,
-    [Parameter(Mandatory = $true)][string]$SourceRevision
+    [Parameter(Mandatory = $true)][string]$SourceRevision,
+    [switch]$PrivateTemplate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,10 +23,12 @@ try {
         'using System.Reflection;'
         ('[assembly: AssemblyInformationalVersion("{0}")]' -f $PackageVersion)
         ('[assembly: AssemblyMetadata("SourceRevision", "{0}")]' -f $SourceRevision)
+        ('[assembly: AssemblyMetadata("PrivateTemplateExpected", "{0}")]' -f $PrivateTemplate.ToString().ToLowerInvariant())
     ) | Set-Content -LiteralPath $versionSource -Encoding utf8
     & $compiler /nologo /target:winexe /optimize+ /platform:x64 /win32manifest:$manifest /win32icon:$icon `
-        /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll `
-        "/resource:$SetupPath,MediaFlow.Setup.exe" "/out:$OutputPath" $source $versionSource
+        /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll `
+        "/resource:$SetupPath,MediaFlow.Setup.exe" "/out:$OutputPath" $source $versionSource `
+        (Join-Path $PSScriptRoot 'PrivateTemplatePayload.cs') (Join-Path $PSScriptRoot 'PrivateTemplateInstall.cs')
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $OutputPath)) { throw 'MediaFlow installer compilation failed.' }
 }
 finally {

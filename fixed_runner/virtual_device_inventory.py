@@ -526,6 +526,14 @@ class VirtualDeviceInventory:
             return []
         observable_actions = {"start", "stop", "restart"}
         for operation in active:
+            # A separately supervised installer can outlive an API restart.
+            # Match creation identity, not just a recyclable process number.
+            owner = (operation.get("request") or {}).get("installer_owner")
+            if owner and operation.get("operation_type") == "template_prepare":
+                from runtime_control import SystemProcessInspector
+                actual = SystemProcessInspector().snapshot(int(owner.get("pid") or 0))
+                if actual and actual.creation_token == owner.get("creation_token") and actual.executable == owner.get("executable"):
+                    continue
             if str(operation.get("operation_type") or "") in observable_actions:
                 continue
             self.store.update_virtual_operation(

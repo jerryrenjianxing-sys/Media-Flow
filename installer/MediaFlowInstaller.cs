@@ -20,21 +20,26 @@ namespace MediaFlow.Installation
     internal static class Program
     {
         [STAThread]
-        private static void Main()
+        private static int Main(string[] args)
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new InstallerWindow());
+            using (var window = new InstallerWindow(args))
+            {
+                if (Array.IndexOf(args, "--quiet") >= 0) return window.RunQuiet();
+                Application.Run(window);
+                return window.ExitCode;
+            }
         }
     }
 
-    internal sealed class InstallerWindow : Form
+    internal sealed partial class InstallerWindow : Form
     {
         private readonly TextBox installPath = new TextBox();
         private readonly Button install = new Button();
         private readonly Label status = new Label();
 
-        public InstallerWindow()
+        public InstallerWindow(string[] args)
         {
             Text = "安装 MediaFlow";
             AutoScaleMode = AutoScaleMode.Dpi;
@@ -76,6 +81,7 @@ namespace MediaFlow.Installation
             install.Click += Install;
             CancelButton = cancel;
             Controls.AddRange(new Control[] { title, subtitle, intro, pathLabel, installPath, browse, note, status, cancel, install });
+            ConfigurePrivateInstall(args, cancel);
             Shown += delegate { ActiveControl = install; installPath.SelectionStart = 0; installPath.SelectionLength = 0; };
         }
 
@@ -131,6 +137,7 @@ namespace MediaFlow.Installation
             bool sameVersionRepair = false;
             try
             {
+                string privateManifest = PreparePrivatePayload(normalized);
                 string installedVersion = ReadInstalledVersion(normalized);
                 string bundledVersion = ReadBundledVersion();
                 if (!String.IsNullOrWhiteSpace(installedVersion))
@@ -157,7 +164,8 @@ namespace MediaFlow.Installation
                     throw new InvalidOperationException("旧版后台尚未安全停止，安装未开始。\r\n" + preparationError);
                 if (sameVersionRepair && !PrepareSameVersionRepair(normalized, out preparationError))
                     throw new InvalidOperationException("同版本修复安装未能准备完成。用户数据没有删除。\r\n" + preparationError);
-                string temporaryDirectory = Path.Combine(Path.GetTempPath(), "MediaFlow-" + Guid.NewGuid().ToString("N"));
+                if (cancelRequested) throw new OperationCanceledException("已取消；尚未修改程序。");
+                string temporaryDirectory = Path.Combine(Path.GetDirectoryName(normalized), ".MediaFlow-install-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(temporaryDirectory);
                 string setup = Path.Combine(temporaryDirectory, "MediaFlow-Setup.exe");
                 using (Stream source = Assembly.GetExecutingAssembly().GetManifestResourceStream("MediaFlow.Setup.exe"))
@@ -166,9 +174,13 @@ namespace MediaFlow.Installation
                     using (var destination = File.Create(setup)) source.CopyTo(destination);
                 }
                 string full = normalized;
-                var info = new ProcessStartInfo(setup, "--installto \"" + full + "\"") { UseShellExecute = true };
+                var info = new ProcessStartInfo(setup, "--installto \"" + full + "\"" + (quiet ? " --silent" : "")) { UseShellExecute = false, CreateNoWindow = quiet };
+                info.EnvironmentVariables["TEMP"] = temporaryDirectory;
+                info.EnvironmentVariables["TMP"] = temporaryDirectory;
                 string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-                if (full.StartsWith(programFiles, StringComparison.OrdinalIgnoreCase)) info.Verb = "runas";
+                if (full.StartsWith(programFiles, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("此每用户安装器请选择非Program Files目录，例如D:\\MediaFlow。");
+                RecordStage("software_install", "正在安装软件；用户数据保持原位置");
                 Process process = Process.Start(info);
                 if (process == null) throw new InvalidOperationException("安装程序未能启动。 ");
                 string waitError;
@@ -178,8 +190,11 @@ namespace MediaFlow.Installation
                 string verificationError;
                 if (!VerifyInstalledState(full, out verificationError))
                     throw new InvalidOperationException("安装文件已写入，但启动组件没有准备完成。\r\n" + verificationError + "\r\n可以保留当前目录并再次点击安装进行修复。");
+                if (privateManifest != null) ImportPrivateTemplate(full, privateManifest);
                 status.ForeColor = Color.FromArgb(42, 135, 82);
                 status.Text = "安装完成。首次打开时请选择数据保存位置。";
+                ExitCode = 0;
+                RecordStage("completed", privateManifest == null ? "软件安装完成" : "软件与私人模板均已完成；旧模板和实例保留");
                 install.Text = "完成";
                 install.Enabled = true;
                 install.Click -= Install;
@@ -187,6 +202,8 @@ namespace MediaFlow.Installation
             }
             catch (Exception exception)
             {
+                ExitCode = exception is OperationCanceledException ? 21 : 20;
+                RecordStage("failed", exception.Message);
                 string recoveryMessage = null;
                 if (existingBackgroundPrepared && !sameVersionRepair) TryRestoreExistingBackground(normalized, out recoveryMessage);
                 if (sameVersionRepair && String.IsNullOrWhiteSpace(recoveryMessage))

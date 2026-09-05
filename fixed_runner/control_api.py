@@ -622,7 +622,8 @@ def _run_virtual_device_create(
             from local_vm_template import LocalVmTemplate
             created = LocalVmTemplate(store, custom_path).create(
                 operation_id, name, int(request.get("display_index") or 0),
-                rebuild=request.get("rebuild") is True, prepare_only=request.get("prepare_only") is True)
+                rebuild=request.get("rebuild") is True, prepare_only=request.get("prepare_only") is True,
+                private_manifest=request.get("private_manifest"))
             store.update_virtual_operation(operation_id, status="completed", stage="completed", progress=100,
                                            result=created, message="已预装抖音；请打开模拟器登录，然后选择任务")
             return
@@ -3412,6 +3413,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/virtual-device-template":
                 if (self.store.get_profile("automation-stop") or {}).get("stopped"):
                     raise ValueError("所有自动操作已停止，请先恢复设备维护")
+                private_manifest = None
+                if body.get("private_manifest"):
+                    if body.get("confirmation") != "导入私人快照，保留旧模板和实例":
+                        raise ValueError("请确认私人快照可能有缓存与账号标识；旧模板和实例保留")
+                    private_manifest = str(Path(str(body["private_manifest"])).resolve(strict=True))
                 if body.get("rebuild") and body.get("confirmation") != "新建干净模板，保留旧实例":
                     raise ValueError("请确认新建干净模板；已有实例不会删除")
                 import_directory = None
@@ -3423,7 +3429,7 @@ class Handler(BaseHTTPRequestHandler):
                 operation, created = self.store.create_virtual_operation(
                     "template_prepare", {"virtual_device_id": "local-template-creation", "from_template": True,
                                          "prepare_only": True, "rebuild": body.get("rebuild") is True,
-                                         "import_directory": import_directory},
+                                         "import_directory": import_directory, "private_manifest": private_manifest},
                     idempotency_key=str(body.get("idempotency_key") or ""))
                 if created:
                     threading.Thread(target=_run_virtual_device_create,

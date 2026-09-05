@@ -25,7 +25,7 @@ class TemplateCancelled(RuntimeError):
 
 def public_status(store):
     value = store.get_profile(PROFILE) or {}
-    status = {key: value.get(key) for key in ("status", "template_version", "app_version", "message", "operation_id")}
+    status = {key: value.get(key) for key in ("status", "template_version", "app_version", "message", "operation_id", "source", "sha256", "private_data_possible")}
     status["operation"] = next((op for op in store.list_active_virtual_operations()
                                 if op["operation_type"] in {"template_prepare", "template_create"}), None)
     return status
@@ -79,7 +79,8 @@ class LocalVmTemplate:
         from datetime import datetime
         if operation["status"] not in {"queued", "running"}:
             raise RuntimeError("操作已停止，不会继续模板创建")
-        if (operation.get("request") or {}).get("cancel_requested"):
+        request = operation.get("request") or {}
+        if request.get("cancel_requested") or (request.get("cancel_file") and Path(request["cancel_file"]).exists()):
             raise TemplateCancelled("模板操作已安全取消，已创建的实例和文件保留；不会自动重放")
         if datetime.now().astimezone() >= datetime.fromisoformat(operation["deadline_at"]):
             raise RuntimeError("模板操作已超时，不会重复创建；请检查已保留的实例")
@@ -87,6 +88,12 @@ class LocalVmTemplate:
             raise RuntimeError("所有自动操作已停止；模板现场已保留")
         self.store.update_virtual_operation(operation_id, status="running", stage=stage,
                                             progress=progress, message=message)
+        if request.get("progress_file"):
+            import json
+            target = Path(request["progress_file"])
+            temporary = target.with_suffix('.partial')
+            temporary.write_text(json.dumps({"stage": stage, "progress": progress, "message": message}, ensure_ascii=False), encoding='utf-8')
+            temporary.replace(target)
 
     def _build(self, operation_id):
         ROOT.mkdir(parents=True, exist_ok=True)
@@ -164,11 +171,15 @@ class LocalVmTemplate:
         self.store.save_profile(PROFILE + ":" + version, state)
         return state
 
-    def create(self, operation_id, name, display_index, *, rebuild=False, prepare_only=False):
+    def create(self, operation_id, name, display_index, *, rebuild=False, prepare_only=False, private_manifest=None):
         if not _LOCK.acquire(blocking=False):
             raise ValueError("已有模板或新增虚拟机操作，请等待当前操作结束")
         try:
             self._checkpoint(operation_id, "template_verifying", 1, "正在检查本机模板状态")
+            if private_manifest:
+                from private_vm_template import import_private
+                state = import_private(self, operation_id, private_manifest)
+                return {key: state.get(key) for key in ("template_version", "virtual_device_id", "source", "sha256", "status")}
             state = self.store.get_profile(PROFILE) or {}
             if state.get("status") not in {None, "ready"} and not rebuild:
                 raise ValueError("上次模板准备未完成，请检查现场后点击重建本机模板；不会自动重放")

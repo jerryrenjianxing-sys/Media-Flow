@@ -626,35 +626,26 @@ class MuMuProvider:
             path.resolve(): (path.stat().st_size, path.stat().st_mtime_ns)
             for path in directory.glob("*.mumudata")
         }
-        self._run(
+        from mumu_archive import accept_dispatch, wait_export
+        deadline = time.monotonic() + 1800
+        result = self._run(
             "export", "-v", str(instance_id), "-d", str(directory), "-n", cleaned_name,
-            "-z", "-ver", "auto", timeout=1800,
+            "-z", "-ver", "auto", timeout=1800, allow_nonzero=True,
         )
-        changed = []
-        for path in directory.glob("*.mumudata"):
-            resolved = path.resolve()
-            fingerprint = (path.stat().st_size, path.stat().st_mtime_ns)
-            if before.get(resolved) != fingerprint and path.stat().st_size > 0:
-                changed.append(resolved)
-        if len(changed) != 1:
-            raise RuntimeError(
-                f"备份结果无法唯一确认，发现{len(changed)}个候选；不会自动重复导出"
-            )
-        return changed[0]
+        accept_dispatch(result)
+        return wait_export(self.manager_path, directory, before, deadline=deadline)
 
     def import_backup(self, backup_path: Path) -> dict[str, Any]:
         backup_path = backup_path.resolve(strict=True)
         if backup_path.suffix.lower() != ".mumudata" or backup_path.stat().st_size <= 0:
             raise ValueError("MuMu备份文件无效")
         before = {item["provider_instance_id"] for item in self.list_instances()}
-        self._run("import", "-p", str(backup_path), "-n", "1", "-ver", "auto", timeout=1800)
-        after = self.list_instances()
-        created = [item for item in after if item["provider_instance_id"] not in before]
-        if len(created) != 1:
-            raise RuntimeError(
-                f"恢复结果无法唯一确认，发现{len(created)}个新增候选；不会自动重复导入"
-            )
-        return created[0]
+        from mumu_archive import accept_dispatch, wait_import, test_archive
+        test_archive(self.manager_path, backup_path)
+        deadline = time.monotonic() + 1800
+        result = self._run("import", "-p", str(backup_path), "-n", "1", "-ver", "auto", timeout=1800, allow_nonzero=True)
+        accept_dispatch(result)
+        return wait_import(self, backup_path, before, deadline=deadline)
 
     def delete(self, instance_id: str) -> None:
         before = {

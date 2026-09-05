@@ -2,10 +2,14 @@
     [string]$Version = '',
     [ValidateSet('development', 'release')]
     [string]$Channel = 'development',
-    [switch]$SkipVelopack
+    [switch]$SkipVelopack,
+    [string]$TemplateManifestPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
+if ($TemplateManifestPath -and ($Channel -ne 'development' -or $SkipVelopack)) {
+    throw 'Private snapshot payloads require an explicit development installer, never a public release or stage-only build.'
+}
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $canonicalVersionPath = Join-Path $projectRoot 'packaging\version.json'
 if (-not (Test-Path -LiteralPath $canonicalVersionPath)) {
@@ -64,6 +68,10 @@ foreach ($sourcePath in @(
 $outRoot = Join-Path $PSScriptRoot 'out'
 $stage = Join-Path $outRoot 'MediaFlow-win-x64'
 $releases = Join-Path $outRoot 'Releases'
+$identityPath = Join-Path $outRoot ("release-identities\{0}.json" -f $packageVersion)
+if (-not $SkipVelopack -and (Test-Path -LiteralPath $identityPath)) {
+    throw "Installer identity for $packageVersion is already frozen. Reuse the existing checked package or increment the development version; do not rebuild different bytes under the same version."
+}
 $sourcePython = Join-Path $projectRoot '.venv\Scripts\python.exe'
 $sourceSitePackages = Join-Path $projectRoot '.venv\Lib\site-packages'
 $dotnet = Join-Path $PSScriptRoot 'tools\dotnet-runtime\expanded\dotnet.exe'
@@ -312,6 +320,19 @@ $manifest = [ordered]@{
     code_signed = $false
     user_visible_brand = 'MediaFlow 媒体自动化平台'
 }
+if ($TemplateManifestPath) {
+    $privateTemplate = Get-Content -LiteralPath $TemplateManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $manifest['private_installer_payload'] = [ordered]@{
+        source = 'private_snapshot'
+        template_version = $privateTemplate.template_version
+        sha256 = $privateTemplate.sha256
+        size_bytes = $privateTemplate.size_bytes
+        private_data_possible = $true
+        public_redistribution = $false
+    }
+    $manifest['distribution_label'] = 'private-test-only'
+    $manifest['contains_local_state_scope'] = 'program payload only; private snapshot is a separate overlay'
+}
 $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'release-manifest.json') -Encoding utf8
 
 if (-not $SkipVelopack) {
@@ -343,9 +364,15 @@ if (-not $SkipVelopack) {
     if ($generatedPortable) { Copy-Item -LiteralPath $generatedPortable.FullName -Destination (Join-Path $releases 'MediaFlow-Portable-x64.zip') -Force }
     & (Join-Path $projectRoot 'installer\build-installer.ps1') -SetupPath $brandedSetup `
         -OutputPath (Join-Path $releases 'MediaFlow-Installer.exe') `
-        -PackageVersion $packageVersion -SourceRevision $sourceRevision.Trim()
+        -PackageVersion $packageVersion -SourceRevision $sourceRevision.Trim() -PrivateTemplate:([bool]$TemplateManifestPath)
     if ($LASTEXITCODE -ne 0) { throw 'MediaFlow branded installer build failed.' }
     $installerPath = Join-Path $releases 'MediaFlow-Installer.exe'
+    if ($TemplateManifestPath) {
+        & $sourcePython (Join-Path $projectRoot 'fixed_runner\private_template_payload.py') --append $installerPath --manifest $TemplateManifestPath
+        if ($LASTEXITCODE -ne 0) { throw 'Private template overlay verification failed; installer must not be distributed.' }
+        $privateNotice = Join-Path $releases 'PRIVATE-TEST-ONLY.txt'
+        [IO.File]::WriteAllText($privateNotice, 'PRIVATE TEST ONLY. The appended snapshot can contain account identifiers and caches. Do not upload to GitHub or publicly redistribute. Program payload and snapshot are audited separately.', [Text.UTF8Encoding]::new($false))
+    }
     $installerChecksumPath = Join-Path $releases 'MediaFlow-Installer.exe.sha256'
     $installerSha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
     [System.IO.File]::WriteAllText(
@@ -353,6 +380,11 @@ if (-not $SkipVelopack) {
         "$installerSha256  MediaFlow-Installer.exe`r`n",
         [System.Text.UTF8Encoding]::new($false)
     )
+    New-Item -ItemType Directory -Force -Path (Split-Path $identityPath -Parent) | Out-Null
+    $identity = [ordered]@{ version=$packageVersion; source_revision=$sourceCommit.Trim(); installer_sha256=$installerSha256; private_template=[bool]$TemplateManifestPath }
+    $identityBytes = [Text.UTF8Encoding]::new($false).GetBytes(($identity | ConvertTo-Json))
+    $identityStream = [IO.File]::Open($identityPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $identityStream.Write($identityBytes, 0, $identityBytes.Length) } finally { $identityStream.Dispose() }
 }
 
 $stageSize = Get-ChildItem -LiteralPath $stage -Recurse -File | Measure-Object Length -Sum

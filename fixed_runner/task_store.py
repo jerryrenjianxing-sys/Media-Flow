@@ -52,7 +52,7 @@ DEVICE_VIEW_SESSION_PROFILES = {"wall", "focus"}
 DEVICE_VIEW_SESSION_ACTIVE_STATUSES = {"created", "connected", "disconnected"}
 VIRTUAL_OPERATION_TIMEOUT_SECONDS = {
     "template_create": 1800,
-    "template_prepare": 1800,
+    "template_prepare": 3600,
     "create": 600,
     "clone": 600,
     "backup": 1800,
