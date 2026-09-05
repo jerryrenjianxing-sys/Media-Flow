@@ -125,6 +125,7 @@ class FakeDevice:
         self.foreground = DOUYIN_PACKAGE if foreground else "com.android.launcher"
         self.clicks: list[tuple[str, int, int]] = []
         self.app_starts = 0
+        self.app_stops = 0
 
     def window_size(self):
         return 1080, 2400
@@ -162,6 +163,9 @@ class FakeDevice:
         self.app_starts += 1
         self.foreground = package
         self.state = "home"
+
+    def app_stop(self, package: str) -> None:
+        self.app_stops += 1
 
 
 def v3_nav() -> str:
@@ -981,6 +985,44 @@ class EngagementInspectorTest(unittest.TestCase):
         result, _recorder = self.inspect(device)
         self.assertEqual(result["status"], "completed")
         self.assertEqual(device.app_starts, 1)
+
+    def test_nonhome_preflight_force_stops_before_reopening(self) -> None:
+        class SearchDevice(FakeDevice):
+            def app_start(self, package, **kwargs):
+                self.app_starts += 1
+                if self.app_stops:
+                    self.state = "home"
+
+            def press(self, key):
+                pass
+
+        device = SearchDevice({"search": hierarchy(node("搜索"))})
+        device.state = "search"
+        inspector = EngagementInspector(device, Recorder(), sleep=lambda _: None)
+        self.assertEqual(inspector._prepare_feed(), HOME)
+        self.assertEqual((device.app_stops, device.app_starts), (1, 1))
+        self.assertEqual(device.clicks, [])
+
+    def test_failed_cold_restart_is_not_replayed_during_cleanup(self) -> None:
+        class StuckSearch(FakeDevice):
+            def app_start(self, package, **kwargs):
+                self.app_starts += 1
+
+            def press(self, key):
+                pass
+
+        device = StuckSearch({"search": hierarchy(node("搜索"))})
+        device.state = "search"
+        result, _ = self.inspect(device)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual((device.app_stops, device.app_starts), (1, 1))
+
+    def test_login_preflight_never_cold_restarts_or_clicks(self) -> None:
+        device = FakeDevice({"home": hierarchy(node("请输入手机号"))})
+        result, _ = self.inspect(device)
+        self.assertEqual(result["failure_reason"], "login_required")
+        self.assertEqual((device.app_stops, device.app_starts), (0, 0))
+        self.assertEqual(device.clicks, [])
 
     def test_conversation_overlay_is_not_mistaken_for_home(self) -> None:
         conversation = hierarchy(

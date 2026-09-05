@@ -152,7 +152,7 @@ class WindowsEntrypointTests(unittest.TestCase):
         version = payload["version"]
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
         self.assertEqual(version, "0.4.1")
-        self.assertEqual(payload["development_iteration"], 7)
+        self.assertEqual(payload["development_iteration"], 8)
         installer = (PROJECT_ROOT / "installer" / "MediaFlowInstaller.cs").read_text(
             encoding="utf-8-sig"
         )

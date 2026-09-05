@@ -63,6 +63,7 @@ def calibrate_engagement_v3(
         "controls": {"aggregate": ["互动消息"]},
     }
     policy = {
+        "inspection_workflow_version": "v3",
         "expected_app_version": app_version,
         "expected_display_signature": display_signature,
         "inspection_calibration": provisional,
@@ -80,9 +81,17 @@ def calibrate_engagement_v3(
             store=store,
             device_id=device_id,
             task_id=f"{origin_id}-engagement-v3-{pass_index}",
+            incident_sink=lambda incident: store.record_incident(
+                task_id=origin_id, device_id=device_id, **incident
+            ),
         )
         result = inspector.inspect(policy)
-        if result.get("status") == "failed" or result.get("restored") is not True:
+        unified = result.get("unified_activity") or {}
+        if (
+            result.get("status") != "completed"
+            or result.get("restored") is not True
+            or unified.get("complete") is not True
+        ):
             raise RuntimeError(
                 str(result.get("failure_reason") or "v3_semantic_calibration_failed")
             )

@@ -962,6 +962,7 @@ class EngagementInspector:
         self._v2_calibration: dict[str, Any] = {}
         self._v2_precondition: dict[str, Any] | None = None
         self._evidence_workflow = "v2"
+        self._cold_restart_attempted = False
         try:
             width, height = device.window_size()
             self._width, self._height = int(width), int(height)
@@ -2466,11 +2467,49 @@ class EngagementInspector:
         source = self._dump()
         self._guard_page(source)
         if not self._is_home(source):
-            restored = self._restore_home()
+            restored = self._cold_restart_home()
             if not restored:
                 raise RuntimeError("main_feed_not_ready")
             source = self._dump()
         return source
+
+    def _cold_restart_home(self) -> bool:
+        """One force-stop/cold-launch under the caller's existing device lock."""
+        if self._cold_restart_attempted:
+            return False
+        # Do not dismiss login or identity checks through recovery.
+        source = self._dump()
+        self._guard_page(source)
+        self._cold_restart_attempted = True
+        try:
+            self._capture_v2("home-recovery-before-restart", source)
+        except Exception as exc:
+            self._recorder.emit("engagement_recovery_evidence_failed", error_type=type(exc).__name__)
+        self._recorder.emit("engagement_recovery", action="app_restart", phase="start")
+        try:
+            self._device.app_stop(DOUYIN_PACKAGE)
+            self._device.app_start(DOUYIN_PACKAGE, stop=False, wait=False)
+            deadline = self._clock() + 20.0
+            for _ in range(20):
+                if self._clock() >= deadline:
+                    break
+                if foreground_package(self._device) == DOUYIN_PACKAGE:
+                    source = self._dump()
+                    if self._is_home(source) and self._clock() < deadline:
+                        self._recorder.emit(
+                            "engagement_recovery", action="app_restart", phase="verified"
+                        )
+                        return True
+                self._sleep(0.5)
+        except Exception as exc:
+            self._recorder.emit(
+                "engagement_recovery", action="app_restart", phase="failed",
+                reason=self._public_reason(exc),
+            )
+            # Keep login and transport errors distinct from a non-home page.
+            raise
+        self._recorder.emit("engagement_recovery", action="app_restart", phase="timeout")
+        return False
 
     def _dump(self) -> str:
         if foreground_package(self._device) != DOUYIN_PACKAGE:
@@ -2553,17 +2592,12 @@ class EngagementInspector:
                 elif attempt < 2:
                     self._device.press("back")
                     self._sleep(0.4)
-                else:
-                    app_start = getattr(self._device, "app_start", None)
-                    if callable(app_start):
-                        app_start(DOUYIN_PACKAGE, stop=False, wait=True)
-                        self._sleep(0.8)
-                        if self._wait_for_home():
-                            return True
             except Exception:
-                if foreground_package(self._device) != DOUYIN_PACKAGE:
-                    return False
-        return False
+                return False
+        try:
+            return self._cold_restart_home()
+        except Exception:
+            return False
 
     def _wait_for_home(self, attempts: int = 4) -> bool:
         """Poll after app launch so a late-rendering home shell is not rejected."""
