@@ -18,6 +18,12 @@ def execute(manifest_path, store, *, custom_path=None, cancel_file=None, resume_
     if store.list_active_virtual_operations():
         raise ValueError('仍有虚拟机操作未结束；请在平台确认现场，不会自动重放')
     manifest, _ = load_manifest(manifest_path)
+    previous = store.get_profile('private-template-import:' + manifest['sha256']) or {}
+    if previous.get('status') == 'ready':
+        from private_vm_template import import_private
+        result = import_private(LocalVmTemplate(store, custom_path), previous['operation_id'], manifest_path)
+        return {'operation_id': previous['operation_id'], 'status': 'completed', 'reused': True,
+                'template_version': result['template_version'], 'sha256': result['sha256']}
     from dataclasses import asdict
     from runtime_control import SystemProcessInspector
     owner = SystemProcessInspector().snapshot(os.getpid())
@@ -29,7 +35,7 @@ def execute(manifest_path, store, *, custom_path=None, cancel_file=None, resume_
         'installer_owner': asdict(owner),
         'resume_instance_id': resume_instance_id,
         'progress_file': str(Path(manifest_path).parent / 'import-progress.json'),
-    }, idempotency_key='private-template-install:' + manifest['sha256'] + (':resume:' + str(resume_instance_id) if resume_instance_id is not None else ''))
+    }, idempotency_key='private-template-install:' + manifest['sha256'] + (':resume:' + str(resume_instance_id) + ':' + str(previous.get('operation_id', 'none')) if resume_instance_id is not None else ''))
     if not created and operation['status'] != 'completed':
         raise ValueError('上次私人模板操作未完成；现场保留，请核对后处理，不会重复导入')
     if not created:

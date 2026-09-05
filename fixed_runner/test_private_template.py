@@ -166,6 +166,24 @@ class PrivateImportTests(PayloadTests):
         self.assertEqual(len(self.store.list_virtual_devices()), 1)
         self.service.provider.import_backup.assert_not_called()
 
+    def test_remote_finalized_timestamp_and_second_explicit_verification(self):
+        self.failed_import_fixture()
+        observed = dict(self.service.provider.list_instances.return_value[0])
+        self.store.save_virtual_device({**observed, 'provider': 'mumu', 'virtual_device_id': 'fresh-remote-id',
+            'discovery_source': 'provider_auto_discovery', 'provider_snapshot': observed})
+        self.service.provider.list_instances.return_value[0]['created_timestamp'] += 5_020_815
+        key = 'private-template-import:' + self.manifest['sha256']
+        prior = self.store.get_profile(key)
+        self.store.update_virtual_operation(self.recovery['id'], status='failed', stage='template_failed', progress=100)
+        self.store.save_profile(key, {**prior, 'operation_id': self.recovery['id'], 'recovery_of': self.original['id']})
+        retry, _ = self.store.create_virtual_operation('template_prepare', {}, idempotency_key='second-explicit-check')
+        with patch('mumu_archive.archive_busy', return_value=False), patch('mumu_archive.test_archive'), \
+                patch('private_vm_template.settings_input_check', return_value={'version_name': 'test', 'chinese_input_verified': True}):
+            result = self.service.create(retry['id'], 'template', 0, private_manifest=self.manifest_file, resume_instance_id='0')
+        self.assertEqual(result['virtual_device_id'], 'fresh-remote-id')
+        self.assertEqual(self.store.get_profile(key)['recovery_of'], self.original['id'])
+        self.service.provider.import_backup.assert_not_called()
+
     def test_recovery_never_overwrites_connected_identity(self):
         self.failed_import_fixture()
         observed = self.service.provider.list_instances.return_value[0]
@@ -270,6 +288,19 @@ class PrivateImportTests(PayloadTests):
         self.store.set_paused(False)
         with self.assertRaisesRegex(ValueError, '暂停'):
             execute(self.manifest_file, self.store)
+
+    def test_cli_reinstallation_of_ready_template_only_checks_seal(self):
+        from private_template_cli import execute
+        self.setup_service()
+        with patch('private_vm_template.settings_input_check', return_value={'version_name': 'test', 'chinese_input_verified': True}):
+            self.service.create(self.op['id'], 'template', 0, private_manifest=self.manifest_file)
+        self.store.update_virtual_operation(self.op['id'], status='completed', stage='completed', progress=100)
+        with patch('local_vm_template.LocalVmTemplate', return_value=self.service), patch('private_vm_template.settings_input_check') as validator:
+            result = execute(self.manifest_file, self.store, resume_instance_id='0')
+        self.assertTrue(result['reused'])
+        self.assertFalse(self.store.list_active_virtual_operations())
+        validator.assert_not_called()
+        self.assertEqual(self.service.provider.import_backup.call_count, 1)
 
     def test_cli_failure_has_durable_terminal_receipt(self):
         from private_template_cli import execute

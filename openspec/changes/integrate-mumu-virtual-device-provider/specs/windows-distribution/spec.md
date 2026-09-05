@@ -106,3 +106,7 @@ MuMu management commands SHALL use the MuMu installation directory as their work
 #### Scenario: MuMu starts a persistent helper during template import
 - **WHEN** MediaFlow invokes MuMuManager from the installed application
 - **THEN** its descendants inherit the MuMu directory, not MediaFlow/current, and do not prevent replacing MediaFlow during the next upgrade
+
+#### Scenario: MuMu finalizes the creation timestamp after inventory discovery
+- **WHEN** an unused auto-discovered import has slightly different provisional and finalized timestamps
+- **THEN** both timestamps must belong to the original import operation interval rather than compare exactly, and explicit verification retries preserve the original operation provenance and all failed receipts

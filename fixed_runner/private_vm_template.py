@@ -136,8 +136,13 @@ def import_private(service, operation_id, manifest_path, *, validator=None, resu
     before_dirs = {p.resolve() for p in vm_root.iterdir() if p.is_dir()}
     resumed = None
     recovery_of = None
+    origin_operation = service.store.get_virtual_operation(operation_id)
     if resume:
-        old = service.store.get_virtual_operation(previous['operation_id'])
+        latest = service.store.get_virtual_operation(previous['operation_id'])
+        if latest['status'] != 'failed':
+            raise ValueError('上次核验仍未结束，不会重入或重放')
+        old = service.store.get_virtual_operation(previous.get('recovery_of') or previous['operation_id'])
+        origin_operation = old
         if old['status'] != 'failed' or old['id'] == operation_id or previous['status'] != 'failed':
             raise ValueError('只能用新核验操作接续已失败的导入，不修改旧终态')
         before_ids = list(previous['before_ids'])
@@ -168,12 +173,19 @@ def import_private(service, operation_id, manifest_path, *, validator=None, resu
         # installer exited. Reuse only its fresh, never-connected local identity.
         registered = next((v for v in service.store.list_virtual_devices()
                            if v['provider'] == 'mumu' and str(v['provider_instance_id']) == str(new['provider_instance_id'])), None)
+        def from_this_import(timestamp):
+            try:
+                start = datetime.fromisoformat(origin_operation['created_at']).timestamp()
+                end = datetime.fromisoformat(origin_operation['finished_at']).timestamp() + 60 if origin_operation.get('finished_at') else time.time()
+                return start <= float(timestamp) / 1_000_000 <= end
+            except (ValueError, TypeError):
+                return False
         if registered and (registered.get('discovery_source') != 'provider_auto_discovery'
                            or registered.get('android_identity') or registered.get('last_adb_endpoint')
                            or registered.get('adb_endpoint') or registered.get('display_index') is not None
                            or registered.get('profile_status') != 'requires_verification'
-                           or not new.get('created_timestamp')
-                           or (registered.get('provider_snapshot') or {}).get('created_timestamp') != new['created_timestamp']):
+                           or not from_this_import(new.get('created_timestamp'))
+                           or not from_this_import((registered.get('provider_snapshot') or {}).get('created_timestamp'))):
             raise ValueError('导入实例已有非空身份或历史状态；不会覆盖已有档案，请核对现场')
         new.update(virtual_device_id=registered['virtual_device_id'] if registered else uuid.uuid4().hex, provider='mumu',
                    provider_install_id=manager_identity(service.manager), managed=True,
