@@ -594,7 +594,7 @@ def _queue_virtual_initialization(
     record = store.create_initialization(
         adb_endpoint,
         platform_id="douyin",
-        options={"search_query": "人工智能", "write_acceptance": False},
+        options={"preparation_version": "on-demand-v1", "requirements": ["connection", "display", "application"], "write_acceptance": False},
     )
     ensure_worker(adb_endpoint)
     created["state"] = "initializing"
@@ -617,6 +617,15 @@ def _run_virtual_device_create(
     custom_path: str | None,
 ) -> None:
     try:
+        request = store.get_virtual_operation(operation_id)["request"]
+        if request.get("from_template"):
+            from local_vm_template import LocalVmTemplate
+            created = LocalVmTemplate(store, custom_path).create(
+                operation_id, name, int(request.get("display_index") or 0),
+                rebuild=request.get("rebuild") is True, prepare_only=request.get("prepare_only") is True)
+            store.update_virtual_operation(operation_id, status="completed", stage="completed", progress=100,
+                                           result=created, message="已预装抖音；请打开模拟器登录，然后选择任务")
+            return
         store.update_virtual_operation(operation_id, status="running", stage="creating", progress=10)
         manager = resolve_mumu_manager(custom_path)
         provider = MuMuProvider(manager)
@@ -656,10 +665,11 @@ def _run_virtual_device_create(
             return
         _queue_virtual_initialization(store, operation_id, created)
     except Exception as exc:
+        from local_vm_template import TemplateCancelled
         store.update_virtual_operation(
             operation_id,
-            status="failed",
-            stage="failed",
+            status="cancelled" if isinstance(exc, TemplateCancelled) else "failed",
+            stage="cancelled" if isinstance(exc, TemplateCancelled) else "failed",
             progress=100,
             error=f"{type(exc).__name__}: {exc}",
         )
@@ -1013,12 +1023,14 @@ def _run_virtual_device_pool(
                 result={"plan": plan, "children": child_operations},
             )
             child, created = store.create_numbered_virtual_operation(
-                "create",
+                "template_create",
                 {
                     "provider": "mumu",
                     "provider_install_id": install_id,
                     "mumu_path": custom_path,
                     "pool_operation_id": operation_id,
+                    "from_template": True,
+                    "virtual_device_id": "local-template-creation",
                 },
                 idempotency_key=f"pool:{operation_id}:create:{index + 1}",
             )
@@ -1337,7 +1349,7 @@ def _virtual_device_guidance(
     waiting_login = initialization_status == "waiting_user" and any(
         marker in initialization_message for marker in ("登录", "验证", "安全确认")
     )
-    initialization_running = initialization_status in {"queued", "running"}
+    initialization_running = initialization_status == "running"
     standard = str(virtual_device.get("standard_status") or "requires_verification")
     capabilities = dict(virtual_device.get("capabilities") or {})
 
@@ -1403,14 +1415,16 @@ def _virtual_device_guidance(
         user_message = "抖音已经安装，账号需要你登录或完成验证"
         suggested_action = "打开画面处理登录，退出人工接管后继续复验"
         available_actions = ["open_screen", "manual_control", "continue_initialization"]
-    elif initialization_running:
-        reason_code = "initialization_running"
+    elif initialization_status in {"queued", "running", "waiting_user"}:
+        from task_preparation import preparation_presentation
+        presentation = preparation_presentation(initialization_status, initialization_message)
+        reason_code = "initialization_" + initialization_status
         issue_status = "normal"
         blocking_scope = "onboarding"
-        user_message = "设备已连接，正在执行固定程序初始化"
-        suggested_action = "等待当前步骤完成"
-        available_actions = ["open_screen"]
-    elif not capability_ready("browse_home"):
+        user_message = presentation["message"]
+        suggested_action = "可安全取消设备准备；执行者停止后即可人工接管" if initialization_running else "可以先人工操作；选择任务时自动准备所需能力"
+        available_actions = presentation["actions"]
+    elif not capability_ready("browse_home") and not virtual_device.get("task_eligibility", {}).get("browse"):
         reason_code = "profile_verification_required"
         issue_status = "partially_available"
         blocking_scope = "onboarding"
@@ -1422,14 +1436,14 @@ def _virtual_device_guidance(
         for name in ("search_input", "engagement_v3", "topic_analysis", "like_favorite", "comment_preview", "comment_send")
     ):
         reason_code = "optional_capabilities_pending"
-        issue_status = "partially_available"
+        issue_status = "normal"
         blocking_scope = "capability"
         missing_count = sum(
             not capability_ready(name)
             for name in ("search_input", "engagement_v3", "topic_analysis", "like_favorite", "comment_preview", "comment_send")
         )
-        user_message = f"设备可看屏和浏览；另有 {missing_count} 项按需能力尚未就绪"
-        suggested_action = "展开能力清单，按准备执行的任务补齐对应能力"
+        user_message = "设备可选任务；首次使用时自动准备所需能力"
+        suggested_action = "请在模拟器中自行登录；遇到实际登录页时才暂停相关任务"
         available_actions = ["open_screen", "manual_control", "add_to_draft", "continue_initialization"]
         if not model_ready:
             available_actions.append("configure_model")
@@ -1442,7 +1456,6 @@ def _virtual_device_guidance(
         available_actions = ["open_screen", "manual_control", "add_to_draft"]
 
     app_ready = connected and not waiting_app
-    login_ready = bool(initialization and initialization.status == "ready")
     readiness_steps = [
         _readiness_step("mumu_engine", "MuMu引擎", "ready" if presence == "present" else "blocked", "已找到MuMu管理能力" if presence == "present" else "MuMu引擎或实例不可用"),
         _readiness_step("instance", "虚拟机实例", "ready" if state != "stopped" and presence == "present" else "waiting", "实例已启动" if state != "stopped" else "等待启动"),
@@ -1451,13 +1464,13 @@ def _virtual_device_guidance(
         _readiness_step("identity", "设备身份", "ready" if connected and virtual_device.get("android_identity") else "waiting", "Android身份已核对" if connected and virtual_device.get("android_identity") else "等待核对Android身份"),
         _readiness_step("standard", "显示环境", "ready" if standard == "standard" else "blocked", "900×1600、320 DPI已确认" if standard == "standard" else str(virtual_device.get("standard_message") or "显示环境不符合MediaFlow标准")),
         _readiness_step("douyin", "抖音安装", "ready" if app_ready else "waiting", "抖音安装检查已通过" if app_ready else "等待安装抖音"),
-        _readiness_step("login", "抖音登录", "ready" if login_ready else "waiting", "账号页面已通过检查" if login_ready else "初始化时检查登录状态"),
+        _readiness_step("login", "抖音登录", "optional", "用户自行登录；仅在任务遇到登录或验证页时提示处理"),
         _readiness_step("browse", "首页浏览", "ready" if capability_ready("browse_home") else "pending", "首页只读流程已验证" if capability_ready("browse_home") else capability_reason("browse_home")),
         _readiness_step("input", "搜索与中文输入", "ready" if capability_ready("search_input") else "optional", "搜索和中文输入已验证" if capability_ready("search_input") else capability_reason("search_input")),
         _readiness_step("engagement", "互动消息巡检", "ready" if capability_ready("engagement_v3") else "optional", "v3共享规则已快速复验" if capability_ready("engagement_v3") else capability_reason("engagement_v3")),
         _readiness_step("model", "视觉模型", "ready" if model_ready else "optional", "当前模型已鉴权并测试" if model_ready else "未配置或尚未测试；不影响ADB、看屏、首页浏览和互动巡检"),
         _readiness_step("writes", "写入能力", "ready" if capability_ready("like_favorite") and capability_ready("comment_send") else "optional", "点赞、收藏和评论发送已验证" if capability_ready("like_favorite") and capability_ready("comment_send") else "只在需要真实互动时补齐，不影响只读任务"),
-        _readiness_step("task", "加入任务", "ready" if capability_ready("browse_home") else "blocked", "可加入草稿；提交时按任务逐项预检" if capability_ready("browse_home") else "首页浏览复验后可加入草稿"),
+        _readiness_step("task", "加入任务", "ready" if connected and standard == "standard" else "blocked", "显示环境达标即可选择任务，运行时准备所需能力" if connected and standard == "standard" else "请连接设备并修复显示环境"),
     ]
     diagnostic_seed = ":".join(
         (
@@ -1482,6 +1495,7 @@ def _virtual_device_guidance(
 
 
 def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, Any]:
+    store.reconcile_orphaned_initializations(worker_id_is_running)
     config = _clear_legacy_development_selection(store, config)
     reconciled_tasks = store.reconcile_orphaned_running(worker_id_is_running)
     managed_virtual_devices = [
@@ -1601,7 +1615,8 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         )
         adb_endpoint = str(virtual_device.get("adb_endpoint") or "")
         latest = store.latest_initialization(adb_endpoint) if adb_endpoint else None
-        if latest and latest.status == "ready" and adb_endpoint in online_device_ids:
+        if (latest and latest.status == "ready" and adb_endpoint in online_device_ids
+                and latest.options.get("preparation_version") != "on-demand-v1"):
             virtual_device["state"] = "ready"
             virtual_device["profile_status"] = "ready"
         runtime_display = dict((runtime_signatures.get(adb_endpoint) or {}).get("display") or {})
@@ -1700,6 +1715,23 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
                 model_status=model_status,
             )
         )
+        from task_preparation import inspection_suspension_key
+        if (store.get_profile(inspection_suspension_key(adb_endpoint)) or {}).get("suspended"):
+            virtual_device.update(reason_code="inspection_suspended", issue_status="partially_available",
+                                  blocking_scope="engagement_v3", user_message="互动巡检已暂停；安全恢复首页后视频任务可继续",
+                                  suggested_action="查看已有现场，点击重新检查并恢复巡检")
+            virtual_device["available_actions"] = list(dict.fromkeys(virtual_device["available_actions"] + ["recheck_inspection"]))
+        preparation_issue = store.get_profile("preparation-issue:" + adb_endpoint) or {}
+        if store.is_stop_requested(adb_endpoint) and preparation_issue:
+            virtual_device.update(reason_code="preparation_waiting_user", issue_status="waiting_user",
+                                  blocking_scope="business", user_message=preparation_issue.get("message", "当前业务已暂停"),
+                                  suggested_action="打开画面处理，完成后点击继续检查；原失败任务不会自动重放")
+            virtual_device["available_actions"] = ["open_screen", "manual_control", "continue_onboarding"]
+        if latest and latest.status in {"queued", "running", "waiting_user"}:
+            # Maintenance presentation wins over older business issues.
+            from task_preparation import preparation_presentation
+            presentation = preparation_presentation(latest.status, latest.message)
+            virtual_device.update(user_message=presentation["message"], available_actions=presentation["actions"])
         virtual_device["can_start"] = bool(
             not active_operation
             and virtual_device.get("presence_status") == "present"
@@ -1715,6 +1747,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         "device_stream_host": RuntimeControl().status("device-stream-host"),
         "device_view_sessions": store.device_view_session_summary(),
         "paused": store.is_paused(),
+        "all_automation_stopped": bool((store.get_profile("automation-stop") or {}).get("stopped")),
         "device_preferences": preferences,
         "stop_requested_device_ids": [
             device_id for device_id in config["device_ids"]
@@ -2974,6 +3007,10 @@ class Handler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if path == "/api/virtual-device-template":
+            from local_vm_template import public_status
+            self._json(public_status(self.store))
+            return
         if path == "/api/virtual-devices/unmanaged":
             custom_path = parse_qs(parsed.query).get("mumu_path", [None])[0]
             self._json(VirtualDeviceInventory(self.store).unmanaged_candidates(custom_path))
@@ -3210,6 +3247,23 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             path = urlparse(self.path).path
+            if path == "/api/automation-stop":
+                stopped = body.get("stopped")
+                if not isinstance(stopped, bool):
+                    raise ValueError("请明确停止或恢复自动操作")
+                self.store.save_profile("automation-stop", {"stopped": stopped})
+                self.store.set_paused(True)
+                if stopped:
+                    for item in self.store.list_managed_virtual_devices():
+                        if item.get("adb_endpoint"):
+                            self.store.request_stop([item["adb_endpoint"]])
+                            latest = self.store.latest_initialization(item["adb_endpoint"])
+                            if latest and latest.status == "running":
+                                self.store.cancel_initialization(item["adb_endpoint"])
+                else:
+                    self.store.clear_stop_requests()
+                self._json({"ok": True, "stopped": stopped, "paused": True})
+                return
             if path != "/api/workbench/draft":
                 self._json({"error": "Not found"}, 404)
                 return
@@ -3351,6 +3405,32 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             path = urlparse(self.path).path
+            if path == "/api/virtual-device-template/cancel":
+                operation = self.store.request_template_cancellation(str(body.get("operation_id") or ""))
+                self._json({"ok": True, "operation": operation}, 202)
+                return
+            if path == "/api/virtual-device-template":
+                if (self.store.get_profile("automation-stop") or {}).get("stopped"):
+                    raise ValueError("所有自动操作已停止，请先恢复设备维护")
+                if body.get("rebuild") and body.get("confirmation") != "新建干净模板，保留旧实例":
+                    raise ValueError("请确认新建干净模板；已有实例不会删除")
+                import_directory = None
+                if body.get("import_directory"):
+                    directory = Path(str(body["import_directory"])).resolve(strict=True)
+                    if not directory.is_dir() or not list(directory.glob("*.apk")):
+                        raise ValueError("该目录没有APK，请导入完整安装包目录")
+                    import_directory = str(directory)
+                operation, created = self.store.create_virtual_operation(
+                    "template_prepare", {"virtual_device_id": "local-template-creation", "from_template": True,
+                                         "prepare_only": True, "rebuild": body.get("rebuild") is True,
+                                         "import_directory": import_directory},
+                    idempotency_key=str(body.get("idempotency_key") or ""))
+                if created:
+                    threading.Thread(target=_run_virtual_device_create,
+                                     kwargs={"store": self.store, "operation_id": operation["id"], "name": "本机模板", "custom_path": None},
+                                     daemon=True).start()
+                self._json({"ok": True, "operation": operation}, 202)
+                return
             create_initialization_match = re.fullmatch(
                 r"/api/devices/([^/]+)/initializations", path
             )
@@ -3439,6 +3519,8 @@ class Handler(BaseHTTPRequestHandler):
                 virtual_device = self.store.get_virtual_device_for_adb(device_id)
                 if virtual_device is None or virtual_device.get("provider") != "mumu":
                     raise ValueError("首版实时画面只支持已接入的MuMu虚拟机")
+                if (virtual_device.get("recipe") or {}).get("is_template"):
+                    raise ValueError("本机模板已封存，不允许打开控制会话；请创建业务实例后操作")
                 raw_token = secrets.token_urlsafe(36)
                 token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
                 session = self.store.create_device_view_session(
@@ -3511,6 +3593,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "operation": operation})
                 return
             if create_initialization_match:
+                if (self.store.get_profile("automation-stop") or {}).get("stopped"):
+                    raise ValueError("所有自动操作已停止，请先恢复设备维护；业务队列仍会保持暂停")
                 device_id = unquote(create_initialization_match.group(1))
                 managed_virtual = next(
                     (
@@ -3534,11 +3618,19 @@ class Handler(BaseHTTPRequestHandler):
                 if self.store.running_count([device_id]):
                     raise ValueError("该设备仍有普通任务在执行，请等待任务结束后初始化")
                 options = initialization_options_from_body(body)
+                if managed_virtual is not None:
+                    from task_preparation import PREPARATION_VERSION
+                    options.update(preparation_version=PREPARATION_VERSION,
+                                   requirements=["connection", "display", "application"])
+                    if body.get("inspection_recheck") is True:
+                        options["inspection_recheck"] = True
+                        options["requirements"].append("engagement_v3")
                 record = self.store.create_initialization(
                     device_id,
                     platform_id="douyin",
                     options=options,
                 )
+                self.store.clear_stop_requests([device_id])
                 worker = ensure_worker(device_id)
                 self._json(
                     {
@@ -3553,7 +3645,10 @@ class Handler(BaseHTTPRequestHandler):
                 device_id = unquote(initialization_action_match.group(1))
                 action = initialization_action_match.group(2)
                 if action == "continue":
+                    if (self.store.get_profile("automation-stop") or {}).get("stopped"):
+                        raise ValueError("所有自动操作已停止，请先恢复设备维护")
                     record = self.store.continue_initialization(device_id)
+                    self.store.clear_stop_requests([device_id])
                     worker = ensure_worker(device_id)
                     self._json(
                         {
@@ -3898,6 +3993,8 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             if path == "/api/virtual-devices":
+                if (self.store.get_profile("automation-stop") or {}).get("stopped"):
+                    raise ValueError("所有自动操作已停止，请先恢复设备维护")
                 key = str(body.get("idempotency_key") or "").strip()
                 custom_path = str(body.get("mumu_path") or "").strip() or None
                 manager = resolve_mumu_manager(custom_path)
@@ -3907,9 +4004,11 @@ class Handler(BaseHTTPRequestHandler):
                     "provider": "mumu",
                     "provider_install_id": manager_identity(manager),
                     "mumu_path": custom_path,
+                    "from_template": True,
+                    "virtual_device_id": "local-template-creation",
                 }
                 operation, created = self.store.create_numbered_virtual_operation(
-                    "create", request, idempotency_key=key
+                    "template_create", request, idempotency_key=key
                 )
                 if created:
                     threading.Thread(

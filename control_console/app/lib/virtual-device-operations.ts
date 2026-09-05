@@ -30,13 +30,18 @@ export const virtualOperationIsActive = (operation?: VirtualOperation | null) =>
 export const virtualOperationStageLabel = (stage?: string) => ({
   queued: "等待处理",
   creating: "正在创建虚拟机",
+  template_apks: "正在校验抖音安装文件",
+  template_creating: "正在创建干净模板",
+  template_installing: "正在预装软件与控制组件",
+  template_sealing: "正在停止并封存模板",
+  template_verifying: "正在检查模板完整性",
   starting_mumu: "正在启动MuMu",
   waiting_android: "正在等待Android启动",
   connecting_adb: "正在连接ADB",
   verifying_identity: "正在核对设备身份",
   adb_ready: "ADB已连接",
   waiting_app_install: "等待安装抖音",
-  initialization_queued: "初始化已开始",
+  initialization_queued: "设备准备已排队",
   adopted_requires_verification: "已接管，等待复验",
   applying_settings: "正在写入并回读配置",
   cloning: "正在克隆虚拟机",
@@ -62,10 +67,12 @@ export async function waitForVirtualOperation(
   options: { intervalMs?: number; maxAttempts?: number } = {},
 ) {
   const intervalMs = options.intervalMs ?? 1000;
-  const maxAttempts = options.maxAttempts ?? 240;
+  const deadline = initial.deadline_at ? Date.parse(initial.deadline_at) : Date.now() + 240_000;
+  const maxAttempts = options.maxAttempts ?? Math.max(1, Math.min(1800, Math.ceil((deadline - Date.now()) / intervalMs)));
   let operation = initial;
   let failures = 0;
   for (let attempt = 0; attempt < maxAttempts && virtualOperationIsActive(operation); attempt += 1) {
+    if (Date.now() >= deadline) throw new Error("操作已达到等待期限，请查看保留的现场；不会自动重复创建");
     await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
     try {
       const response = await fetchLocalApi(

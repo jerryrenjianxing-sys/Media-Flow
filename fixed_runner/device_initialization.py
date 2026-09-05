@@ -5,6 +5,7 @@ import hashlib
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ from platform_profiles import (
 )
 from runtime_layout import BUNDLED_ADB, INITIALIZATION_ARTIFACTS_ROOT
 from task_store import InitializationRecord, TaskStore
+from task_preparation import PreparationWaitingForUser
 from worker_runtime import device_preflight
 from brand import PRODUCT_NAME
 
@@ -66,7 +68,9 @@ def _integer(text: str) -> int | None:
 
 def probe_device(device, device_id: str) -> dict[str, Any]:
     width, height = (int(value) for value in device.window_size())
-    density = _integer(_shell_output(device, ["wm", "density"]))
+    from task_preparation import effective_density
+    density_text = _shell_output(device, ["wm", "density"])
+    density = effective_density(density_text) or _integer(density_text)
     navigation_raw = _shell_output(
         device, ["settings", "get", "secure", "navigation_mode"]
     )
@@ -332,8 +336,11 @@ def execute_initialization(
         "stages": [],
     }
     original_ime = ""
+    deadline = time.monotonic() + 120
 
     def checkpoint(stage: str, current: int, message: str, **details: Any) -> None:
+        if time.monotonic() > deadline:
+            raise RuntimeError("设备准备超过120秒，已停止；可取消后接管或重试")
         if store.initialization_cancel_requested(record.id):
             raise InitializationCancelled("初始化已取消")
         item = {"stage": stage, "message": message, **details}
@@ -349,6 +356,35 @@ def execute_initialization(
         )
 
     try:
+        from task_preparation import PREPARATION_VERSION, prepare_capabilities
+        if record.options.get("preparation_version") == PREPARATION_VERSION:
+            prepared = prepare_capabilities(
+                device, record.device_id,
+                record.options.get("requirements") or ["connection", "display", "application"],
+                lambda stage, message: checkpoint(stage, len(result["stages"]) + 1, message),
+            )
+            if record.options.get("inspection_recheck"):
+                from engagement_inspection import EngagementInspector
+                from task_preparation import engagement_rule, inspection_suspension_key
+                checkpoint("engagement_v3", 4, "正在只读检查互动消息；不会发送互动")
+                inspected = EngagementInspector(
+                    device, recorder, store=store, device_id=record.device_id, task_id=record.id,
+                    incident_sink=lambda incident: store.record_incident(task_id=record.id, device_id=record.device_id, **incident),
+                ).inspect({"inspection_workflow_version": "v3", "preparation_version": PREPARATION_VERSION,
+                           "inspection_calibration": engagement_rule(), "expected_display_signature": "900x1600x320x0xunknown",
+                           "max_items_per_section": 100})
+                result["inspection"] = inspected
+                if inspected.get("restored") is not True:
+                    store.request_stop([record.device_id])
+                if inspected.get("status") != "completed" or not (inspected.get("unified_activity") or {}).get("complete"):
+                    raise InitializationWaitingForUser("巡检仍未完整完成，现场已保存；可人工查看后再检查")
+                store.save_profile(inspection_suspension_key(record.device_id), {"suspended": False, "last_check_id": record.id})
+            result.update(prepared, status="ready")
+            report_path = _report(record, recorder, result)
+            store.finish_initialization(record.id, status="ready", stage="ready",
+                                        message="设备基础准备完成；选择任务后按需检查，无需手工校准",
+                                        result=result, report_path=str(report_path))
+            return result
         checkpoint("preflight", 1, "设备在线、已授权且由独占 Worker 接管")
         if not device_preflight(device):
             raise RuntimeError("设备预检失败，请保持手机在线并解锁")
@@ -554,7 +590,7 @@ def execute_initialization(
             report_path=str(report_path),
         )
         return result
-    except InitializationWaitingForUser as exc:
+    except (InitializationWaitingForUser, PreparationWaitingForUser) as exc:
         result.update(status="waiting_user", error=str(exc))
         report_path = _report(record, recorder, result)
         store.finish_initialization(

@@ -1667,6 +1667,22 @@ def execute_task(
     recorder.emit(
         "task_start", task_id=task.id, task_type=task.task_type, payload=task.payload
     )
+    from task_preparation import PREPARATION_VERSION, prepare_capabilities, inspection_suspension_key
+    if task.payload.get("preparation_version") == PREPARATION_VERSION:
+        from task_preparation import require_business_instance, task_requirements
+        if task_store is None:
+            raise ValueError("缺少任务库存，无法核对当前MuMu控制对象")
+        require_business_instance(task_store, task.device_id)
+        if (task.task_type == "douyin_engagement_inspection" and task_store is not None
+                and (task_store.get_profile(inspection_suspension_key(task.device_id)) or {}).get("suspended")):
+            result = {"status": "degraded", "skipped": True, "task_id": task.id,
+                      "failure_reason": "inspection_suspended", "complete": False,
+                      "message": "此前巡检未完成，已跳过后续巡检；请重新检查并恢复"}
+            recorder.emit("task_complete", **result)
+            return result
+        requirements = task_requirements(task.payload, inspection=task.task_type == "douyin_engagement_inspection")
+        prepare_capabilities(device, task.device_id, requirements,
+                             lambda stage, message: recorder.emit("task_preparation", stage=stage, message=message))
     if task.task_type == "healthcheck":
         result = healthcheck(device, recorder)
     elif task.task_type == "douyin_benchmark":

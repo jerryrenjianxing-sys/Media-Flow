@@ -1422,7 +1422,10 @@ class EngagementInspector:
         if not expected_display or not isinstance(calibration, Mapping):
             raise RuntimeError("v3_calibration_missing")
         controls = calibration.get("controls")
-        if (
+        from task_preparation import engagement_rule, PREPARATION_VERSION
+        bundled = (policy.get("preparation_version") == PREPARATION_VERSION
+                   and all(calibration.get(key) == value for key, value in engagement_rule().items()))
+        if not bundled and (
             int(calibration.get("passes") or 0) < 3
             or calibration.get("later_passes_semantically_equal") is not True
             or not isinstance(controls, Mapping)

@@ -241,6 +241,10 @@ class VirtualDeviceInventory:
             seen.add(instance_id)
             stored = stored_by_instance.get(instance_id)
             if stored is None:
+                if any(op["operation_type"] in {"create", "clone", "restore", "template_create", "template_prepare"}
+                       for op in self.store.list_active_virtual_operations()):
+                    # The owning operation must assign the UUID before discovery.
+                    continue
                 stored = self.store.save_virtual_device(
                     {
                         "virtual_device_id": uuid.uuid4().hex,
@@ -671,6 +675,10 @@ class VirtualDeviceInventory:
         return active
 
     def assert_idle(self, virtual_device: dict[str, Any], *, exclude_operation_id: str | None = None) -> None:
+        if (virtual_device.get("recipe") or {}).get("is_template"):
+            operation = self.store.get_virtual_operation(exclude_operation_id) if exclude_operation_id else {}
+            if operation.get("operation_type") != "template_create":
+                raise ValueError("本机模板已封存，请通过本机模板入口管理，不可当作业务虚拟机操作")
         conflict = self.store.active_virtual_operation(
             virtual_device["virtual_device_id"], exclude_operation_id=exclude_operation_id
         )
@@ -690,7 +698,7 @@ class VirtualDeviceInventory:
             if self.store.has_active_control_session(endpoint):
                 raise ValueError("该虚拟机正在人工接管，请先结束控制会话")
             initialization = self.store.latest_initialization(endpoint)
-            if initialization and initialization.status in {"queued", "running", "waiting_user"}:
+            if initialization and initialization.status == "running":
                 raise ValueError("该虚拟机正在初始化或等待人工处理")
 
     def start(

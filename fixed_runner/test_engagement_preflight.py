@@ -45,7 +45,8 @@ class EngagementPreflightTest(unittest.TestCase):
             store = TaskStore(Path(directory) / "tasks.db")
             self.save_virtual(store, "android-a")
             before = visitor_reminder_status(store, ["127.0.0.1:16416"])
-            self.assertTrue(before["required"])
+            self.assertFalse(before["required"])
+            self.assertTrue(before["reminder_pending"])
 
             after = acknowledge_visitor_reminder(store, ["127.0.0.1:16416"])
             self.assertFalse(after["required"])
@@ -53,7 +54,8 @@ class EngagementPreflightTest(unittest.TestCase):
 
             self.save_virtual(store, "android-b")
             changed = visitor_reminder_status(store, ["127.0.0.1:16416"])
-            self.assertTrue(changed["required"])
+            self.assertFalse(changed["required"])
+            self.assertTrue(changed["reminder_pending"])
             self.assertFalse(changed["devices"][0]["acknowledged"])
 
     def test_acknowledgement_resets_when_app_data_identity_changes(self) -> None:
@@ -67,7 +69,8 @@ class EngagementPreflightTest(unittest.TestCase):
 
             self.save_virtual(store, "android-a", "app-data-b")
             changed = visitor_reminder_status(store, ["127.0.0.1:16416"])
-            self.assertTrue(changed["required"])
+            self.assertFalse(changed["required"])
+            self.assertTrue(changed["reminder_pending"])
             self.assertFalse(changed["devices"][0]["acknowledged"])
 
     def test_acknowledgement_requires_a_connected_registered_virtual_device(self) -> None:

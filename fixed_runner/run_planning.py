@@ -108,7 +108,8 @@ def _device_preview(
         else:
             initialization = str(raw.get("initialization_status") or "")
             profile_verified = bool(raw.get("profile_verified"))
-            if initialization not in {"ready", "legacy"} and not profile_verified:
+            on_demand = raw.get("device_type") == "virtual" and raw.get("environment_status") == "standard"
+            if not on_demand and initialization not in {"ready", "legacy"} and not profile_verified:
                 reason = "设备尚未初始化或需要复验"
         capabilities = (raw or {}).get("capabilities")
         if not reason and isinstance(capabilities, Mapping):
@@ -130,7 +131,7 @@ def _device_preview(
             missing = [
                 name
                 for name in dict.fromkeys(required)
-                if str((capabilities.get(name) or {}).get("status") or "") != "ready"
+                if str((capabilities.get(name) or {}).get("status") or "") not in {"ready", "preparable"}
             ]
             if missing:
                 first = capabilities.get(missing[0]) or {}
@@ -144,6 +145,9 @@ def _device_preview(
                 "name": str((raw or {}).get("friendly_name") or device_id),
                 "available": available,
                 "reason": reason,
+                "preparation_status": "blocked" if reason else "preparable" if any(
+                    value.get("status") == "preparable" for value in ((raw or {}).get("capabilities") or {}).values()
+                ) else "ready",
                 "initialization_status": str(
                     (raw or {}).get("initialization_status") or "unknown"
                 ),
@@ -184,7 +188,7 @@ def build_preview(
             f"{len(unavailable)} 台已选设备当前不可执行，提交时不会为其创建任务"
         )
     if not eligible_ids:
-        blockers.append("没有可执行设备，请检查设备在线、初始化和占用状态")
+        blockers.append("没有可执行设备，请检查连接、显示环境和占用状态")
     if paused:
         warnings.append("任务领取当前已暂停；提交后任务会保持排队")
     probabilities = _action_probabilities(config)
@@ -196,7 +200,7 @@ def build_preview(
         or probabilities["comment"] > 0
     )
     if model_required and model_status is not None and not bool(model_status.get("model_ready")):
-        blockers.append("当前内容模式需要视觉模型，请先完成 OpenRouter 鉴权并测试当前模型")
+        blockers.append("当前内容模式需要视觉模型，请在模型设置中测试并启用当前服务商")
     inspection_profiles = inspection_profiles_for_store(store)
     if config.get("engagement_inspection_enabled") and eligible_ids:
         unsupported = [
@@ -211,10 +215,8 @@ def build_preview(
             blockers.append("互动巡检 v3 仅支持已复验的900×1600标准虚拟机")
         else:
             reminder = visitor_reminder_status(store, eligible_ids)
-            if reminder["required"]:
-                blockers.append(
-                    "互动巡检前请确认：已在抖音隐私设置中打开访客记录"
-                )
+            if reminder.get("reminder_pending"):
+                warnings.append(reminder["message"])
 
     video_task_count = 0
     inspection_task_count = 0

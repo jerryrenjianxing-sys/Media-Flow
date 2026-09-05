@@ -51,6 +51,8 @@ DEVICE_VIEW_SESSION_MODES = {"read_only", "control"}
 DEVICE_VIEW_SESSION_PROFILES = {"wall", "focus"}
 DEVICE_VIEW_SESSION_ACTIVE_STATUSES = {"created", "connected", "disconnected"}
 VIRTUAL_OPERATION_TIMEOUT_SECONDS = {
+    "template_create": 1800,
+    "template_prepare": 1800,
     "create": 600,
     "clone": 600,
     "backup": 1800,
@@ -841,6 +843,20 @@ class TaskStore:
             ).fetchone()
         return self._virtual_operation(row)
 
+    def request_template_cancellation(self, operation_id: str) -> dict[str, Any]:
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM virtual_device_operations WHERE id=?", (operation_id,)).fetchone()
+            if not row or row["operation_type"] not in {"template_prepare", "template_create"}:
+                raise ValueError("不是本机模板操作")
+            if row["status"] not in {"queued", "running"}:
+                raise ValueError("操作已收口，请查看已保留的实例")
+            request = json.loads(row["request_json"])
+            request["cancel_requested"] = True
+            connection.execute("UPDATE virtual_device_operations SET request_json=?, message=?, updated_at=? WHERE id=?",
+                               (json.dumps(request, ensure_ascii=False), "正在安全取消；当前命令结束后停止，不会删除已创建实例", now_iso(), operation_id))
+        return self.get_virtual_operation(operation_id)
+
     def get_virtual_operation(self, operation_id: str) -> dict[str, Any]:
         with self.connection() as connection:
             row = connection.execute(
@@ -925,7 +941,8 @@ class TaskStore:
                 "SELECT * FROM virtual_devices WHERE managed=1 AND state!='retired' "
                 "ORDER BY display_index, created_at, id"
             ).fetchall()
-        return [self._virtual_device(row) for row in rows]
+        return [item for row in rows for item in [self._virtual_device(row)]
+                if not item.get("recipe", {}).get("is_template")]
 
     def list_unmanaged_virtual_devices(self) -> list[dict[str, Any]]:
         with self.connection() as connection:
@@ -1128,12 +1145,12 @@ class TaskStore:
                     raise ValueError("该设备已打开聚焦画面，设备墙暂不重复串流")
             if mode == "control":
                 running = connection.execute(
-                    "SELECT 1 FROM tasks WHERE device_id=? AND status IN ('pending','running') LIMIT 1",
+                    "SELECT 1 FROM tasks WHERE device_id=? AND status='running' LIMIT 1",
                     (clean_device_id,),
                 ).fetchone()
                 initializing = connection.execute(
                     "SELECT 1 FROM device_initializations WHERE device_id=? "
-                    "AND status IN ('queued','running','waiting_user') LIMIT 1",
+                    "AND status='running' LIMIT 1",
                     (clean_device_id,),
                 ).fetchone()
                 controlling = connection.execute(
@@ -1871,7 +1888,13 @@ class TaskStore:
             if workflow_version not in {"v1", "v2", "v3"}:
                 raise ValueError("inspection_workflow_version must be v1, v2, or v3")
             if workflow_version in {"v2", "v3"}:
+                from task_preparation import PREPARATION_VERSION, engagement_rule
+                supplied = payload.get("inspection_calibration") or {}
+                bundled = workflow_version == "v3" and payload.get("preparation_version") == PREPARATION_VERSION and all(
+                    supplied.get(key) == value for key, value in engagement_rule().items())
                 for name in ("expected_app_version", "expected_display_signature"):
+                    if bundled and name == "expected_app_version":
+                        continue
                     value = payload.get(name)
                     if not isinstance(value, str) or not value.strip() or len(value) > 80:
                         raise ValueError(f"{name} is required for {workflow_version} inspection")
@@ -1896,7 +1919,7 @@ class TaskStore:
                     raise ValueError(
                         f"inspection_calibration signature must match frozen {workflow_version} fields"
                     )
-                if (
+                if not bundled and (
                     not isinstance(calibration.get("profile_version"), str)
                     or not calibration["profile_version"].strip()
                     or not isinstance(calibration.get("passes"), int)
@@ -2289,6 +2312,13 @@ class TaskStore:
         connection = self.connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            stop_all = connection.execute("SELECT config_json FROM automation_profiles WHERE name='automation-stop'").fetchone()
+            stop_device = connection.execute("SELECT value FROM system_state WHERE key=?", ("stop:" + device_id,)).fetchone()
+            running = connection.execute("SELECT 1 FROM tasks WHERE device_id=? AND status='running'", (device_id,)).fetchone()
+            if ((stop_all and json.loads(stop_all["config_json"]).get("stopped"))
+                    or (stop_device and stop_device["value"] == "1") or running):
+                connection.commit()
+                return None
             self._expire_device_view_sessions(connection)
             control = connection.execute(
                 "SELECT 1 FROM device_view_sessions WHERE device_id=? AND mode='control' "
@@ -2442,6 +2472,25 @@ class TaskStore:
             connection.close()
         return self.get_initialization(initialization_id)
 
+    def cancel_unstarted_legacy_initializations(self, initialization_ids: list[str]) -> int:
+        """Explicit upgrade targets only; never touch running or historical records."""
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cancelled = 0
+            for identifier in dict.fromkeys(initialization_ids):
+                row = connection.execute("SELECT * FROM device_initializations WHERE id=?", (identifier,)).fetchone()
+                if not row or row["status"] != "queued" or row["started_at"] or row["worker_id"]:
+                    continue
+                if json.loads(row["options_json"]).get("preparation_version") == "on-demand-v1":
+                    continue
+                cancelled += connection.execute(
+                    "UPDATE device_initializations SET status='cancelled', stage='cancelled', message=?, error=?, "
+                    "updated_at=?, finished_at=? WHERE id=? AND status='queued' AND started_at IS NULL",
+                    ("升级dev.11：未执行的旧式全套初始化已取消，今后按任务准备", "superseded_by_on_demand_v1",
+                     now_iso(), now_iso(), identifier),
+                ).rowcount
+            return cancelled
+
     def initialization_cancel_requested(self, initialization_id: str) -> bool:
         with self.connection() as connection:
             row = connection.execute(
@@ -2511,6 +2560,23 @@ class TaskStore:
                 (now_iso(), now_iso(), device_id),
             )
             return cursor.rowcount
+
+    def reconcile_orphaned_initializations(self, worker_is_alive) -> int:
+        """Only a proved-absent executor may release a running preparation lease."""
+        with self.connection() as connection:
+            rows = connection.execute("SELECT id, worker_id FROM device_initializations WHERE status='running'").fetchall()
+        recovered = 0
+        for row in rows:
+            if not row["worker_id"] or worker_is_alive(row["worker_id"]):
+                continue
+            with self.connection() as connection:
+                recovered += connection.execute(
+                    "UPDATE device_initializations SET status='failed', stage='failed', updated_at=?, finished_at=?, "
+                    "message='准备执行者已退出；可重新检查或人工接管', error='worker_interrupted; not replayed' "
+                    "WHERE id=? AND status='running' AND worker_id=?",
+                    (now_iso(), now_iso(), row["id"], row["worker_id"]),
+                ).rowcount
+        return recovered
 
     def claim_next(self, device_id: str, worker_id: str) -> TaskRecord | None:
         connection = self.connect()

@@ -22,7 +22,7 @@ export type VirtualDevice = {
   connected_device?: DeviceStatus | null;
   managed?: boolean; display_index?: number | null; connection_status?: string; can_start?: boolean;
   environment_status?: "standard" | "needs_display_fix" | "unverified"; environment_mismatches?: Array<{ field: string; actual: number | null; expected: number }>;
-  auto_managed?: boolean; capabilities?: Record<string, { status: "ready" | "unavailable"; reason: string; remediation?: string | null }>;
+  auto_managed?: boolean; capabilities?: Record<string, { status: "ready" | "preparable" | "unavailable"; reason: string; remediation?: string | null }>;
   task_eligibility?: Partial<Record<"screen" | "browse" | "search" | "engagement_inspection" | "writes", boolean>>;
   profile_bundle_id?: string | null; ui_compatibility_id?: string | null; remediations?: string[];
   onboarding_status?: string; issue_status?: string; blocking_scope?: string; reason_code?: string;

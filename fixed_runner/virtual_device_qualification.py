@@ -109,8 +109,8 @@ def qualify_virtual_device(
 
     def capability(ready: bool, reason: str, remediation: str | None = None) -> dict[str, Any]:
         return {
-            "status": "ready" if ready else "unavailable",
-            "reason": "可用" if ready else reason,
+            "status": "ready" if ready else "preparable" if base_ready and env_ready and remediation in {"verify_browsing", "verify_engagement_v3", "install_input_component", "verify_search_input"} else "unavailable",
+            "reason": "可用" if ready else "首次使用时自动检查，无需手工校准" if base_ready and env_ready and remediation == "verify_engagement_v3" else reason,
             "remediation": remediation,
         }
 
@@ -152,6 +152,12 @@ def qualify_virtual_device(
             "verify_comment_safety",
         ),
     }
+    # A verified model remains mandatory; missing historical control calibration
+    # is prepared by the fixed executor and never represents write permission.
+    if base_ready and env_ready and model_ready:
+        for name in ("topic_analysis", "like_favorite", "comment_preview", "comment_send"):
+            if capabilities[name]["status"] != "ready":
+                capabilities[name].update(status="preparable", reason="执行时检查本次页面与安全条件")
     remediations = []
     for action in (
         "connect_adb" if not connected else None,
@@ -167,9 +173,9 @@ def qualify_virtual_device(
         "capabilities": capabilities,
         "task_eligibility": {
             "screen": capabilities["adb_view"]["status"] == "ready",
-            "browse": capabilities["browse_home"]["status"] == "ready",
-            "search": capabilities["search_input"]["status"] == "ready",
-            "engagement_inspection": capabilities["engagement_v3"]["status"] == "ready",
+            "browse": base_ready and env_ready,
+            "search": base_ready and env_ready,
+            "engagement_inspection": base_ready and env_ready,
             "writes": capabilities["like_favorite"]["status"] == "ready",
         },
         "profile_bundle_id": PROFILE_BUNDLE_ID if env_ready else None,

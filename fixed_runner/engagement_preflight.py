@@ -26,8 +26,7 @@ def _app_data_generation(
         ).strip()
         if explicit:
             return explicit
-    latest = store.latest_initialization(device_id)
-    return latest.id if latest is not None and latest.status == "ready" else ""
+    return ""
 
 
 def visitor_reminder_status(
@@ -67,7 +66,8 @@ def visitor_reminder_status(
         )
     pending = [item for item in devices if not item["acknowledged"]]
     return {
-        "required": bool(pending),
+        "required": False,
+        "reminder_pending": bool(pending),
         "message": (
             "请先在抖音隐私设置中打开访客记录，否则访客类互动可能不完整。"
             if pending

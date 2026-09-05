@@ -115,8 +115,8 @@ class VirtualDeviceQualificationTests(unittest.TestCase):
         )
         self.assertEqual(result["capabilities"]["browse_home"]["status"], "ready")
         self.assertEqual(result["capabilities"]["like_favorite"]["status"], "ready")
-        self.assertEqual(result["capabilities"]["search_input"]["status"], "unavailable")
-        self.assertEqual(result["capabilities"]["engagement_v3"]["status"], "unavailable")
+        self.assertEqual(result["capabilities"]["search_input"]["status"], "preparable")
+        self.assertEqual(result["capabilities"]["engagement_v3"]["status"], "preparable")
 
 
 if __name__ == "__main__":

@@ -144,6 +144,12 @@ def inspection_profiles_for_store(store: TaskStore) -> dict[str, dict[str, Any]]
             virtual_device_id=str(virtual_device.get("virtual_device_id") or ""),
             android_identity=str(virtual_device.get("android_identity") or ""),
         )
+        if current["managed_standard"]:
+            from task_preparation import engagement_rule, PREPARATION_VERSION
+            current.update(engagement_inspection_version="v3",
+                           engagement_calibration=engagement_rule(),
+                           engagement_display_signature="900x1600x320x0xunknown",
+                           preparation_version=PREPARATION_VERSION)
         profiles[endpoint] = current
     return profiles
 
@@ -484,6 +490,11 @@ def build_scheduled_plan(
                 "seed": base_seed + device_offset * round_count + index,
                 "submission_id": submission_id,
             }
+            from task_preparation import PREPARATION_VERSION, task_requirements
+            on_demand = inspection_profiles.get(device_id, {}).get("preparation_version") == PREPARATION_VERSION
+            if on_demand:
+                round_config.update(preparation_version=PREPARATION_VERSION,
+                                    preparation_requirements=task_requirements(round_config))
             if plan_revision is not None:
                 snapshot = round_snapshot(plan_revision, index + 1)
                 theme = snapshot["theme"]
@@ -545,7 +556,7 @@ def build_scheduled_plan(
                 if inspection_config["inspection_workflow_version"] in {"v2", "v3"}:
                     workflow_version = inspection_config["inspection_workflow_version"]
                     calibration = inspection_profile.get("engagement_calibration")
-                    if (
+                    if not on_demand and (
                         not isinstance(calibration, Mapping)
                         or int(calibration.get("passes") or 0) < 3
                         or calibration.get("later_passes_semantically_equal") is not True
@@ -594,6 +605,9 @@ def build_scheduled_plan(
                         ),
                     )
                     inspection_config["inspection_calibration"] = calibration_snapshot
+                    if on_demand:
+                        inspection_config.update(preparation_version=PREPARATION_VERSION,
+                                                 preparation_requirements=task_requirements(config, inspection=True))
                 inspection_config.pop("round_index", None)
                 inspection_not_before = (
                     base_time

@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DeviceOnboardingDialog } from "../components/device-onboarding-dialog";
 import { DeviceLiveView } from "../components/device-live-view";
+import { LocalTemplatePanel } from "../components/local-template-panel";
 import type { VirtualDevice, VirtualDeviceIssue } from "../components/workbench-types";
 import { fetchLocalApi } from "../lib/local-api";
 import { virtualOperationIsActive, virtualOperationStageLabel, waitForVirtualOperation } from "../lib/virtual-device-operations";
@@ -317,7 +318,7 @@ export default function DevicesPage() {
     finally { setVirtualBusy((current) => { const next = new Set(current); next.delete(virtualDevice.virtual_device_id); return next; }); }
   };
 
-  const initializationRequest = async (deviceId: string, action: "start" | "continue" | "cancel") => {
+  const initializationRequest = async (deviceId: string, action: "start" | "continue" | "cancel", inspectionRecheck = false) => {
     setInitializing((current) => new Set(current).add(deviceId));
     try {
       const write = Boolean(writeAcceptance[deviceId]);
@@ -327,6 +328,7 @@ export default function DevicesPage() {
       const body = action === "start" ? {
         search_query: String(config?.search_query || config?.topic_prompt || "人工智能").slice(0, 80),
         write_acceptance: write,
+        inspection_recheck: inspectionRecheck,
         ...(write ? { confirmation: "ENABLE_WRITE_ACCEPTANCE" } : {}),
       } : {};
       const response = await fetchLocalApi(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, 20_000);
@@ -418,6 +420,7 @@ export default function DevicesPage() {
 
   return <main className="app-shell devices-page">
     <div className="page-shell">
+      {activeTab === "virtual" && <LocalTemplatePanel/>}
       <section className="records-hero devices-hero"><div><p className="eyebrow">VIRTUAL DEVICE POOL</p><h1>MuMu虚拟机管理</h1><p>统一管理本机全部MuMu实例；900×1600、320 DPI达标后，再按任务需要检查对应能力。</p><p className="workspace-page-notice" role="status">{notice}</p></div><div className="hero-actions"><button type="button" className="primary" onClick={() => setAddDeviceOpen(true)}>添加虚拟机</button><button type="button" className="secondary" disabled={scanning} onClick={() => void scan()}>{scanning ? "正在检索…" : "刷新虚拟机"}</button><button type="button" className="secondary" onClick={() => { setFailedImages(new Set()); setImageStamp(Date.now()); }}>刷新全部画面</button><a className="secondary" href="/">返回任务台</a><div className="device-settings-anchor"><button type="button" className="secondary" aria-expanded={deviceSettingsOpen} onClick={() => setDeviceSettingsOpen((value) => !value)}>设备设置</button>{deviceSettingsOpen && <div className="device-settings-popover"><strong>可选设备类型</strong><label className="capsule-switch"><span><b>启用真机支持</b><small>默认关闭；开启后显示真机板块和任务候选</small></span><input type="checkbox" checked={physicalEnabled} onChange={(event) => void savePhysicalPreference(event.target.checked)}/><i aria-hidden="true"/></label><small>关闭不会删除真机档案或历史记录。</small></div>}</div></div></section>
 
       <nav className="device-type-tabs" aria-label="设备类型"><button type="button" className={activeTab === "virtual" ? "active" : ""} onClick={() => setActiveTab("virtual")}>虚拟机</button>{physicalEnabled && <button type="button" className={activeTab === "physical" ? "active" : ""} onClick={() => setActiveTab("physical")}>真机</button>}</nav>
@@ -441,9 +444,14 @@ export default function DevicesPage() {
           return <article id={`virtual-${virtualDevice.virtual_device_id}`} className={`virtual-inventory-card ${unavailable ? "unavailable" : ""}`} key={virtualDevice.virtual_device_id}>
             <div><input className="virtual-select" type="checkbox" aria-label={`选择 ${virtualDevice.name}`} checked={selectedVirtuals.has(virtualDevice.virtual_device_id)} disabled={busy || unavailable} onChange={(event) => setSelectedVirtuals((current) => { const next = new Set(current); if (event.target.checked) next.add(virtualDevice.virtual_device_id); else next.delete(virtualDevice.virtual_device_id); return next; })}/><span className={`dot ${onlineDevice ? "online" : "paused"}`}/><span><strong>{virtualDevice.name}</strong><small>MuMu 实例 {virtualDevice.provider_instance_id} · {virtualDevice.discovery_source === "mediaflow_created" ? "平台创建" : "本机自动发现"}</small></span><em>{stateLabel}</em></div>
             <div className={`virtual-guidance ${virtualDevice.issue_status || "normal"}`}><strong>{virtualDevice.user_message || virtualDevice.last_error || "正在读取设备状态"}</strong><span>{virtualDevice.suggested_action || (virtualDevice.last_connected_at ? `上次连接 ${new Date(virtualDevice.last_connected_at).toLocaleString()}` : "稍后刷新状态")}</span></div>
-            <VirtualCapabilityList device={virtualDevice}/>
+            <details><summary>按需能力诊断</summary><VirtualCapabilityList device={virtualDevice}/></details>
+            {onlineDevice && <div className="virtual-inventory-actions">
+              {virtualDevice.available_actions?.includes("cancel_initialization") && <button type="button" className="secondary" disabled={busy} onClick={() => void initializationRequest(onlineDevice.device_id, "cancel")}>安全取消设备准备</button>}
+              {virtualDevice.task_ready && <a className="primary" href="/">选择任务</a>}
+              {virtualDevice.available_actions?.includes("recheck_inspection") && <button type="button" className="secondary" disabled={busy || onlineDevice.initialization?.status === "running"} onClick={() => void initializationRequest(onlineDevice.device_id, "start", true)}>重新检查并恢复巡检</button>}
+            </div>}
             <div className="virtual-inventory-actions">{onlineDevice ? <><button type="button" className="primary" onClick={() => setFocused({ device: onlineDevice, mode: "read_only" })}>打开画面</button>{virtualDevice.available_actions?.includes("continue_onboarding") && <button type="button" className="primary" disabled={busy} onClick={() => void continueVirtualOnboarding(virtualDevice)}>安装完成，继续检查</button>}{virtualDevice.available_actions?.includes("continue_initialization") && <button type="button" className="primary" disabled={busy} onClick={() => void initializationRequest(onlineDevice.device_id, onlineDevice.initialization?.status === "waiting_user" ? "continue" : "start")}>继续复验</button>}<button type="button" className="secondary" disabled={!canControl} title={canControl ? "取得设备独占锁后操作" : "任务或初始化期间只能观看"} onClick={() => setFocused({ device: onlineDevice, mode: "control" })}>{canControl ? "人工接管" : "当前只能观看"}</button>{virtualDevice.available_actions?.includes("configure_model") && <a className="secondary" href="/content#model-settings">前往配置模型</a>}</> : <button type="button" className="primary" disabled={busy || unavailable || virtualDevice.can_start === false} onClick={() => void startVirtual(virtualDevice)}>{busy ? `${virtualOperationStageLabel(virtualDevice.active_operation?.stage)}…` : ["running", "starting", "adb_ready", "waiting_app"].includes(virtualDevice.state) ? "重试连接" : virtualDevice.profile_status === "ready" ? "启动" : "启动并接入"}</button>}</div>
-            {!!virtualDevice.readiness_steps?.length && <details className="virtual-readiness"><summary>查看就绪检查（{virtualDevice.readiness_steps.filter((step) => step.status === "ready").length}/{virtualDevice.readiness_steps.length}）</summary><ol>{virtualDevice.readiness_steps.map((step) => <li className={step.status} key={step.id}><span>{step.status === "ready" ? "✓" : step.status === "blocked" ? "!" : "·"}</span><p><strong>{step.label}</strong><small>{step.message}</small></p></li>)}</ol><footer>诊断编号 {virtualDevice.diagnostic_id || "—"}</footer></details>}
+            {!!virtualDevice.readiness_steps?.length && <details className="virtual-readiness"><summary>查看连接与能力诊断（无需逐项校准）</summary><ol>{virtualDevice.readiness_steps.map((step) => <li className={step.status} key={step.id}><span>{step.status === "ready" ? "✓" : step.status === "blocked" ? "!" : "·"}</span><p><strong>{step.label}</strong><small>{step.message}</small></p></li>)}</ol><footer>诊断编号 {virtualDevice.diagnostic_id || "—"}</footer></details>}
             <details className="virtual-more-actions"><summary>更多操作</summary><div>{virtualDevice.available_actions?.includes("repair_standard") && <button type="button" disabled={busy || virtualDevice.state !== "stopped"} onClick={() => void operateVirtual(virtualDevice, "repair_standard")}>恢复标准配置</button>}{onlineDevice || ["running", "starting", "adb_ready"].includes(virtualDevice.state) ? <><button type="button" disabled={busy} onClick={() => void operateVirtual(virtualDevice, "stop")}>停止</button><button type="button" disabled={busy} onClick={() => void operateVirtual(virtualDevice, "restart")}>重启</button></> : <><button type="button" disabled={busy || virtualDevice.state !== "stopped"} onClick={() => { const recipe = virtualDevice.recipe || {}; setSettingsForm({ cpu: Number(recipe.cpu) || 2, memory_gb: Number(recipe.memory_gb) || 1.75, fps: Number(recipe.fps) || 30, muted: recipe.muted !== false }); setSettingsTarget(virtualDevice); }}>修改性能</button><button type="button" disabled={busy || virtualDevice.state !== "stopped"} onClick={() => void operateVirtual(virtualDevice, "clone")}>克隆</button><button type="button" disabled={busy || virtualDevice.state !== "stopped"} onClick={() => void operateVirtual(virtualDevice, "backup")}>备份</button><button type="button" className="danger" disabled={busy || virtualDevice.state !== "stopped"} onClick={() => void deleteVirtual(virtualDevice)}>删除</button></>}</div></details>
           </article>;
         })}</div>
@@ -476,7 +484,7 @@ export default function DevicesPage() {
             const virtualDevice = virtualByAdb.get(device.device_id);
             const isMuMu = virtualDevice?.provider === "mumu";
             const taskRunning = runningDeviceIds.has(device.device_id);
-            const initializationBusy = state === "queued" || state === "running" || state === "waiting_user";
+            const initializationBusy = state === "running";
             const canControl = isMuMu && !taskRunning && !initializationBusy;
             const displayName = device.friendly_name || virtualDevice?.name || device.device_id;
             return <article className="device-screen-card" key={device.device_id}>

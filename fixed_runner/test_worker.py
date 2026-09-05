@@ -1640,7 +1640,7 @@ class WorkerSupportTest(unittest.TestCase):
             self.assertEqual(task.status, "degraded")
             self.assertEqual(task.result["videos_seen"], 20)
 
-    def test_failed_inspection_progress_is_saved_and_next_task_continues(self) -> None:
+    def test_unrestored_inspection_preserves_evidence_and_stops_next_task(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             store = TaskStore(root / "tasks.db")
@@ -1691,7 +1691,8 @@ class WorkerSupportTest(unittest.TestCase):
             inspection = store.get(inspection_id)
             self.assertEqual(inspection.status, "failed")
             self.assertEqual(inspection.result["sections"], failed_result["sections"])
-            self.assertEqual(store.get(next_id).status, "completed")
+            self.assertEqual(store.get(next_id).status, "pending")
+            self.assertTrue(store.is_stop_requested("device-1"))
 
     def test_worker_starts_one_version_revalidation_only_for_action_free_drift(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

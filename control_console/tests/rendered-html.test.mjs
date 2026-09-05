@@ -247,7 +247,10 @@ test("device workspace defaults to the standard virtual pool and gates physical 
   assert.match(page, /virtualDevice\.user_message/);
   assert.match(page, /virtualDevice\.suggested_action/);
   assert.match(page, /安装完成，继续检查/);
-  assert.match(page, /查看就绪检查/);
+  assert.match(page, /查看连接与能力诊断/);
+  assert.doesNotMatch(page, /查看就绪检查（/);
+  assert.match(page, /LocalTemplatePanel/);
+  assert.match(page, /重新检查并恢复巡检/);
   assert.match(page, /诊断编号/);
   assert.match(page, /启用真机支持/);
   assert.match(page, /physical_devices_enabled/);

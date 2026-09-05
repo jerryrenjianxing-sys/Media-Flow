@@ -85,6 +85,7 @@ class TaskStoreTest(unittest.TestCase):
 
     def test_control_view_refuses_existing_task_or_initialization(self) -> None:
         self.store.submit("healthcheck", "device-1")
+        self.store.claim_next("device-1", "test-worker")
         with self.assertRaisesRegex(ValueError, "当前只能观看"):
             self.store.create_device_view_session(
                 device_id="device-1",
@@ -95,6 +96,7 @@ class TaskStoreTest(unittest.TestCase):
             )
 
         self.store.create_initialization("device-2")
+        self.store.claim_initialization("device-2", "test-worker")
         with self.assertRaisesRegex(ValueError, "正在初始化"):
             self.store.create_device_view_session(
                 device_id="device-2",

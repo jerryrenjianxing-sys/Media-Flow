@@ -234,7 +234,7 @@ export function DeviceOnboardingDialog({
       });
       setOperation(completed);
       if (completed.status === "failed") throw new Error(completed.error || "虚拟机创建失败");
-      setNotice(completed.status === "waiting_user" ? completed.error || "需要你完成当前步骤" : completed.result?.adb_endpoint ? "虚拟机已交给初始化流程；完成后即可加入任务" : "虚拟机已创建");
+      setNotice(completed.status === "waiting_user" ? completed.error || "需要你完成当前步骤" : completed.result?.adb_endpoint ? "虚拟机已预装软件；请打开画面自行登录，然后选择任务" : "虚拟机已创建");
       await scan(mumuPath);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "虚拟机创建失败");
@@ -266,9 +266,6 @@ export function DeviceOnboardingDialog({
     }
   };
 
-  const virtualDevice = snapshot?.virtual_devices.find((device) => device.adb_endpoint === operation?.result?.adb_endpoint);
-  const virtualInitialization = virtualDevice?.initialization;
-
   if (!open) return null;
   return <div className="device-onboarding-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="device-onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="add-device-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -295,7 +292,7 @@ export function DeviceOnboardingDialog({
         {physicalEnabled && <div className="device-choice-or" aria-hidden="true"><span>或者</span></div>}
         <article className="device-onboarding-choice virtual">
           <span className="device-choice-icon">虚</span><h3>添加虚拟机</h3>
-          <p>MuMu安装和抖音登录需要你确认；创建、配置、ADB连接、初始化与自检由MediaFlow接手。</p>
+          <p>首次建立本机干净模板，以后直接复制已配置的软件环境。你只需自行登录，再选择任务；不需要逐项校准。</p>
           {!provider && <div className="onboarding-provider-state">正在检测MuMu…</div>}
           {provider?.status === "missing" && <><div className="onboarding-provider-state warning"><strong>尚未检测到已安装的MuMu</strong><small>下载安装包只是下载，仍需运行安装程序并完成安装。完成后这里每5秒自动检查一次。</small></div><a className="primary" href={provider.download_url} target="_blank" rel="noreferrer">前往MuMu官方下载</a>{desktopBridge && <><button type="button" className="secondary" onClick={() => postDesktop("mediaflow:choose-mumu-installer")}>选择已下载的安装程序</button>{mumuInstaller && <div className="onboarding-provider-state"><strong>安装程序已验证</strong><small>{mumuInstaller}</small><button type="button" className="primary" onClick={() => postDesktop("mediaflow:launch-mumu-installer")}>运行MuMu安装程序</button></div>}</>}{!desktopBridge && <small>浏览器不能直接运行本地安装程序。请在下载完成后双击安装，再回到这里重新检测。</small>}</>}
           {provider?.status === "incompatible" && <div className="onboarding-provider-state warning"><strong>当前版本暂不兼容</strong><small>{provider.message}</small></div>}
@@ -305,7 +302,7 @@ export function DeviceOnboardingDialog({
           {desktopBridge && <button type="button" className="text-button" onClick={() => postDesktop("mediaflow:choose-folder")}>选择MuMu安装目录</button>}
           <button type="button" className="secondary" disabled={loading} onClick={() => void scan(mumuPath)}>我已安装，立即检测</button>
           {provider?.compatible && <><p className="section-note">系统会按本机顺序命名为 MediaFlow虚拟机1、2、3……删除后编号也不会重复。</p><button type="button" className="primary" disabled={busy} onClick={() => void createVirtual()}>{busy ? "处理中…" : "添加虚拟机"}</button></>}
-          {operation && <div className={`virtual-operation ${operation.status}`}><div><strong>{operationLabel}</strong><span>{operation.progress}%</span></div><i><span style={{ width: `${operation.progress}%` }}/></i>{operation.error && <small>{operation.error}</small>}{operation.status === "waiting_user" && <button type="button" className="primary" onClick={() => void continueVirtual()}>我已安装抖音，继续初始化</button>}{operation.status === "completed" && operation.result?.adb_endpoint && <>{virtualInitialization?.status === "waiting_user" ? <button type="button" className="primary" onClick={() => void continuePhysical(operation.result!.adb_endpoint!)}>处理完成，继续初始化</button> : virtualInitialization?.status === "ready" ? <button type="button" className="secondary" disabled={!onDeviceReady} onClick={() => void onDeviceReady?.(operation.result!.adb_endpoint!)}>{source === "workbench" ? "加入当前任务草稿" : "虚拟机已就绪"}</button> : <small>{virtualInitialization?.message || "初始化与3条零写入自检正在进行，完成后才可加入任务"}</small>}</>}</div>}
+          {operation && <div className={`virtual-operation ${operation.status}`}><div><strong>{operationLabel}</strong><span>{operation.progress}%</span></div><i><span style={{ width: `${operation.progress}%` }}/></i>{operation.message && <small>{operation.message}</small>}{operation.error && <small>{operation.error}</small>}{operation.status === "waiting_user" && operation.stage === "waiting_app_install" && <button type="button" className="primary" onClick={() => void continueVirtual()}>我已安装抖音，继续检查</button>}{operation.status === "waiting_user" && operation.stage !== "waiting_app_install" && <a className="secondary" href="/devices">查看现场与本机模板</a>}{operation.status === "completed" && operation.result?.adb_endpoint && <><a className="secondary" href="/devices">打开画面，自行登录</a><button type="button" className="secondary" disabled={!onDeviceReady} onClick={() => void onDeviceReady?.(operation.result!.adb_endpoint!)}>{source === "workbench" ? "加入当前任务草稿" : "选择任务"}</button></>}</div>}
         </article>
       </div>
       <footer className="device-onboarding-footer"><span role="status">{notice}</span><button type="button" className="secondary" onClick={onClose}>完成</button></footer>

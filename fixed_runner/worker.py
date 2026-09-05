@@ -68,21 +68,17 @@ def run_worker(
         for character in socket.gethostname()
     ).strip("-") or "host"
     worker_id = f"{hostname}-{os.getpid()}"
-    recovered = store.recover_interrupted(device_id)
-    recovered_initializations = store.recover_interrupted_initializations(device_id)
-    interrupted_recoveries = store.close_interrupted_task_recoveries(device_id)
-    print_json(
-        {
-            "event": "worker_start",
-            "worker_id": worker_id,
-            "device_id": device_id,
-            "recovered_interrupted_tasks": recovered,
-            "recovered_interrupted_initializations": recovered_initializations,
-            "interrupted_task_recoveries_waiting_user": interrupted_recoveries,
-        }
-    )
     completed = 0
     with DeviceLock(RUNTIME_ROOT, device_id):
+        # The process lock elects one Worker. SQLite claims below are the action
+        # leases shared with platform manual control; idle workers do not own them.
+        recovered = store.recover_interrupted(device_id)
+        recovered_initializations = store.recover_interrupted_initializations(device_id)
+        interrupted_recoveries = store.close_interrupted_task_recoveries(device_id)
+        print_json({"event": "worker_start", "worker_id": worker_id, "device_id": device_id,
+                    "recovered_interrupted_tasks": recovered,
+                    "recovered_interrupted_initializations": recovered_initializations,
+                    "interrupted_task_recoveries_waiting_user": interrupted_recoveries})
         device = None
         needs_reconnect = False
         while max_tasks == 0 or completed < max_tasks:
@@ -95,7 +91,16 @@ def run_worker(
                     }
                 )
                 break
-            wait_while_paused(store, poll_seconds, device_id=device_id)
+            from task_preparation import maintenance_may_run
+            if (store.get_profile("automation-stop") or {}).get("stopped"):
+                time.sleep(poll_seconds)
+                continue
+            if store.is_paused() and not maintenance_may_run(store, device_id):
+                time.sleep(poll_seconds)
+                continue
+            if store.has_active_control_session(device_id):
+                time.sleep(poll_seconds)
+                continue
             if store.is_stop_requested(device_id):
                 print_json(
                     {
@@ -131,9 +136,6 @@ def run_worker(
             ):
                 time.sleep(poll_seconds)
                 continue
-            if not device_preflight(device):
-                device = None
-                continue
             initialization = store.claim_initialization(device_id, worker_id)
             if initialization is not None:
                 result = execute_initialization(
@@ -152,6 +154,9 @@ def run_worker(
                         "run_dir": result.get("run_dir"),
                     }
                 )
+                continue
+            if store.is_paused():
+                time.sleep(poll_seconds)
                 continue
             recovery_request = store.claim_task_recovery(device_id)
             if recovery_request is not None:
@@ -226,6 +231,11 @@ def run_worker(
             run_dir = str(recorder.run_dir)
             store.attach_run_dir(task.id, run_dir)
             try:
+                # Device actions begin only after claiming the persistent lease.
+                if not device_preflight(device):
+                    device = connect_with_retry(device_id, connect_attempts, reconnect_delay_seconds)
+                    if not device_preflight(device):
+                        raise RuntimeError("设备连接检查失败，请重试连接")
                 def save_video_incident(incident: dict[str, Any]) -> None:
                     store.record_incident(
                         task_id=task.id,
@@ -272,7 +282,9 @@ def run_worker(
                         else None
                     ),
                 )
-                if task_status == "failed":
+                from task_preparation import record_inspection_outcome
+                record_inspection_outcome(store, task, result)
+                if task_status == "failed" and task.payload.get("preparation_version") != "on-demand-v1":
                     try:
                         recovery = recover_version_drift(
                             store=store,
@@ -318,6 +330,11 @@ def run_worker(
                     completed += 1
                     break
             except Exception as exc:
+                if task.payload.get("preparation_version") == "on-demand-v1":
+                    # Unclassified preparation failures have no safe-home proof.
+                    store.request_stop([task.device_id])
+                    store.save_profile("preparation-issue:" + task.device_id,
+                                       {"task_id": task.id, "message": "任务已暂停，请检查当前页面或连接：" + str(exc)[:350]})
                 device_healthy = device_preflight(device)
                 needs_reconnect = (
                     isinstance(exc, DeviceFatalError)
