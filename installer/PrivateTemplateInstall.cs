@@ -125,6 +125,18 @@ namespace MediaFlow.Installation
             return manifest;
         }
 
+        private void EnsureTemplateBackendReady(string root)
+        {
+            string manage = Path.Combine(root, "manage-mediaflow.ps1");
+            if (!File.Exists(manage)) throw new IOException("后台管理组件缺失；尚未导入模板。");
+            RecordStage("backend_start", "正在启动已安装后台；业务队列仍保持原暂停状态");
+            string powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+            string startupError;
+            if (!RunHidden(powershell, "-NoProfile -ExecutionPolicy Bypass -File " + QuoteArgument(manage)
+                + " -Action Start -NoBrowser", out startupError, 90000))
+                throw new InvalidOperationException("后台启动未通过；尚未导入模板。请打开软件查看诊断后重试。 " + startupError);
+        }
+
         private void ImportPrivateTemplate(string installed, string manifest)
         {
             if (cancelRequested) throw new OperationCanceledException("软件已安装；模板尚未导入，原默认不变。可重新安装继续。");
@@ -133,6 +145,7 @@ namespace MediaFlow.Installation
             string script = Path.Combine(root, "fixed_runner", "private_template_cli.py");
             string result = Path.Combine(Path.GetDirectoryName(manifest), "import-result.json");
             if (!File.Exists(script) || !File.Exists(python)) throw new IOException("安装版模板组件不完整，未导入模板。");
+            EnsureTemplateBackendReady(root);
             RecordStage("template_import", "正在导入并验证私人模板；请保持业务队列暂停，可安全请求取消");
             var info = new ProcessStartInfo(python, QuoteArgument(script) + " --manifest " + QuoteArgument(manifest)
                 + " --result " + QuoteArgument(result) + " --mumu-manager " + QuoteArgument(mumuPath.Text)

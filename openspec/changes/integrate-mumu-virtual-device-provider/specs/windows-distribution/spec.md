@@ -118,6 +118,10 @@ The installer SHALL submit template operations to the same-version local backend
 - **WHEN** installation runs through SSH
 - **THEN** the same-version backend owns MuMu execution and the installer polls durable stages, cancellation and terminal results; a missing backend produces an actionable error without importing
 
+#### Scenario: Registered backend is not yet running after upgrade
+- **WHEN** software replacement has registered a background task but the API is not running
+- **THEN** the installer invokes the existing background Start entry without opening a browser, waits for API and page readiness before template submission, and preserves the business queue pause state; startup failure prevents template import
+
 #### Scenario: Explicit replacement after proven control failure
 - **WHEN** the user explicitly requests a new attempt after the imported private template failed control validation and is stopped
 - **THEN** preserve the failed instance and receipt and create at most one new import; reject this option for an unknown import result

@@ -109,6 +109,15 @@ class WindowsEntrypointTests(unittest.TestCase):
         self.assertIn("MediaFlow Background", source)
         self.assertIn("--veloapp-install", source)
 
+    def test_private_install_starts_backend_before_submitting_template(self) -> None:
+        source = (PROJECT_ROOT / "installer" / "PrivateTemplateInstall.cs").read_text(encoding="utf-8-sig")
+        method = source[source.index("private void ImportPrivateTemplate("):]
+        self.assertLess(method.index('EnsureTemplateBackendReady(root)'), method.index('Process.Start(info)'))
+        self.assertIn('manage-mediaflow.ps1', source)
+        self.assertIn(' -Action Start -NoBrowser', source)
+        self.assertIn('out startupError, 90000', source)
+        self.assertIn('throw new InvalidOperationException', source)
+
     def test_installer_stops_old_background_before_overwrite_and_restores_on_failure(self) -> None:
         source = (PROJECT_ROOT / "installer" / "MediaFlowInstaller.cs").read_text(
             encoding="utf-8-sig"
@@ -152,7 +161,7 @@ class WindowsEntrypointTests(unittest.TestCase):
         version = payload["version"]
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
         self.assertEqual(version, "0.4.1")
-        self.assertEqual(payload["development_iteration"], 16)
+        self.assertEqual(payload["development_iteration"], 17)
         installer = (PROJECT_ROOT / "installer" / "MediaFlowInstaller.cs").read_text(
             encoding="utf-8-sig"
         )
