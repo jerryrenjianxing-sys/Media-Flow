@@ -613,12 +613,15 @@ def stream_spec() -> ProcessSpec:
 
 
 def analyzer_spec() -> ProcessSpec:
+    from model_providers import selection, resolve_runtime_model, QWEN
     analyzer_env = tool_environment()
+    active = selection()
+    key, base, model = resolve_runtime_model() if active["provider"] == QWEN else (load_openrouter_key(), "https://openrouter.ai/api/v1", OPENROUTER_PRIMARY_MODEL)
     analyzer_env.update(
         {
-            "PHONE_AGENT_API_KEY": load_openrouter_key(),
-            "PHONE_AGENT_BASE_URL": "https://openrouter.ai/api/v1",
-            "PHONE_AGENT_COMMENT_MODEL": OPENROUTER_PRIMARY_MODEL,
+            "PHONE_AGENT_API_KEY": key,
+            "PHONE_AGENT_BASE_URL": base,
+            "PHONE_AGENT_COMMENT_MODEL": model,
             "PHONE_AGENT_COMMENT_FALLBACK_MODELS": fallback_models_env(),
         }
     )
@@ -641,6 +644,9 @@ def optional_analyzer_spec() -> ProcessSpec | None:
     try:
         return analyzer_spec()
     except RuntimeError as exc:
+        from model_providers import ProviderError
+        if isinstance(exc, ProviderError):
+            return None
         if "OpenRouter Key" in str(exc):
             return None
         raise
@@ -651,6 +657,7 @@ def worker_role(device_id: str) -> str:
 
 
 def worker_spec(device_id: str) -> ProcessSpec:
+    from model_providers import selection, resolve_runtime_model, QWEN
     worker_env = tool_environment()
     worker_env.update(
         {
@@ -660,9 +667,16 @@ def worker_spec(device_id: str) -> ProcessSpec:
         }
     )
     try:
-        worker_env["PHONE_AGENT_API_KEY"] = load_openrouter_key()
+        if selection()["provider"] == QWEN:
+            key, base, model = resolve_runtime_model()
+            worker_env.update(PHONE_AGENT_API_KEY=key, PHONE_AGENT_BASE_URL=base, PHONE_AGENT_COMMENT_MODEL=model)
+        else:
+            worker_env["PHONE_AGENT_API_KEY"] = load_openrouter_key()
     except RuntimeError as exc:
-        if "OpenRouter Key" not in str(exc):
+        from model_providers import ProviderError
+        if isinstance(exc, ProviderError):
+            worker_env.pop("PHONE_AGENT_API_KEY", None)
+        elif "OpenRouter Key" not in str(exc):
             raise
     return ProcessSpec(
         role=worker_role(device_id),
@@ -747,8 +761,13 @@ def doctor() -> dict[str, Any]:
         shutil.which("adb.exe") or shutil.which("adb")
     )
     add("adb", bool(adb), str(adb or "missing"))
-    secret = migrate_secret()
-    add("openrouter_key", bool(secret["configured"]), "configured" if secret["configured"] else "missing")
+    from model_providers import QWEN, selection, status as model_status
+    if selection()["provider"] == QWEN:
+        configured = bool(model_status().get("model_ready"))
+        add("model_key", configured, "qwen_token_plan: configured" if configured else "qwen_token_plan: requires_configuration")
+    else:
+        secret = migrate_secret()
+        add("openrouter_key", bool(secret["configured"]), "configured" if secret["configured"] else "missing")
     task_ok, task_detail = background_task_check()
     add("background_task", task_ok, task_detail)
     try:

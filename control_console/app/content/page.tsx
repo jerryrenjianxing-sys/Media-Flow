@@ -13,7 +13,7 @@ type ThemeDraft = { id?: string; name: string; topic_prompt: string; search_quer
 type Draft = { planId?: string; name: string; comment_template: string; commonPoolText: string; themes: ThemeDraft[] };
 type Preset = { name: string; builtin: boolean; config: Record<string, unknown> };
 type StorageStatus = { data_root: string; configured: boolean; categories: string[]; pending_migration?: { target?: string } | null; last_migration?: { applied?: boolean; message?: string; target?: string } | null };
-type ModelStatus = { provider: string; model: string; key_configured: boolean; storage_status: "empty" | "pending" | "stored" | "unreadable"; auth_status: string; model_test_status: string; last_verified_at?: string | null; last_model_test_at?: string | null; last_model_latency_ms?: number | null; message: string; model_ready: boolean; has_pending_key: boolean };
+type ModelStatus = { provider: string; model: string; key_configured: boolean; storage_status: "empty" | "pending" | "stored" | "unreadable"; auth_status: string; model_test_status: string; last_verified_at?: string | null; last_model_test_at?: string | null; last_model_latency_ms?: number | null; message: string; model_ready: boolean; has_pending_key: boolean; active_provider?: string; config_version?: number; requests_used?: number; requests_remaining?: number; can_enable?: boolean };
 
 const blankTheme = (): ThemeDraft => ({ name: "", topic_prompt: "", search_query: "", comment_template: "", poolText: "", enabled: true });
 const blankDraft = (): Draft => ({ name: "", comment_template: "", commonPoolText: "", themes: [blankTheme()] });
@@ -28,12 +28,37 @@ export default function ContentAssetsPage() {
   const [busy, setBusy] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState<ModelStatus | null>(null);
+  const [provider, setProvider] = useState("openrouter");
+  const [uploadConsent, setUploadConsent] = useState(false);
+  const isQwen = provider === "qwen_token_plan";
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetName, setPresetName] = useState("");
   const [storage, setStorage] = useState<StorageStatus | null>(null);
   const [storageTarget, setStorageTarget] = useState("");
   const [desktopBridge, setDesktopBridge] = useState(false);
-  const [modelAction, setModelAction] = useState<"" | "saving" | "verifying" | "testing">("");
+  const [modelAction, setModelAction] = useState<"" | "saving" | "verifying" | "testing" | "enabling">("");
+
+  async function chooseProvider(value: string) {
+    setProvider(value); setApiKey(""); setUploadConsent(false); setModel(null); setBusy(true);
+    try {
+      const response = await fetchLocalApi(`${API}/api/model?provider=${value}`, { cache: "no-store" });
+      const result = await response.json(); if (!response.ok) throw new Error(result.error || "读取模型配置失败");
+      setModel(result);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "读取模型配置失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function enableModel() {
+    setBusy(true); setModelAction("enabling");
+    try {
+      const response = await fetchLocalApi(`${API}/api/model`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider }) }, 10_000);
+      const result = await response.json(); if (!response.ok) throw new Error(result.error || "启用失败");
+      setModel(result); setNotice(result.message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "启用失败，原配置未改变";
+      setNotice(message); setModel((current) => current ? { ...current, message } : current);
+    } finally { setBusy(false); setModelAction(""); }
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -49,7 +74,13 @@ export default function ContentAssetsPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
-    const modelTimer = window.setTimeout(() => { void fetchLocalApi(`${API}/api/model`, { cache: "no-store" }).then(async (response) => { if (response.ok) setModel(await response.json()); }).catch(() => setNotice("模型连接状态读取超时，请确认本机服务正在运行")); }, 0);
+    const modelTimer = window.setTimeout(() => {
+      const requested = new URLSearchParams(window.location.search).get("model_provider");
+      const selected = requested === "qwen_token_plan" || requested === "openrouter" ? requested : null;
+      void fetchLocalApi(`${API}/api/model${selected ? `?provider=${selected}` : ""}`, { cache: "no-store" }).then(async (response) => {
+        if (response.ok) { const value = await response.json(); setModel(value); setProvider(selected || value.active_provider || "openrouter"); }
+      }).catch(() => setNotice("模型连接状态读取超时，请确认本机服务正在运行"));
+    }, 0);
     const presetTimer = window.setTimeout(() => { void fetchLocalApi(`${API}/api/presets`, { cache: "no-store" }).then(async (response) => { if (response.ok) setPresets(((await response.json()).presets || []) as Preset[]); }).catch(() => undefined); }, 0);
     const storageTimer = window.setTimeout(() => { void fetchLocalApi(`${API}/api/system/storage`, { cache: "no-store" }).then(async (response) => { if (response.ok) setStorage(await response.json()); }).catch(() => undefined); }, 0);
     const host = (window as unknown as { chrome?: { webview?: { postMessage(message: string): void; addEventListener(type: string, listener: (event: MessageEvent) => void): void; removeEventListener(type: string, listener: (event: MessageEvent) => void): void } } }).chrome?.webview;
@@ -80,7 +111,7 @@ export default function ContentAssetsPage() {
     setBusy(true);
     setModelAction("saving");
     try {
-      const response = await fetchLocalApi(`${API}/api/model-key`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: apiKey }) }, 35_000);
+      const response = await fetchLocalApi(`${API}/api/model-key`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: apiKey, provider }) }, 35_000);
       const result = await response.json(); if (!response.ok) throw new Error(result.error || "模型 Key 保存失败");
       setModel(result); if (result.accepted) setApiKey(""); setNotice(result.message || "模型连接状态已更新");
     } catch (error) {
@@ -95,7 +126,7 @@ export default function ContentAssetsPage() {
     setBusy(true);
     setModelAction("verifying");
     try {
-      const response = await fetchLocalApi(`${API}/api/model/verify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, 20_000);
+      const response = await fetchLocalApi(`${API}/api/model/verify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider }) }, 20_000);
       const result = await response.json(); if (!response.ok) throw new Error(result.error || "鉴权失败");
       setModel(result); setNotice(result.message || "鉴权状态已更新");
     } catch (error) { setNotice(error instanceof Error ? error.message : "鉴权失败"); }
@@ -106,11 +137,11 @@ export default function ContentAssetsPage() {
     setBusy(true);
     setModelAction("testing");
     try {
-      const response = await fetchLocalApi(`${API}/api/model/test`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, 45_000);
-      const result = await response.json(); setModel(result);
+      const response = await fetchLocalApi(`${API}/api/model/test`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, upload_consent: uploadConsent }) }, 45_000);
+      const result = await response.json(); if (result.model) setModel(result);
       if (!response.ok || !result.ok) throw new Error(result.message || "模型测试失败");
       setNotice(result.message || "当前模型测试成功");
-    } catch (error) { setNotice(error instanceof Error ? error.message : "模型测试失败"); }
+    } catch (error) { const message = error instanceof Error ? error.message : "模型测试失败"; setNotice(message); setModel((current) => current ? { ...current, message } : current); }
     finally { setModelAction(""); setBusy(false); }
   }
 
@@ -278,9 +309,21 @@ export default function ContentAssetsPage() {
         </section>
 
         <section id="model-settings" className="panel model-connection-card" data-motion>
-          <div className="model-connection-head"><div><p className="section-index">MODEL CONNECTION</p><h2>视觉模型连接</h2><p>{model ? `${model.provider} · ${model.model}` : "正在读取模型设置…"}</p></div><span className={`key-state ${model?.model_ready ? "ready" : model?.storage_status === "unreadable" || model?.auth_status === "invalid" || model?.model_test_status === "failed" ? "danger" : ""}`}>{modelAction === "saving" ? "正在保存" : modelAction === "verifying" ? "正在验证" : modelAction === "testing" ? "正在测试" : !model ? "正在读取" : model.model_ready ? "当前模型可用" : model.storage_status === "unreadable" ? "Key 需重新输入" : model.auth_status === "authenticated" ? "鉴权成功，待模型测试" : model.auth_status === "pending" ? "等待联网验证" : model.auth_status === "invalid" ? "Key 无效" : model.key_configured ? "已保存，待验证" : "未配置"}</span></div>
-          <div className="model-connection-body"><div className="key-entry"><input aria-label="OpenRouter API Key" type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={model?.storage_status === "unreadable" ? "请重新输入 OpenRouter Key" : model?.key_configured ? "输入新 Key 可替换当前配置" : "粘贴 OpenRouter Key"}/><button type="button" className="secondary" disabled={busy || !apiKey.trim()} onClick={() => void saveModelKey()}>安全保存并鉴权</button></div><div className="model-actions">{(model?.has_pending_key || (model?.key_configured && model.auth_status !== "authenticated")) && <button type="button" className="secondary" disabled={busy} onClick={() => void verifyModelKey()}>重新验证 Key</button>}<button type="button" className="secondary" disabled={busy || !model?.key_configured || model.auth_status !== "authenticated"} onClick={() => void testModel()}>测试当前模型（少量计费）</button><a className="secondary" href="/governance">打开评测与证据</a></div></div>
-          <div className={`model-connection-feedback ${model?.model_ready ? "ready" : model?.storage_status === "unreadable" || model?.auth_status === "invalid" || model?.model_test_status === "failed" ? "danger" : ""}`} role="status"><strong>{modelAction === "saving" ? "正在本机加密并进行免费鉴权，最长约35秒…" : modelAction === "verifying" ? "正在重新验证Key，最长约20秒…" : modelAction === "testing" ? "正在测试当前模型，最长约45秒…" : model?.message || "保存后会先免费验证 Key；模型测试需要你单独点击。"}</strong>{model?.last_verified_at && <small>最近鉴权：{new Date(model.last_verified_at).toLocaleString()}</small>}{model?.last_model_test_at && <small>最近模型测试：{new Date(model.last_model_test_at).toLocaleString()}{model.last_model_latency_ms ? ` · ${model.last_model_latency_ms} ms` : ""}</small>}</div>
+          <div className="model-connection-head"><div><p className="section-index">MODEL CONNECTION</p><h2>全平台模型连接</h2><p>{model ? `${model.provider} · ${model.model}` : "正在读取模型设置…"}</p><p>正在使用：{model?.active_provider === "qwen_token_plan" ? "千问 Token Plan（实验性）" : "OpenRouter"} · 配置版本 {model?.config_version ?? 0}</p></div><span className={`key-state ${model?.model_ready ? "ready" : ""}`}>{modelAction ? "正在处理" : model?.model_test_status === "passed" ? "测试已通过" : model?.key_configured ? "已保存，待验证" : "未配置"}</span></div>
+          <label>服务商 <select aria-label="模型服务商" value={provider} disabled={busy} onChange={(event) => void chooseProvider(event.target.value)}><option value="openrouter">OpenRouter</option><option value="qwen_token_plan">千问AI平台 · Token Plan（实验性）</option></select></label>
+          {isQwen && <div className="model-connection-feedback">
+            <p>模型固定为 qwen3.8-flash；地址由软件预设。Token Plan专属Key与OpenRouter分别加密保存。</p>
+            <p>个人套餐官方FAQ限制后台自动化使用。本接入仅为实验性验证，不代表符合生产后台使用要求。不会自动切换到按量接口或其他服务商。</p>
+            <p>本轮请求：{model?.requests_used ?? 0}/10（失败、超时也计入；重启不重置）。Credits以千问工作台为准，不等同于零费用。</p>
+            <p><a href="https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-faq" target="_blank" rel="noreferrer">官方使用与数据条款</a></p>
+            <label><input type="checkbox" checked={uploadConsent} disabled={busy} onChange={(event) => setUploadConsent(event.target.checked)}/> 我确认：测试图及后续明确授权的完整应用截图将发送到千问Token Plan服务并消耗套餐额度；个人版输入输出可能用于服务及模型改进。不上传电脑桌面、配置或Key。</label>
+          </div>}
+          <div className="model-connection-body"><div className="key-entry"><input aria-label={isQwen ? "千问 Token Plan API Key" : "OpenRouter API Key"} type="password" autoComplete="off" value={apiKey} disabled={busy} onChange={(event) => setApiKey(event.target.value)} placeholder={isQwen ? "粘贴 Token Plan 专属 sk-sp- Key" : "粘贴 OpenRouter Key"}/><button type="button" className="secondary" disabled={busy || !apiKey.trim()} onClick={() => void saveModelKey()}>{isQwen ? "安全保存" : "安全保存并鉴权"}</button></div>
+            <div className="model-actions">{!isQwen && (model?.has_pending_key || (model?.key_configured && model.auth_status !== "authenticated")) && <button type="button" className="secondary" disabled={busy} onClick={() => void verifyModelKey()}>重新验证 Key</button>}
+              <button type="button" className="secondary" disabled={busy || !model?.key_configured || (isQwen ? !uploadConsent || model?.requests_remaining === 0 : model.auth_status !== "authenticated")} onClick={() => void testModel()}>{isQwen ? "测试图片与结构化响应（消耗1次）" : "测试当前模型（少量计费）"}</button>
+              <button type="button" className="primary" disabled={busy || !model?.model_ready || (isQwen && !model.can_enable)} onClick={() => void enableModel()}>启用为全平台模型</button><a className="secondary" href="/governance">打开评测与证据</a>
+            </div></div>
+          <div className={`model-connection-feedback ${model?.model_test_status === "failed" ? "danger" : ""}`} role="status"><strong>{modelAction === "saving" ? isQwen ? "正在本机加密和解密回读，不发送联网请求…" : "正在本机加密并进行免费鉴权，最长约35秒…" : modelAction === "verifying" ? "正在重新验证Key，最长约20秒…" : modelAction === "testing" ? isQwen ? "正在验证文本、图片与JSON，20秒后收口，不自动重试…" : "正在测试当前模型，最长约45秒…" : modelAction === "enabling" ? "正在核对任务和分析调用是否空闲…" : model?.message || "请选择服务商并保存独立Key。"}</strong>{model?.last_model_test_at && <small>最近测试：{new Date(model.last_model_test_at).toLocaleString()}{model.last_model_latency_ms ? ` · ${model.last_model_latency_ms} ms` : ""}</small>}</div>
         </section>
 
         <section id="storage-settings" className="panel storage-settings-strip" data-motion>

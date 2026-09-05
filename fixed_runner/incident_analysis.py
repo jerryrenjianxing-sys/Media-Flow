@@ -12,6 +12,7 @@ from typing import Any
 
 import requests
 from model_budget import budgeted_post
+from model_providers import resolve_runtime_model, QWEN_BASE_URL
 
 from comment_ai import encode_image, parse_streaming_response
 from model_runtime_config import OPENROUTER_PRIMARY_MODEL
@@ -239,6 +240,7 @@ def analyze_incident(
     model: str | None = None,
     timeout_seconds: float = 90.0,
 ) -> IncidentAdvice:
+    api_key, base_url, model = resolve_runtime_model(api_key, base_url, model)
     api_key = api_key or os.environ.get("PHONE_AGENT_API_KEY")
     if not api_key:
         raise RuntimeError("No cloud model API key is available in the environment")
@@ -259,7 +261,8 @@ def analyze_incident(
     proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
     request_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     content = ""
-    for attempt in range(1, 3):
+    max_attempts = 1 if base_url == QWEN_BASE_URL else 2
+    for attempt in range(1, max_attempts + 1):
         try:
             with budgeted_post(
                 base_url + "/chat/completions",
@@ -281,7 +284,7 @@ def analyze_incident(
                 content = parse_streaming_response(response.iter_lines())
             break
         except requests.RequestException as exc:
-            if attempt >= 2:
+            if attempt >= max_attempts:
                 raise RuntimeError(f"Cloud model request failed: {exc}") from exc
             time.sleep(2.0)
     return parse_incident_advice(content)

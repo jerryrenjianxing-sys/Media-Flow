@@ -37,6 +37,7 @@ from control_config import (
     validate_preset_name,
 )
 from model_connection import test_current_model, verify as verify_openrouter_key
+import model_providers
 from engagement_preflight import (
     acknowledge_visitor_reminder,
     visitor_reminder_status,
@@ -2924,7 +2925,8 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         if path == "/api/model":
-            self._json(openrouter_key_status())
+            provider = parse_qs(parsed.query).get("provider", [None])[0]
+            self._json(model_providers.status(provider))
             return
         if path == "/api/status":
             config = normalized_config(self.store.get_profile(PROFILE_NAME) or {})
@@ -3228,6 +3230,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(exc), "draft": exc.current}, 409)
         except KeyError:
             self._json({"error": "请求的本地记录不存在"}, 404)
+        except model_providers.ProviderError as exc:
+            self._json({"error": model_providers.ERRORS.get(exc.code, "模型配置需要处理"), "reason_code": exc.code, "retryable": False}, 400)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._json({"error": str(exc)}, 400)
         except Exception as exc:
@@ -4005,15 +4009,26 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             if path == "/api/model-key":
-                result = save_openrouter_key(body.get("api_key"))
+                result = model_providers.save_candidate(body.get("api_key"), body.get("provider", "openrouter"))
                 self._json({"ok": bool(result.get("accepted")), **result})
                 return
             if path == "/api/model/verify":
-                self._json({"ok": True, **verify_openrouter_key()})
+                if body.get("provider") == model_providers.QWEN:
+                    self._json({"ok": True, **model_providers.status(model_providers.QWEN),
+                                "message": "千问没有免费鉴权流程；请确认说明后点击图片测试"})
+                else:
+                    self._json({"ok": True, **model_providers.verify_openrouter()})
                 return
             if path == "/api/model/test":
-                result = test_current_model()
+                if body.get("provider") == model_providers.QWEN:
+                    result = model_providers.test_candidate(consent=body.get("upload_consent") is True)
+                else:
+                    test_current_model()
+                    result = model_providers.status("openrouter")
                 self._json({"ok": result.get("model_test_status") == "passed", **result})
+                return
+            if path == "/api/model":
+                self._json(model_providers.activate(body.get("provider"), task_db=self.store.path))
                 return
             if path == "/api/interaction-alerts/acknowledge":
                 alert_ids = body.get("alert_ids")
@@ -4193,6 +4208,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "Not found"}, 404)
         except KeyError:
             self._json({"error": "请求的本地记录不存在"}, 404)
+        except model_providers.ProviderError as exc:
+            self._json({"error": model_providers.ERRORS.get(exc.code, "模型配置需要处理"), "reason_code": exc.code, "retryable": False}, 400)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._json({"error": str(exc)}, 400)
         except Exception as exc:

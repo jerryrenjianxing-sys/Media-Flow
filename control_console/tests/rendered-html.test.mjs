@@ -17,6 +17,21 @@ async function source(path) {
   return readFile(new URL(path, import.meta.url), "utf8");
 }
 
+test("model settings expose isolated experimental Token Plan save test and enable", async () => {
+  const response = await render("/content");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /千问AI平台/);
+  assert.match(html, /启用为全平台模型/);
+  const page = await source("../app/content/page.tsx");
+  for (const value of ["qwen3.8-flash", "qwen_token_plan", "upload_consent", "requests_remaining", "config_version", "can_enable"]) assert.match(page, new RegExp(value));
+  assert.match(page, /个人套餐官方FAQ限制后台自动化/);
+  assert.match(page, /重启不重置/);
+  assert.match(page, /Credits以千问工作台为准/);
+  assert.match(page, /setProvider\(selected \|\| value\.active_provider/);
+  assert.match(page, /finally \{ setModelAction\(""\); setBusy\(false\); \}/);
+});
+
 test("renders the five-workspace shell and persisted presentation controls", async () => {
   const response = await render();
   assert.equal(response.status, 200);

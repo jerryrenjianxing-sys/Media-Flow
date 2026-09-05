@@ -18,6 +18,8 @@ from model_budget import budgeted_post
 from PIL import Image
 
 from model_runtime_config import OPENROUTER_PRIMARY_MODEL
+from model_providers import resolve_runtime_model, QWEN_BASE_URL
+from model_errors import CloudModelError, MODEL_ERROR_KINDS
 from topic_policy import compile_topic_policy, resolve_topic_policy
 
 
@@ -90,50 +92,6 @@ BANNED_COMMENT_FRAGMENTS = (
     "赚钱",
     "稳赚",
 )
-
-
-MODEL_ERROR_KINDS = {
-    "permanent_rejection",
-    "authentication",
-    "balance",
-    "rate_limited",
-    "provider_failure",
-    "transient_network",
-    "invalid_request",
-    "invalid_response",
-}
-
-
-class CloudModelError(RuntimeError):
-    """Typed, redacted failure raised by the shared cloud-model boundary."""
-
-    def __init__(
-        self,
-        kind: str,
-        message: str,
-        *,
-        status_code: int | None = None,
-        retryable: bool = False,
-        attempts: int = 1,
-        diagnostics: dict[str, Any] | None = None,
-    ) -> None:
-        if kind not in MODEL_ERROR_KINDS:
-            raise ValueError(f"Unknown cloud model error kind: {kind}")
-        self.kind = kind
-        self.status_code = status_code
-        self.retryable = retryable
-        self.attempts = attempts
-        self.diagnostics = diagnostics or {}
-        super().__init__(f"cloud_model:{kind}: {message}")
-
-    def public_dict(self) -> dict[str, Any]:
-        return {
-            "kind": self.kind,
-            "status_code": self.status_code,
-            "retryable": self.retryable,
-            "attempts": self.attempts,
-            "diagnostics": self.diagnostics,
-        }
 
 
 def _redact_text(value: Any, limit: int = 240) -> str:
@@ -220,6 +178,8 @@ def _request_streaming_json(
     timeout_seconds: float,
     max_attempts: int = 2,
 ) -> str:
+    if base_url == QWEN_BASE_URL:
+        max_attempts = 1
     request_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     proxy_url = os.environ.get("PHONE_AGENT_PROXY_URL")
     proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
@@ -934,6 +894,7 @@ def generate_comment(
     style_template: str = "",
     candidates: tuple[dict[str, str], ...] = (),
 ) -> CommentDecision:
+    api_key, base_url, model = resolve_runtime_model(api_key, base_url, model)
     api_key = api_key or os.environ.get("PHONE_AGENT_API_KEY") or os.environ.get(
         "ZAI_API_KEY"
     )
@@ -1009,6 +970,7 @@ def review_comment_constraint(
     model: str | None = None,
     timeout_seconds: float = 120.0,
 ) -> CommentConstraintDecision:
+    api_key, base_url, model = resolve_runtime_model(api_key, base_url, model)
     api_key = api_key or os.environ.get("PHONE_AGENT_API_KEY") or os.environ.get(
         "ZAI_API_KEY"
     )
@@ -1058,6 +1020,8 @@ def review_comment_constraint(
         "policy_version_mismatch",
     }
     if decision.reason.startswith("invalid_model_response") or decision.reason in schema_failure_reasons:
+        if base_url == QWEN_BASE_URL:
+            raise CloudModelError("invalid_response", "千问结构化响应不符合评论校验要求", retryable=False)
         repair_payload = build_comment_constraint_payload(
             image_path,
             candidate_comment,
@@ -1090,6 +1054,7 @@ def analyze_topic(
     model: str | None = None,
     timeout_seconds: float = 120.0,
 ) -> TopicDecision:
+    api_key, base_url, model = resolve_runtime_model(api_key, base_url, model)
     api_key = api_key or os.environ.get("PHONE_AGENT_API_KEY") or os.environ.get("ZAI_API_KEY")
     if not api_key:
         raise CloudModelError(
@@ -1121,6 +1086,8 @@ def analyze_topic(
     )
     decision = parse_topic_decision(content)
     if decision.reason.startswith("invalid_model_response"):
+        if base_url == QWEN_BASE_URL:
+            raise CloudModelError("invalid_response", "千问结构化响应不符合主题判断要求", retryable=False)
         repair_payload = build_topic_request_payload(
             image_path,
             target_topic,

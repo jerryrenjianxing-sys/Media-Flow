@@ -8,9 +8,9 @@ from typing import Any, Iterable, Mapping
 
 from model_connection import (
     save_candidate as save_openrouter_key,
-    status as openrouter_key_status,
     validate_openrouter_key,
 )
+from model_providers import status as openrouter_key_status
 from content_plans import round_snapshot
 from device_profiles import load_device_profile_payloads
 from task_store import TaskStore

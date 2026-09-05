@@ -344,6 +344,7 @@ def test_current_model(*, timeout: tuple[float, float] = (5.0, 25.0)) -> dict[st
     try:
         with budgeted_post(
             OPENROUTER_CHAT_URL,
+            configuration_test=True,
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             json={
                 "model": OPENROUTER_PRIMARY_MODEL,
