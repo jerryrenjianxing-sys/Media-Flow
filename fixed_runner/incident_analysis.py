@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from model_budget import budgeted_post
 
 from comment_ai import encode_image, parse_streaming_response
 from model_runtime_config import OPENROUTER_PRIMARY_MODEL
@@ -260,7 +261,7 @@ def analyze_incident(
     content = ""
     for attempt in range(1, 3):
         try:
-            with requests.post(
+            with budgeted_post(
                 base_url + "/chat/completions",
                 data=request_body,
                 headers={
@@ -273,11 +274,10 @@ def analyze_incident(
                 proxies=proxies,
             ) as response:
                 if response.status_code >= 400:
-                    detail = response.text[:400]
                     if response.status_code in {429, 500, 502, 503, 504} and attempt < 2:
                         time.sleep(2.0)
                         continue
-                    raise RuntimeError(f"Cloud model HTTP {response.status_code}: {detail}")
+                    raise RuntimeError(f"Cloud model HTTP {response.status_code}")
                 content = parse_streaming_response(response.iter_lines())
             break
         except requests.RequestException as exc:

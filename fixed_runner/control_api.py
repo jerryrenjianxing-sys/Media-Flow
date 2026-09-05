@@ -1185,6 +1185,17 @@ def _live_task_progress(task: Any) -> dict[str, Any]:
         if not isinstance(event, dict):
             continue
         name = str(event.get("event") or "")
+        if name == "page_observation":
+            labels = {"waiting_page": "等待页面加载（最多8秒）", "visual_recognition": "视觉识别（最多20秒）",
+                      "visual_reading": "视觉复核互动列表", "action_verification": "导航动作后复核",
+                      "fixed_recognition": "固定规则识别", "waiting_model": "等待配置视觉模型"}
+            phase = str(event.get("phase") or "")
+            if phase in labels:
+                progress["navigation_phase"] = phase
+                progress["navigation_message"] = labels[phase]
+        elif name in {"valid_video_processed", "feed_phase_started", "engagement_inspection_finished"}:
+            progress.pop("navigation_phase", None)
+            progress.pop("navigation_message", None)
         if name == "feed_phase_started":
             phase = str(event.get("phase") or "")
             if phase in {"search", "home"}:

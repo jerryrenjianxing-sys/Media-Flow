@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from model_budget import budgeted_post
 from PIL import Image
 
 from model_runtime_config import OPENROUTER_PRIMARY_MODEL
@@ -232,7 +233,7 @@ def _request_streaming_json(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            with requests.post(
+            with budgeted_post(
                 base_url + "/chat/completions",
                 data=request_body,
                 headers=headers,

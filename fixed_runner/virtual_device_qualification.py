@@ -10,6 +10,30 @@ PROFILE_BUNDLE_ID = "mediaflow-mumu-900x1600-320-v1"
 UI_COMPATIBILITY_ID = "douyin-semantic-v3"
 
 
+def require_visual_navigation_device(device_id: str) -> None:
+    """Read the existing inventory without creating or migrating runtime data."""
+    import json
+    import sqlite3
+    from runtime_layout import RUNTIME_ROOT
+
+    path = RUNTIME_ROOT / "tasks.db"
+    connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=2)
+    try:
+        row = connection.execute(
+            "SELECT provider, provider_snapshot_json FROM virtual_devices "
+            "WHERE adb_endpoint=? AND state!='retired' AND presence_status='present' "
+            "AND android_identity IS NOT NULL ORDER BY updated_at DESC LIMIT 1",
+            (device_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+    if row is None or row[0] != "mumu":
+        raise RuntimeError("visual_standard_mumu_required")
+    snapshot = json.loads(row[1])
+    if assess_environment(snapshot.get("settings"))["environment_status"] != "standard":
+        raise RuntimeError("visual_standard_mumu_required")
+
+
 def _number(value: Any) -> int | None:
     try:
         return int(float(str(value).strip()))

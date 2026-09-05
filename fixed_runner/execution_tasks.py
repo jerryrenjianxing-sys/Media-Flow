@@ -614,6 +614,8 @@ def topic_session(
             "mixed" if config.get("topic_filter_enabled", True) else "general",
         )
     )
+    if config.get("visual_navigation_enabled") is True:
+        runner.visual_navigation_enabled = True
     search_query = str(config.get("search_query", "")).strip()
     hybrid_planner: HybridFeedPlanner | None = None
     initial_hybrid_phase_name: str | None = None

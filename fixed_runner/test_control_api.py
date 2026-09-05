@@ -1985,6 +1985,7 @@ class ControlApiTest(unittest.TestCase):
                 {"event": "favorite_state_after", "video": 2, "active": True},
                 {"event": "comment_send_verification", "video": 2, "verified": True},
                 {"event": "video_incident", "error_type": "FeedContextDriftError", "outcome": "recovered"},
+                {"event": "page_observation", "phase": "visual_recognition", "message": "untrusted-text"},
             ]
             (run_dir / "events.jsonl").write_text(
                 "\n".join(json.dumps(item) for item in events), encoding="utf-8"
@@ -2014,6 +2015,7 @@ class ControlApiTest(unittest.TestCase):
         self.assertEqual(progress["page_drifts"], 1)
         self.assertEqual(progress["non_video_feed_items"], 1)
         self.assertEqual(progress["feed_phase_reentries"], 1)
+        self.assertEqual(progress["navigation_message"], "视觉识别（最多20秒）")
 
     def test_status_payload_closes_task_whose_worker_is_gone(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

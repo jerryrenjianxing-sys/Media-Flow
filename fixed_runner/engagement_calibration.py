@@ -96,7 +96,8 @@ def calibrate_engagement_v3(
                 str(result.get("failure_reason") or "v3_semantic_calibration_failed")
             )
         signatures.append(_semantic_signature(result))
-        inspector.discard_v2_artifacts()
+        # Successful calibration is evidence, not a throwaway probe. Retain the
+        # paired frames so promotion of a shared rule can be audited later.
     if len(set(signatures)) != 1:
         raise RuntimeError("v3_semantic_calibration_inconsistent")
     return {

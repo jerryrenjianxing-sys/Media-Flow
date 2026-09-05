@@ -121,7 +121,15 @@ def comment_panel_visible(image: Image.Image) -> bool:
 
 
 class DeviceLock(AbstractContextManager["DeviceLock"]):
+    _owned: dict[str, "DeviceLock"] = {}
+
+    @classmethod
+    def owns(cls, device_id: str) -> bool:
+        lock = cls._owned.get(device_id)
+        return bool(lock is not None and lock.handle is not None and not lock.handle.closed)
+
     def __init__(self, root: Path, device_id: str) -> None:
+        self.device_id = device_id
         safe_device = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in device_id)
         self.path = root / "locks" / f"{safe_device}.lock"
         self.handle = None
@@ -146,6 +154,7 @@ class DeviceLock(AbstractContextManager["DeviceLock"]):
         self.handle.truncate()
         self.handle.write(f"pid={os.getpid()}\nstarted={now_iso()}\n".encode("utf-8"))
         self.handle.flush()
+        self._owned[self.device_id] = self
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
@@ -154,6 +163,8 @@ class DeviceLock(AbstractContextManager["DeviceLock"]):
             msvcrt.locking(self.handle.fileno(), msvcrt.LK_UNLCK, 1)
             self.handle.close()
             self.handle = None
+            if self._owned.get(self.device_id) is self:
+                self._owned.pop(self.device_id, None)
 
 
 class RunRecorder:

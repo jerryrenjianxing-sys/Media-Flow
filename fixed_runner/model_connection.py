@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from model_budget import budgeted_post
 
 from model_runtime_config import OPENROUTER_PRIMARY_MODEL
 from runtime_layout import RUNTIME_ROOT, SECRET_ROOT
@@ -176,8 +177,10 @@ def _auth(key: str, *, timeout: tuple[float, float] = (4.0, 8.0)) -> tuple[str, 
         return "pending", "Key 已安全保存为候选，联网后可重新验证"
     if response.status_code == 200:
         return "authenticated", "OpenRouter 鉴权成功"
-    if response.status_code in {401, 403}:
-        return "invalid", "Key 无效或无权访问 OpenRouter"
+    if response.status_code == 401:
+        return "invalid", "Key 无效，请检查后重新输入"
+    if response.status_code == 403:
+        return "pending", "OpenRouter 拒绝访问；请检查账号权限或服务限制，不能据此认定 Key 错误"
     if response.status_code == 429 or response.status_code >= 500:
         return "pending", "OpenRouter 暂时不可用，Key 已保存为待验证候选"
     return "pending", f"OpenRouter 返回 {response.status_code}，请稍后重新验证"
@@ -339,7 +342,7 @@ def test_current_model(*, timeout: tuple[float, float] = (5.0, 25.0)) -> dict[st
         return status()
     started = datetime.now().astimezone()
     try:
-        response = requests.post(
+        with budgeted_post(
             OPENROUTER_CHAT_URL,
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             json={
@@ -349,9 +352,9 @@ def test_current_model(*, timeout: tuple[float, float] = (5.0, 25.0)) -> dict[st
                 "temperature": 0,
             },
             timeout=timeout,
-        )
-        response.raise_for_status()
-        payload = response.json()
+        ) as response:
+            response.raise_for_status()
+            payload = response.json()
         choices = payload.get("choices") if isinstance(payload, dict) else None
         if not isinstance(choices, list) or not choices:
             raise RuntimeError("模型没有返回有效内容")

@@ -12,6 +12,17 @@ from task_store import TaskStore  # noqa: E402
 
 
 class TaskStoreTest(unittest.TestCase):
+    def test_model_incidents_aggregate_without_changing_task(self):
+        task = self.store.submit("healthcheck", "device-1")
+        self.store.claim_next("device-1", "test-worker")
+        self.store.finish(task, status="failed", run_dir="run/path", result={"status": "failed"})
+        ids = [self.store.record_incident(task_id=task, device_id="device-1", video_index=i, stage="topic_model",
+            error_type="CloudModelError", error_message="HTTP 403", outcome="model_failed", recovery_action="none",
+            context={"model_error_fingerprint": "same-rejection"}) for i in range(3)]
+        self.assertEqual(len(set(ids)), 1)
+        self.assertEqual(self.store.get_incident(ids[0]).context["occurrence_count"], 3)
+        self.assertEqual(self.store.get(task).status, "failed")
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.store = TaskStore(Path(self.temp.name) / "tasks.db")

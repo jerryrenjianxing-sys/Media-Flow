@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { API } from "../components/workbench-types";
 import { fetchLocalApi } from "../lib/local-api";
 
-type Task = { id: string; device_id: string; task_type: string; status: string; started_at?: string | null; payload?: { round_index?: number; round_count?: number; topic_prompt?: string; content_mode?: string; video_count?: number; search_segment_min?: number; search_segment_max?: number; home_segment_min?: number; home_segment_max?: number }; result?: { videos_seen?: number; videos_processed?: number; feed_items_seen?: number; likes?: number; favorites?: number; comments_sent?: number; successful_recoveries?: number; recovered_videos?: number; recovery_count?: number; page_drifts?: number; non_video_feed_items?: number; feed_phase_reentries?: number; current_feed_phase?: "search" | "home"; phase_processed?: number; phase_target?: number } };
+type Task = { id: string; device_id: string; task_type: string; status: string; started_at?: string | null; payload?: { round_index?: number; round_count?: number; topic_prompt?: string; content_mode?: string; video_count?: number; search_segment_min?: number; search_segment_max?: number; home_segment_min?: number; home_segment_max?: number }; result?: { navigation_message?: string; videos_seen?: number; videos_processed?: number; feed_items_seen?: number; likes?: number; favorites?: number; comments_sent?: number; successful_recoveries?: number; recovered_videos?: number; recovery_count?: number; page_drifts?: number; non_video_feed_items?: number; feed_phase_reentries?: number; current_feed_phase?: "search" | "home"; phase_processed?: number; phase_target?: number } };
 type Device = { device_id: string; friendly_name?: string; state: string };
 type Status = { paused: boolean; devices: Device[]; tasks: Task[]; active_tasks?: Task[]; task_summary: Record<string, number>; stop_requested_device_ids: string[] };
 
@@ -15,6 +15,7 @@ const taskState: Record<string, string> = { pending: "等待中", running: "执�
 function elapsed(value?: string | null) { if (!value) return "尚未开始"; const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000)); return seconds < 60 ? `已运行 ${seconds} 秒` : `已运行 ${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`; }
 function phaseText(task: Task) {
   const result = task.result || {};
+  if (result.navigation_message) return result.navigation_message;
   if (result.current_feed_phase) return `${result.current_feed_phase === "search" ? "搜索视频流" : "主页视频流"} ${result.phase_processed || 0}/${result.phase_target || 0}`;
   if (task.payload?.content_mode === "hybrid") return `搜索 ${task.payload.search_segment_min || 7}～${task.payload.search_segment_max || 14} → 主页 ${task.payload.home_segment_min || 5}～${task.payload.home_segment_max || 10}`;
   if (task.payload?.content_mode === "search") return "搜索视频流";

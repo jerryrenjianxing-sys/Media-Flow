@@ -1572,6 +1572,23 @@ class TaskStore:
         incident_id = uuid.uuid4().hex
         fingerprint = self.incident_fingerprint(stage, error_type, error_message)
         with self.connection() as connection:
+            if (context or {}).get("model_error_fingerprint"):
+                connection.execute("BEGIN IMMEDIATE")
+                model_fingerprint = str(context["model_error_fingerprint"])
+                existing = connection.execute(
+                    "SELECT id,context_json,created_at FROM incidents WHERE task_id=? AND device_id=? AND stage=? ORDER BY created_at",
+                    (task_id, device_id, stage),
+                ).fetchall()
+                for row in existing:
+                    previous = json.loads(row["context_json"] or "{}")
+                    if previous.get("model_error_fingerprint") != model_fingerprint:
+                        continue
+                    previous["occurrence_count"] = int(previous.get("occurrence_count", 1)) + 1
+                    previous["first_seen_at"] = previous.get("first_seen_at", row["created_at"])
+                    previous["last_seen_at"] = now_iso()
+                    connection.execute("UPDATE incidents SET context_json=?,outcome=? WHERE id=?",
+                                       (json.dumps(previous, ensure_ascii=False), outcome, row["id"]))
+                    return str(row["id"])
             connection.execute(
                 "INSERT INTO incidents "
                 "(id, task_id, device_id, video_index, stage, error_type, "

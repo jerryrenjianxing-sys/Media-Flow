@@ -1,11 +1,37 @@
 from __future__ import annotations
 
 import unittest
+import json
+import sqlite3
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from virtual_device_qualification import assess_environment, qualify_virtual_device
 
 
 class VirtualDeviceQualificationTests(unittest.TestCase):
+    def test_visual_scope_requires_inventory_provider_and_display(self):
+        from virtual_device_qualification import require_visual_navigation_device
+        with tempfile.TemporaryDirectory() as root, patch('runtime_layout.RUNTIME_ROOT', Path(root)):
+            connection = sqlite3.connect(Path(root) / 'tasks.db')
+            try:
+                connection.execute('CREATE TABLE virtual_devices (provider, provider_snapshot_json, adb_endpoint, state, presence_status, android_identity, updated_at)')
+                for provider, dpi in (('physical', 320), ('mumu', 240), ('mumu', 320)):
+                    connection.execute('DELETE FROM virtual_devices')
+                    connection.execute('INSERT INTO virtual_devices VALUES (?,?,?,?,?,?,?)',
+                        (provider, json.dumps({'settings': {'width': 900, 'height': 1600, 'dpi': dpi}}), 'test', 'adb_ready', 'present', 'identity', 'now'))
+                    connection.commit()
+                    if provider == 'mumu' and dpi == 320:
+                        require_visual_navigation_device('test')
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'standard_mumu'):
+                            require_visual_navigation_device('test')
+                with self.assertRaisesRegex(RuntimeError, 'standard_mumu'):
+                    require_visual_navigation_device('not-in-inventory')
+            finally:
+                connection.close()
+
     def test_only_resolution_and_density_define_machine_standard(self) -> None:
         result = assess_environment(
             {

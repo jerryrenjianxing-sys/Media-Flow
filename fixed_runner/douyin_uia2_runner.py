@@ -11,6 +11,8 @@ from typing import Any
 
 import uiautomator2 as u2
 from PIL import Image
+from control_vision import VisionCandidateLocator, observe_navigation, verify_navigation_observation, visual_navigation_enabled
+from virtual_device_qualification import require_visual_navigation_device
 
 from device_profiles import DeviceProfile, get_device_profile
 from recovery_rules import (
@@ -806,6 +808,10 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         super().__init__(device, recorder, actual_profile)
         self.max_gate_skips = max_gate_skips
         serial = device_id or str(getattr(device, "serial", ""))
+        self.device_id = serial
+        self.visual_navigation_enabled = visual_navigation_enabled()
+        self.vision_locator = VisionCandidateLocator()
+        self._visual_sequence = 0
         self.device_profile: DeviceProfile | None = get_device_profile(serial)
         self.allow_search_feed = False
         self.search_query = ""
@@ -815,6 +821,58 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         self.control_states: dict[str, bool | None] = {}
         self.recovery_events: list[dict[str, Any]] = []
         self._pending_overlay_recovery: dict[str, Any] | None = None
+
+    def _visual_observation(self, target: str, pages: set[str], *, click: bool = False):
+        """Optional read-only fallback. Mutation gates never consult this result."""
+        if not self.visual_navigation_enabled:
+            return None
+        if (self.profile.width, self.profile.height) != (900, 1600) or not DeviceLock.owns(self.device_id):
+            raise RuntimeError("navigation_lock_required")
+        require_visual_navigation_device(self.device_id)
+        for attempt in range(2):
+            if foreground_package(self.device) != DOUYIN_PACKAGE:
+                raise RuntimeError("foreground_package_changed")
+            self._visual_sequence += 1
+            stem = f"navigation-{target}-{self._visual_sequence}"
+            source = self.device.dump_hierarchy(compressed=True, pretty=False)
+            if any(marker in source for marker in ("请输入手机号", "验证并登录", "身份安全验证", "发送消息", "快捷回复")):
+                raise RuntimeError("visual_navigation_unsafe_page")
+            known_page = classify_douyin_page_source(source, DOUYIN_PACKAGE, self.profile.width, self.profile.height)
+            if known_page in {"profile", "comment_panel", "known_skip", "external"}:
+                raise RuntimeError("visual_navigation_unsafe_page")
+            self.recorder.screenshot(self.device, stem)
+            (self.recorder.run_dir / f"{stem}.xml").write_text(source, encoding="utf-8")
+            path = self.recorder.run_dir / f"{stem}.png"
+            observation = observe_navigation(path, target=target, expected_pages=pages, fixed_bounds=None, locator=self.vision_locator)
+            current = self.recorder.screenshot(self.device, f"{stem}-before-action")
+            try:
+                bounds = verify_navigation_observation(observation, current, package=foreground_package(self.device),
+                                                       expected_package=DOUYIN_PACKAGE, lock_owned=DeviceLock.owns(self.device_id))
+            except RuntimeError as exc:
+                if str(exc) == "visual_candidate_stale" and attempt == 0:
+                    continue
+                raise
+            self.recorder.emit("page_observation", phase="action_verification" if click else "visual_recognition",
+                               target=target, bounds=list(bounds), screenshot_id=observation.screenshot_id,
+                               page_type=observation.page_type, evidence=observation.evidence)
+            if click:
+                self.device.click(round((bounds[0] + bounds[2]) / 2), round((bounds[1] + bounds[3]) / 2))
+            return observation
+        return None
+
+    def _wait_source(self, predicate, *, seconds: float = 8):
+        deadline = time.monotonic() + seconds
+        source = ""
+        for _ in range(17):
+            source = self.device.dump_hierarchy(compressed=True, pretty=False)
+            if predicate(source) or time.monotonic() >= deadline:
+                return source
+            time.sleep(min(.5, max(0, deadline - time.monotonic())))
+        return source
+
+    def _visual_feed_kind(self) -> str | None:
+        observation = self._visual_observation("video_page", {"home_video", "search_video", "home_image_note", "live", "advertisement"})
+        return observation.page_type if observation is not None else None
 
     def _record_recovery(
         self,
@@ -1555,13 +1613,16 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             require_button_label=False,
         )
         if search_bounds is None:
-            raise RuntimeError("Search button was not found on the main feed")
-        left, top, right, bottom = search_bounds
-        self.device.click(round((left + right) / 2), round((top + bottom) / 2))
+            source = self._wait_source(lambda xml: find_control_bounds(xml, "搜索", self.profile.width, self.profile.height, require_button_label=False) is not None)
+            search_bounds = find_control_bounds(source, "搜索", self.profile.width, self.profile.height, require_button_label=False)
+        if search_bounds is None:
+            if self._visual_observation("search_entry", {"home"}, click=True) is None:
+                raise RuntimeError("Search button was not found on the main feed")
+        else:
+            left, top, right, bottom = search_bounds
+            self.device.click(round((left + right) / 2), round((top + bottom) / 2))
         self.recorder.emit("topic_search", action="open_search", query=query)
-        time.sleep(0.8)
-
-        source = self.device.dump_hierarchy(compressed=True, pretty=False)
+        source = self._wait_source(lambda xml: find_editable_bounds(xml, self.profile.width, self.profile.height) is not None)
         input_bounds = find_editable_bounds(source, self.profile.width, self.profile.height)
         if input_bounds is None:
             raise RuntimeError("Search input was not found")
@@ -1634,7 +1695,10 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         )
         self.recorder.screenshot(self.device, "topic-search-results")
         if result_bounds is None:
-            raise RuntimeError("Search results did not expose a verified video item")
+            observation = self._visual_observation("search_video_result", {"search_results"})
+            if observation is None:
+                raise RuntimeError("Search results did not expose a verified video item")
+            result_bounds = observation.bounds
         left, top, right, bottom = result_bounds
         self.device.click(round((left + right) / 2), round((top + bottom) / 2))
         self.recorder.emit(
@@ -1661,7 +1725,8 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                 self._search_visual_fallback_active = DOUYIN_PACKAGE not in last_source
                 return
             if (
-                not retried_result_card
+                not self.visual_navigation_enabled
+                and not retried_result_card
                 and _search_results_grid_visible(
                     last_source, self.profile.width, self.profile.height
                 )
@@ -1710,6 +1775,9 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         else:
             feed_ready = self.main_feed_shell_confirmed(before)
         if not feed_ready:
+            kind = self._visual_feed_kind()
+            feed_ready = kind == ("search_video" if search_mode else "home_video")
+        if not feed_ready:
             if not self.recover_required_feed(f"before-swipe-{from_video}"):
                 raise RuntimeError("Could not recover the main feed before swipe")
         start_x, start_y = self.profile.absolute(self.profile.swipe_start)
@@ -1747,6 +1815,9 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                 )
             except Exception:
                 search_feed = False
+            if not search_feed:
+                if action == "topic-analysis":
+                    search_feed = self._visual_feed_kind() == "search_video"
             if not search_feed:
                 recovered = self.recover_required_feed(
                     f"search-context-before-{action}-{video}"
@@ -1810,6 +1881,15 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             ):
                 return before, known_skip
         if not browsable_feed:
+            if action == "topic-analysis":
+                kind = self._visual_feed_kind()
+                if kind in {"home_image_note", "live", "advertisement"}:
+                    reason = {"home_image_note": "non_video_feed_item", "live": "live", "advertisement": "advertising"}[kind]
+                    return before, GateDecision(False, (reason,), ())
+                if kind == ("search_video" if search_mode else "home_video"):
+                    # This grants only video observation/counting. Likes, favorites
+                    # and comments always re-enter the original strict UI gates.
+                    return before, GateDecision(True, (), ())
             decision = GateDecision(False, ("visual_main_feed_check_failed",), ())
         else:
             started = time.monotonic()

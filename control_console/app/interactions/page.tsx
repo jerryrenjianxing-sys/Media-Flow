@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchLocalApi } from "../lib/local-api";
+import { navigationReason } from "../lib/navigation-feedback";
 
 const API = "http://127.0.0.1:48138";
 const sectionLabels: Record<string, string> = {
@@ -47,7 +48,7 @@ type Alert = {
 function formatTime(value: string) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "";
 }
-function reasonText(value?: string) { return value ? reasonLabels[value] || value : ""; }
+function reasonText(value?: string) { return value ? navigationReason(value) || reasonLabels[value] || "页面检查未完成，请查看异常现场" : ""; }
 function receiptState(item: Inspection) {
   if (item.status === "completed") return resultLabels[item.result_kind];
   return item.result_kind === "alert" ? "发现互动 · 检查未完成" : "检查未完成";

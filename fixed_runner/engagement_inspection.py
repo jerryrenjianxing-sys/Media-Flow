@@ -13,7 +13,9 @@ from typing import Any, Callable, Iterable, Mapping, TypedDict
 
 from PIL import Image
 
-from douyin_fixed_runner import DOUYIN_PACKAGE, PROFILE
+from douyin_fixed_runner import DOUYIN_PACKAGE, PROFILE, DeviceLock
+from control_vision import VisionCandidateLocator, observe_navigation, verify_navigation_observation, visual_navigation_enabled
+from virtual_device_qualification import require_visual_navigation_device
 from douyin_uia2_runner import (
     find_bottom_navigation_bounds,
     find_control_bounds,
@@ -946,6 +948,8 @@ class EngagementInspector:
         device_id: str = "",
         task_id: str = "",
         incident_sink: IncidentSink | None = None,
+        vision_locator=None,
+        navigation_lock: Callable[[], bool] | None = None,
     ) -> None:
         self._device = device
         self._recorder = recorder
@@ -955,6 +959,12 @@ class EngagementInspector:
         self._device_id = device_id
         self._task_id = task_id
         self._incident_sink = incident_sink
+        self._vision_locator = vision_locator
+        self._navigation_lock = navigation_lock or (lambda: DeviceLock.owns(self._device_id))
+        self._vision_enabled = False
+        self._inspection_deadline: float | None = None
+        self._scan_deadline: float | None = None
+        self._visual_sequence = 0
         self._recorded_incidents: set[tuple[str, str]] = set()
         self._v2_artifacts: list[Path] = []
         self._v2_evidence: list[dict[str, Any]] = []
@@ -1111,6 +1121,11 @@ class EngagementInspector:
         return result
 
     def _inspect_v3(self, policy: Mapping[str, Any]) -> EngagementInspectionResult:
+        self._inspection_deadline = self._clock() + 120
+        self._scan_deadline = None
+        self._vision_enabled = visual_navigation_enabled(policy)
+        if self._vision_enabled and self._vision_locator is None:
+            self._vision_locator = VisionCandidateLocator()
         calibration_only = bool(policy.get("_calibration_only", False))
         self._evidence_workflow = "v3"
         started_at = _now_iso()
@@ -1147,21 +1162,25 @@ class EngagementInspector:
             last_source = source
             self._capture_v2("home-before-message", source)
             message_source = self._open_bottom_tab(source, "消息")
+            message_source = self._wait_observation(message_source, lambda xml: find_unified_activity_entry_bounds(xml, self._width, self._height) is not None)
             last_source = message_source
             self._capture_v2("message-entry", message_source)
-            if "消息" not in " ".join(_labels(message_source)):
+            if "消息" not in " ".join(_labels(message_source)) and not self._vision_enabled:
                 raise RuntimeError("message_page_not_recognized")
             entry_bounds = find_unified_activity_entry_bounds(
                 message_source, self._width, self._height
             )
             if entry_bounds is None:
-                raise RuntimeError("interaction_entry_not_found")
-            self._click(entry_bounds, "list_entry:互动消息")
+                if not self._vision_enabled:
+                    raise RuntimeError("interaction_entry_not_found")
+                self._visual_click(message_source, "interaction_entry", {"message"})
+            else:
+                self._click(entry_bounds, "list_entry:互动消息")
+            self._scan_deadline = min(self._inspection_deadline, self._clock() + 45)
             activity_source = self._dump()
+            activity_source = self._wait_observation(activity_source, lambda xml: parse_unified_activity_viewport(xml, rules, width=self._width, height=self._height)["page_recognized"])
             last_source = activity_source
-            first = parse_unified_activity_viewport(
-                activity_source, rules, width=self._width, height=self._height
-            )
+            first = self._read_activity(activity_source, rules)
             self._capture_v2("unified-activity-entry", activity_source)
             if not first["page_recognized"]:
                 raise RuntimeError("unified_activity_page_not_recognized")
@@ -1227,6 +1246,7 @@ class EngagementInspector:
                 source=last_source,
             )
         finally:
+            self._scan_deadline = None
             restored = self._restore_home()
             if restored:
                 try:
@@ -1246,6 +1266,11 @@ class EngagementInspector:
                 )
 
         visitor_disabled = bool(unified.get("visitor_history_disabled"))
+        if fatal_reason:
+            unified["reason_code"] = fatal_reason
+            for section in sections.values():
+                if section.get("reason") == "not_checked":
+                    section["reason"] = fatal_reason
         if visitor_disabled and not unified.get("reason_code"):
             unified["reason_code"] = "visitor_history_disabled"
         if fatal_reason or not restored:
@@ -1258,7 +1283,7 @@ class EngagementInspector:
             status = "failed"
         if calibration_only:
             metadata.update({"alert_sources": [], "alert_created": False})
-        elif unified.get("complete"):
+        elif unified.get("complete") and restored and not fatal_reason:
             metadata.update(
                 self._record_v2_alert(
                     sections,
@@ -1313,6 +1338,82 @@ class EngagementInspector:
             scroll_count=unified.get("scroll_count"),
         )
         return result  # type: ignore[return-value]
+
+    def _remaining(self) -> float:
+        deadlines = [d for d in (self._inspection_deadline, self._scan_deadline) if d is not None]
+        remaining = min(deadlines) - self._clock() if deadlines else 120.0
+        if remaining <= 0:
+            raise RuntimeError("engagement_deadline_exceeded")
+        return remaining
+
+    def _wait_observation(self, source: str, predicate) -> str:
+        deadline = self._clock() + min(8, self._remaining())
+        for _ in range(17):
+            if predicate(source):
+                return source
+            if self._clock() >= deadline:
+                break
+            self._recorder.emit("page_observation", phase="waiting_page", message="等待页面加载")
+            self._sleep(min(.5, max(0, deadline - self._clock())))
+            source = self._dump()
+        return source
+
+    def _visual_frame(self, source: str, phase: str) -> Path:
+        self._remaining()
+        self._visual_sequence += 1
+        name = f"visual-{phase}-{self._visual_sequence}"
+        image = self._capture_v2(name, source)
+        if image is None or image.size != (self._width, self._height):
+            raise RuntimeError("visual_screenshot_invalid")
+        path = Path(self._recorder.run_dir) / f"inspection-v3-{name}.png"
+        # The generic evidence deduper may remove identical PNGs. Visual requests
+        # need the exact paired frame; keep it as part of this observation.
+        image.save(path)
+        if self._v2_evidence:
+            self._v2_evidence[-1]["image_name"] = path.name
+        return path
+
+    def _visual_click(self, source: str, target: str, pages: set[str]) -> None:
+        if not self._navigation_lock():
+            raise RuntimeError("navigation_lock_required")
+        require_visual_navigation_device(self._device_id)
+        for attempt in range(2):
+            path = self._visual_frame(source, target)
+            self._recorder.emit("page_observation", phase="visual_recognition", message="视觉识别入口", screenshot=path.name)
+            observation = observe_navigation(path, target=target, expected_pages=pages, fixed_bounds=None,
+                                             locator=self._vision_locator, timeout_seconds=min(20, self._remaining()))
+            source = self._dump()
+            fresh = self._visual_frame(source, "before-action")
+            try:
+                with Image.open(fresh) as current:
+                    bounds = verify_navigation_observation(observation, current, package=foreground_package(self._device),
+                                                           expected_package=DOUYIN_PACKAGE, lock_owned=self._navigation_lock())
+            except RuntimeError as exc:
+                if str(exc) == "visual_candidate_stale" and attempt == 0:
+                    continue
+                raise
+            self._remaining()
+            self._recorder.emit("page_observation", phase="action_verification", message="执行一次导航并复核", target=target,
+                                bounds=list(bounds), screenshot_id=observation.screenshot_id, source=observation.source,
+                                evidence=observation.evidence)
+            self._click(bounds, f"visual_navigation:{target}")
+            return
+
+    def _read_activity(self, source: str, rules: InspectionPolicy) -> dict[str, Any]:
+        parsed = parse_unified_activity_viewport(source, rules, width=self._width, height=self._height)
+        if not self._vision_enabled or (parsed["page_recognized"] and parsed.get("boundary")):
+            return parsed
+        path = self._visual_frame(source, "activity-read")
+        if not self._navigation_lock():
+            raise RuntimeError("navigation_lock_required")
+        require_visual_navigation_device(self._device_id)
+        value = self._vision_locator.read_activity(path, timeout_seconds=min(20, self._remaining()))
+        self._remaining()
+        self._recorder.emit("page_observation", phase="visual_reading", message="复核互动列表与已读边界",
+                            screenshot=path.name, boundary=value.get("boundary"), evidence=value.get("boundary_evidence"))
+        return {"page_recognized": True, "boundary": value["boundary"],
+                "visitor_history_disabled": value.get("visitor_history_disabled") is True,
+                "items": [_v3_item(item["text"], item["category"], rules) for item in value["items"]]}
 
     def _validate_v3_calibration(self, policy: Mapping[str, Any]) -> None:
         expected_app = str(policy.get("expected_app_version") or "")
@@ -1373,7 +1474,12 @@ class EngagementInspector:
         effective_scrolls = 0
         stagnant = 0
         previous_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        previous_visual_hash = None
+        if self._vision_enabled:
+            previous_image = self._capture_v2("unified-activity-before-scroll", source)
+            previous_visual_hash = self._list_image_hash(previous_image)
         while boundary is None and effective_scrolls < 12 and self._clock() - started < 45:
+            self._remaining()
             self._device.swipe(
                 round(self._width * 0.5),
                 round(self._height * 0.79),
@@ -1384,7 +1490,11 @@ class EngagementInspector:
             self._sleep(0.55)
             current = self._dump()
             current_hash = hashlib.sha256(current.encode("utf-8")).hexdigest()
-            if current_hash == previous_hash:
+            current_visual_hash = previous_visual_hash
+            if self._vision_enabled:
+                current_image = self._capture_v2(f"unified-activity-scroll-observation-{effective_scrolls}-{stagnant}", current)
+                current_visual_hash = self._list_image_hash(current_image)
+            if current_hash == previous_hash and current_visual_hash == previous_visual_hash:
                 stagnant += 1
             else:
                 stagnant = 0
@@ -1393,9 +1503,7 @@ class EngagementInspector:
                 self._capture_v2(
                     f"unified-activity-swipe-{effective_scrolls}", source
                 )
-                parsed = parse_unified_activity_viewport(
-                    source, policy, width=self._width, height=self._height
-                )
+                parsed = self._read_activity(source, policy)
                 if not parsed["page_recognized"]:
                     return (
                         {
@@ -1421,6 +1529,7 @@ class EngagementInspector:
                 )
                 boundary = parsed.get("boundary")
             previous_hash = current_hash
+            previous_visual_hash = current_visual_hash
             if stagnant >= 2:
                 break
         complete = boundary is not None
@@ -1450,6 +1559,14 @@ class EngagementInspector:
             },
             source,
         )
+
+    @staticmethod
+    def _list_image_hash(image):
+        if image is None:
+            return None
+        # Ignore status bar clock/network animation, retain the visible list.
+        crop = image.crop((0, int(image.height * .12), image.width, int(image.height * .92)))
+        return hashlib.sha256(crop.convert("L").resize((90, 128)).tobytes()).hexdigest()
 
     @staticmethod
     def _v3_sections(unified: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
@@ -1940,7 +2057,7 @@ class EngagementInspector:
         run_dir = getattr(self._recorder, "run_dir", None)
         image_hash = hashlib.sha256(image.tobytes()).hexdigest() if image is not None else ""
         duplicate_image = bool(image_hash and image_hash in self._v2_image_hashes)
-        if duplicate_image:
+        if duplicate_image and self._evidence_workflow != "v3":
             if image_path is not None:
                 image_path.unlink(missing_ok=True)
             self._recorder.emit(
@@ -2512,6 +2629,7 @@ class EngagementInspector:
         return False
 
     def _dump(self) -> str:
+        self._remaining()
         if foreground_package(self._device) != DOUYIN_PACKAGE:
             raise RuntimeError("foreground_package_changed")
         source = str(self._device.dump_hierarchy(compressed=True, pretty=False))
@@ -2548,7 +2666,13 @@ class EngagementInspector:
 
     def _open_bottom_tab(self, source: str, label: str) -> str:
         bounds = find_bottom_navigation_bounds(source, label, self._width, self._height)
+        if bounds is None and self._vision_enabled and label in {"消息", "首页"}:
+            source = self._wait_observation(source, lambda xml: find_bottom_navigation_bounds(xml, label, self._width, self._height) is not None)
+            bounds = find_bottom_navigation_bounds(source, label, self._width, self._height)
         if bounds is None:
+            if self._vision_enabled and label in {"消息", "首页"}:
+                self._visual_click(source, "message" if label == "消息" else "home", {"home"} if label == "消息" else {"message", "unified_activity"})
+                return self._dump()
             raise RuntimeError(f"bottom_tab_not_found:{label}")
         self._click(bounds, f"bottom_tab:{label}")
         return self._dump()
@@ -2567,6 +2691,7 @@ class EngagementInspector:
         return self._dump()
 
     def _click(self, bounds: tuple[int, int, int, int], action: str) -> None:
+        self._remaining()
         left, top, right, bottom = bounds
         self._recorder.emit("engagement_navigation", action=action, bounds=list(bounds))
         self._device.click(round((left + right) / 2), round((top + bottom) / 2))
@@ -2676,5 +2801,8 @@ class EngagementInspector:
 
     @staticmethod
     def _public_reason(exc: Exception) -> str:
-        value = _clean(str(exc), 120)
+        from comment_ai import CloudModelError, _redact_text
+        if isinstance(exc, CloudModelError):
+            return f"model_{exc.kind}"
+        value = _clean(_redact_text(str(exc)), 120)
         return value if value else type(exc).__name__

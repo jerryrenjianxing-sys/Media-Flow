@@ -9,6 +9,13 @@ import model_connection
 
 
 class ModelConnectionTest(unittest.TestCase):
+    def test_forbidden_is_not_misreported_as_invalid_key(self):
+        with patch("model_connection.requests.get", return_value=Mock(status_code=403)):
+            status, message = model_connection._auth("test")
+        self.assertEqual(status, "pending")
+        self.assertIn("拒绝", message)
+        self.assertNotIn("Key 无效", message)
+
     def _paths(self, root: str):
         base = Path(root)
         return patch.multiple(
