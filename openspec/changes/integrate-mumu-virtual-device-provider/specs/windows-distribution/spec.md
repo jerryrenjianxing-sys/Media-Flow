@@ -125,3 +125,7 @@ The installer SHALL submit template operations to the same-version local backend
 #### Scenario: Explicit replacement after proven control failure
 - **WHEN** the user explicitly requests a new attempt after the imported private template failed control validation and is stopped
 - **THEN** preserve the failed instance and receipt and create at most one new import; reject this option for an unknown import result
+
+#### Scenario: Clone RPC times out while its disk copy completes
+- **WHEN** MuMu returns a nested -502 after one clone dispatch
+- **THEN** observe the unique new instance and directory, require stopped source and complete matching data disk hashes within the original deadline before registration or launch, never resend clone; ambiguous or incomplete results remain preserved with an error

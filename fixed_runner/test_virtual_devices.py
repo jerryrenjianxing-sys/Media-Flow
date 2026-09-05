@@ -218,7 +218,8 @@ class VirtualDeviceProviderTests(unittest.TestCase):
                 [{"provider_instance_id": "1"}],
                 [{"provider_instance_id": "1"}, {"provider_instance_id": "2"}],
             ],
-        ), patch.object(provider, "_run") as run:
+        ), patch.object(provider, "_run", return_value=CommandResult([], 0, '{}', '')) as run, \
+                patch('mumu_clone.snapshot'), patch('mumu_clone.wait_clone', return_value={'provider_instance_id':'2'}):
             created = provider.clone("1")
         self.assertEqual(created["provider_instance_id"], "2")
         self.assertEqual(run.call_args.args, ("clone", "-v", "1", "-n", "1"))

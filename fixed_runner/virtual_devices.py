@@ -607,15 +607,14 @@ class MuMuProvider:
         return self._run("rename", "-v", str(instance_id), "-n", name, timeout=30)
 
     def clone(self, instance_id: str) -> dict[str, Any]:
+        from mumu_archive import accept_dispatch
+        from mumu_clone import snapshot, wait_clone
+        deadline = time.monotonic() + 1800
         before = {item["provider_instance_id"] for item in self.list_instances()}
-        self._run("clone", "-v", str(instance_id), "-n", "1", timeout=300)
-        after = self.list_instances()
-        created = [item for item in after if item["provider_instance_id"] not in before]
-        if len(created) != 1:
-            raise RuntimeError(
-                f"克隆结果无法唯一确认，发现{len(created)}个新增候选；不会自动重复克隆"
-            )
-        return created[0]
+        evidence = snapshot(self.manager_path, instance_id, deadline=deadline)
+        result = self._run("clone", "-v", str(instance_id), "-n", "1", timeout=300, allow_nonzero=True)
+        accept_dispatch(result)
+        return wait_clone(self, before, evidence, deadline=deadline)
 
     def export_backup(self, instance_id: str, directory: Path, name: str) -> Path:
         directory = directory.resolve()

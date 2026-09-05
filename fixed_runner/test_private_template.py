@@ -39,6 +39,19 @@ class SettingsInputTests(unittest.TestCase):
 
 
 class MuMuAsyncArchiveTests(unittest.TestCase):
+    def test_clone_nested_timeout_is_observed_without_second_command(self):
+        from virtual_devices import MuMuProvider, CommandResult
+        provider = MuMuProvider(Path('MuMuManager.exe'))
+        with patch.object(provider, 'list_instances', return_value=[{'provider_instance_id':'4'}]), \
+                patch.object(provider, '_run', return_value=CommandResult([],1,'{"5":{"errcode":-502,"errmsg":"mainnx request failed"}}','')) as run, \
+                patch('mumu_clone.snapshot', return_value={'source':'fixture'}) as snapshot, \
+                patch('mumu_clone.wait_clone', return_value={'provider_instance_id':'5'}) as observe:
+            self.assertEqual(provider.clone('4')['provider_instance_id'],'5')
+        run.assert_called_once()
+        self.assertTrue(run.call_args.kwargs['allow_nonzero'])
+        snapshot.assert_called_once()
+        observe.assert_called_once()
+
     def test_transient_observation_timeout_does_not_fail_or_repeat_import(self):
         import subprocess
         from mumu_archive import wait_import
