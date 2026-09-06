@@ -1,0 +1,576 @@
+{
+  "packages/app/vite.config.ts": [
+    {
+      "old": "export default defineConfig({",
+      "new": "export default defineConfig({\n  base: \"/_native/\","
+    }
+  ],
+  "packages/app/src/context/language.tsx": [
+    {
+      "old": "  detectDesktopNativeLocale,\n",
+      "new": ""
+    },
+    {
+      "old": "  if (typeof navigator !== \"object\") return \"en\"\n  return detectDesktopNativeLocale(navigator.languages?.length ? navigator.languages : [navigator.language])",
+      "new": "  return \"zh\""
+    }
+  ],
+  "packages/app/src/entry.tsx": [
+    {
+      "old": "import { loadInitialLocale } from \"@/context/language\"",
+      "new": "import { loadInitialLocale } from \"@/context/language\"\nimport { prepareNative } from \"./mediaflow/bootstrap\""
+    },
+    {
+      "old": "void loadInitialLocale().then((locale) => {",
+      "new": "void prepareNative(platform.draftStore!).then(() => loadInitialLocale()).then((locale) => {"
+    },
+    {
+      "old": "  if (location.hostname.includes(\"opencode.ai\")) return \"http://localhost:4096\"\n  if (import.meta.env.DEV)\n    return `http://${import.meta.env.VITE_OPENCODE_SERVER_HOST ?? \"localhost\"}:${import.meta.env.VITE_OPENCODE_SERVER_PORT ?? \"4096\"}`\n  return location.origin",
+      "new": "  return location.origin + \"/opencode\""
+    },
+    {
+      "old": "https://opencode.ai/favicon-96x96-v3.png",
+      "new": "/_native/mediaflow-icon.svg"
+    }
+  ],
+  "packages/app/src/app.tsx": [
+    {
+      "old": "      <ThemeProvider\n",
+      "new": "      <ThemeProvider\n        defaultTheme=\"mediaflow\"\n"
+    }
+  ],
+  "packages/app/src/components/titlebar.tsx": [
+    {
+      "old": "import \"./titlebar.css\"",
+      "new": "import \"./titlebar.css\"\nimport { MediaFlowBar } from \"../mediaflow/bar\""
+    },
+    {
+      "old": "  return (\n    <header\n",
+      "new": "  return (\n    <>\n    <MediaFlowBar />\n    <header\n"
+    },
+    {
+      "old": "    </header>\n  )",
+      "new": "    </header>\n    </>\n  )"
+    },
+    {
+      "old": "              if (!fallback) return",
+      "new": "              if (!fallback) {\n                const conn = server.current ?? global.servers.list()[0]\n                if (!conn) return\n                pickDirectory({\n                  server: conn,\n                  title: language.t(\"command.project.open\"),\n                  onSelect: (result) => {\n                    const directory = Array.isArray(result) ? result[0] : result\n                    if (!directory) return\n                    const ctx = global.ensureServerCtx(conn)\n                    ctx.projects.open(directory)\n                    ctx.projects.touch(directory)\n                    tabs.newDraft({ server: ServerConnection.key(conn), directory }, \"\")\n                  },\n                })\n                return\n              }"
+    },
+    {
+      "old": "import { MediaFlowBar } from \"../mediaflow/bar\"",
+      "new": "import { MediaFlowBar } from \"../mediaflow/bar\"\nimport { useDirectoryPicker } from \"./directory-picker\""
+    },
+    {
+      "old": "  const layout = useLayout()\n  const platform = usePlatform()",
+      "new": "  const layout = useLayout()\n  const pickDirectory = useDirectoryPicker()\n  const platform = usePlatform()"
+    }
+  ],
+  "packages/app/src/components/dialog-settings.tsx": [
+    {
+      "old": "import { useLanguage } from \"@/context/language\"",
+      "new": "import { useLanguage } from \"@/context/language\"\nimport { MediaFlowAbout } from \"../mediaflow/about\""
+    },
+    {
+      "old": "                    <Tabs.Trigger value=\"general\">",
+      "new": "                    <Tabs.Trigger value=\"about\">\n                      <Icon name=\"help\" />\n                      {language.t(\"mediaflow.about\")}\n                    </Tabs.Trigger>\n                    <Tabs.Trigger value=\"general\">"
+    },
+    {
+      "old": "        <Tabs.Content value=\"general\"",
+      "new": "        <Tabs.Content value=\"about\" class=\"no-scrollbar\">\n          <MediaFlowAbout />\n        </Tabs.Content>\n        <Tabs.Content value=\"general\""
+    },
+    {
+      "old": "<span class=\"text-11-regular\">v{platform.version}</span>",
+      "new": "<span class=\"text-11-regular\">dev24 · OpenCode 1.18.29</span>"
+    },
+    {
+      "old": "import { usePlatform } from \"@/context/platform\"\n",
+      "new": ""
+    },
+    {
+      "old": "  const platform = usePlatform()\n",
+      "new": ""
+    }
+  ],
+  "packages/app/src/components/settings-v2/dialog-settings-v2.tsx": [
+    {
+      "old": "import { useLanguage } from \"@/context/language\"",
+      "new": "import { useLanguage } from \"@/context/language\"\nimport { MediaFlowAbout } from \"../../mediaflow/about\""
+    },
+    {
+      "old": "                    <TabsV2.Trigger value=\"general\">",
+      "new": "                    <TabsV2.Trigger value=\"about\">\n                      <Icon name=\"help\" />\n                      {language.t(\"mediaflow.about\")}\n                    </TabsV2.Trigger>\n                    <TabsV2.Trigger value=\"general\">"
+    },
+    {
+      "old": "        <TabsV2.Content value=\"general\"",
+      "new": "        <TabsV2.Content value=\"about\" class=\"no-scrollbar\">\n          <MediaFlowAbout />\n        </TabsV2.Content>\n        <TabsV2.Content value=\"general\""
+    },
+    {
+      "old": "<span>v{platform.version}</span>",
+      "new": "<span>dev24 · OpenCode 1.18.29</span>"
+    },
+    {
+      "old": "import { usePlatform } from \"@/context/platform\"\n",
+      "new": ""
+    },
+    {
+      "old": "  const platform = usePlatform()\n",
+      "new": ""
+    }
+  ],
+  "packages/app/src/i18n/en.ts": [
+    {
+      "old": "  ...DESKTOP_NATIVE_ENGLISH,",
+      "new": "  ...DESKTOP_NATIVE_ENGLISH,\n  \"mediaflow.brand\": \"MediaFlow\",\n  \"mediaflow.tagline\": \"One-stop media automation Agent\",\n  \"mediaflow.manage\": \"Manage\",\n  \"mediaflow.stop\": \"Stop all automated operations\",\n  \"mediaflow.confirmStop\": \"Stop all automated operations? Running tasks will be asked to stop; MuMu will not be shut down.\",\n  \"mediaflow.stopping\": \"Sending stop request…\",\n  \"mediaflow.stopped\": \"Stop requested\",\n  \"mediaflow.stopFailed\": \"Stop result is unconfirmed. Check task status in Manage before trying again.\",\n  \"mediaflow.about\": \"About\",\n  \"mediaflow.license\": \"OpenCode MIT License\",\n  \"mediaflow.disclaimer\": \"Based on OpenCode 1.18.29. MediaFlow branding does not imply upstream endorsement. Software is provided as is, without warranty. Device task outcomes are determined by actual execution receipts.\",\n  \"mediaflow.drafts\": \"Original drafts are retained. Reload to retry; conflicts never overwrite native drafts.\",\n  \"mediaflow.reload\": \"Reload and retry\",\n  \"mediaflow.migration\": \"Local connection and configuration migration\",\n  \"mediaflow.statusFailed\": \"Platform status is temporarily unavailable. Manage is still available.\",\n  \"mediaflow.statusLoading\": \"Reading platform status…\",\n  \"mediaflow.retryMigration\": \"Retry configuration migration\",\n  \"mediaflow.refreshStatus\": \"Refresh status\","
+    },
+    {
+      "old": "\"app.name.desktop\": \"OpenCode Desktop\"",
+      "new": "\"app.name.desktop\": \"MediaFlow\""
+    }
+  ],
+  "packages/app/src/i18n/zh.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "export const dict = {\n  \"mediaflow.brand\": \"MediaFlow\",\n  \"mediaflow.tagline\": \"一站式媒体自动化Agent\",\n  \"mediaflow.manage\": \"管理中心\",\n  \"mediaflow.stop\": \"停止全部自动操作\",\n  \"mediaflow.confirmStop\": \"停止全部自动操作？正在运行的任务将收到停止请求，不会关闭 MuMu。\",\n  \"mediaflow.stopping\": \"正在发送停止请求…\",\n  \"mediaflow.stopped\": \"已请求停止\",\n  \"mediaflow.stopFailed\": \"停止结果尚未确认。请先到管理中心查看任务状态，再决定是否重试。\",\n  \"mediaflow.about\": \"关于\",\n  \"mediaflow.license\": \"OpenCode MIT 许可证\",\n  \"mediaflow.disclaimer\": \"基于 OpenCode 1.18.29。MediaFlow 品牌定制不代表上游背书。软件按原样提供，不作任何保证。设备任务结果以实际执行回执为准。\",\n  \"mediaflow.drafts\": \"旧草稿保留，重新加载重试；冲突时不覆盖原生草稿。\",\n  \"mediaflow.reload\": \"重新加载重试\",\n  \"mediaflow.migration\": \"本地连接与配置迁移\",\n  \"mediaflow.statusFailed\": \"平台状态暂不可读，管理中心仍可用。\",\n  \"mediaflow.statusLoading\": \"正在读取平台状态…\",\n  \"mediaflow.retryMigration\": \"重试配置迁移\",\n  \"mediaflow.refreshStatus\": \"刷新状态\","
+    },
+    {
+      "old": "\"app.name.desktop\": \"OpenCode Desktop\"",
+      "new": "\"app.name.desktop\": \"MediaFlow\""
+    }
+  ],
+  "packages/ui/src/components/logo.tsx": [
+    {
+      "old": "import { type ComponentProps } from \"solid-js\"\n\nexport const Mark = (props: { class?: string }) => {\n  return (\n    <svg\n      data-component=\"logo-mark\"\n      classList={{ [props.class ?? \"\"]: !!props.class }}\n      viewBox=\"0 0 16 20\"\n      fill=\"none\"\n      xmlns=\"http://www.w3.org/2000/svg\"\n    >\n      <path data-slot=\"logo-logo-mark-shadow\" d=\"M12 16H4V8H12V16Z\" fill=\"var(--icon-weak-base)\" />\n      <path data-slot=\"logo-logo-mark-o\" d=\"M12 4H4V16H12V4ZM16 20H0V0H16V20Z\" fill=\"var(--icon-strong-base)\" />\n    </svg>\n  )\n}\n\nexport const Splash = (props: Pick<ComponentProps<\"svg\">, \"ref\" | \"class\">) => {\n  return (\n    <svg\n      ref={props.ref}\n      data-component=\"logo-splash\"\n      classList={{ [props.class ?? \"\"]: !!props.class }}\n      viewBox=\"0 0 80 100\"\n      fill=\"none\"\n      xmlns=\"http://www.w3.org/2000/svg\"\n    >\n      <path d=\"M60 80H20V40H60V80Z\" fill=\"var(--icon-base)\" />\n      <path d=\"M60 20H20V80H60V20ZM80 100H0V0H80V100Z\" fill=\"var(--icon-strong-base)\" />\n    </svg>\n  )\n}\n\nexport const Logo = (props: { class?: string }) => {\n  return (\n    <svg\n      xmlns=\"http://www.w3.org/2000/svg\"\n      viewBox=\"0 0 234 42\"\n      fill=\"none\"\n      classList={{ [props.class ?? \"\"]: !!props.class }}\n    >\n      <g>\n        <path d=\"M18 30H6V18H18V30Z\" fill=\"var(--icon-weak-base)\" />\n        <path d=\"M18 12H6V30H18V12ZM24 36H0V6H24V36Z\" fill=\"var(--icon-base)\" />\n        <path d=\"M48 30H36V18H48V30Z\" fill=\"var(--icon-weak-base)\" />\n        <path d=\"M36 30H48V12H36V30ZM54 36H36V42H30V6H54V36Z\" fill=\"var(--icon-base)\" />\n        <path d=\"M84 24V30H66V24H84Z\" fill=\"var(--icon-weak-base)\" />\n        <path d=\"M84 24H66V30H84V36H60V6H84V24ZM66 18H78V12H66V18Z\" fill=\"var(--icon-base)\" />\n        <path d=\"M108 36H96V18H108V36Z\" fill=\"var(--icon-weak-base)\" />\n        <path d=\"M108 12H96V36H90V6H108V12ZM114 36H108V12H114V36Z\" fill=\"var(--icon-base)\" />\n        <path d=\"M144 30H126V18H144V30Z\" fill=\"var(--icon-weak-base)\" />\n        <path d=\"M144 12H126V30H144V36H120V6H144V12Z\" fill=\"var(--icon-strong-base)\" />\n        <path d=\"M168 30H156V18H168V30Z\" fill=\"var(--icon-weak-base)\" />\n        <path d=\"M168 12H156V30H168V12ZM174 36H150V6H174V36Z\" fill=\"var(--icon-strong-base)\" />\n        <path d=\"M198 30H186V18H198V30Z\" fill=\"var(--icon-weak-base)\" />\n        <path d=\"M198 12H186V30H198V12ZM204 36H180V6H198V0H204V36Z\" fill=\"var(--icon-strong-base)\" />\n        <path d=\"M234 24V30H216V24H234Z\" fill=\"var(--icon-weak-base)\" />\n        <path d=\"M216 12V18H228V12H216ZM234 24H216V30H234V36H210V6H234V24Z\" fill=\"var(--icon-strong-base)\" />\n      </g>\n    </svg>\n  )\n}\n",
+      "new": "import { type ComponentProps } from \"solid-js\"\n\nconst Shape = () => <>\n  <rect width=\"64\" height=\"64\" rx=\"16\" fill=\"#146E63\" />\n  <path d=\"M14 46V19l18 20 18-20v27\" fill=\"none\" stroke=\"white\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n</>\n\nexport const Mark = (props: { class?: string }) => (\n  <svg data-component=\"logo-mark\" class={props.class} viewBox=\"0 0 64 64\" aria-label=\"MediaFlow\"><Shape /></svg>\n)\n\nexport const Splash = (props: Pick<ComponentProps<\"svg\">, \"ref\" | \"class\">) => (\n  <svg ref={props.ref} data-component=\"logo-splash\" class={props.class} viewBox=\"0 0 64 64\" aria-label=\"MediaFlow\"><Shape /></svg>\n)\n\nexport const Logo = (props: { class?: string }) => (\n  <svg data-component=\"logo\" class={props.class} viewBox=\"0 0 270 64\" aria-label=\"MediaFlow\">\n    <Shape />\n    <text x=\"78\" y=\"45\" fill=\"currentColor\" font-size=\"37\" font-family=\"system-ui, sans-serif\" font-weight=\"650\">MediaFlow</text>\n  </svg>\n)\n"
+    }
+  ],
+  "packages/ui/src/components/logo.css": [
+    {
+      "old": "  aspect-ratio: 4/5;",
+      "new": "  aspect-ratio: 1;"
+    }
+  ],
+  "packages/app/index.html": [
+    {
+      "old": "<html lang=\"en\"",
+      "new": "<html lang=\"zh-CN\""
+    },
+    {
+      "old": "<title>OpenCode</title>",
+      "new": "<title>MediaFlow · 一站式媒体自动化Agent</title>"
+    },
+    {
+      "old": "    <link rel=\"icon\" type=\"image/png\" href=\"/favicon-96x96-v3.png\" sizes=\"96x96\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon-v3.svg\" />\n    <link rel=\"shortcut icon\" href=\"/favicon-v3.ico\" />\n    <link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"/apple-touch-icon-v3.png\" />\n    <link rel=\"manifest\" href=\"/site.webmanifest\" />",
+      "new": "    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/mediaflow-icon.svg\" />\n    <link rel=\"manifest\" href=\"/mediaflow.webmanifest\" />"
+    },
+    {
+      "old": "<meta name=\"theme-color\" content=\"#fafafa\" />",
+      "new": "<meta name=\"theme-color\" content=\"#146E63\" />"
+    },
+    {
+      "old": "    <meta property=\"og:image\" content=\"/social-share.png\" />\n    <meta property=\"twitter:image\" content=\"/social-share.png\" />",
+      "new": "    <meta property=\"og:image\" content=\"/mediaflow-icon.svg\" />"
+    }
+  ],
+  "packages/app/src/i18n/ar.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/br.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/bs.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/da.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/de.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/es.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/fr.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/ja.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/ko.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/no.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/pl.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/ru.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/uk.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/th.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/tr.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/zht.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/hi.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/nl.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/id.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/vi.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/it.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/ur.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/pa.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/az.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/fi.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/sv.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/am.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/bg.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/bn.ts": [
+    {
+      "old": "export const dict: Record<string, string> = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict: Record<string, string> = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/ca.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/cs.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/dv.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/dz.ts": [
+    {
+      "old": "export const dict: Record<string, string> = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict: Record<string, string> = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/el.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/et.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/fa.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/fo.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/hr.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/hu.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/hy.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/is.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/ka.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/km.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/lo.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/lt.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/lv.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/mk.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/mn.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/ms.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/my.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/ne.ts": [
+    {
+      "old": "export const dict: Record<string, string> = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict: Record<string, string> = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/ro.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/si.ts": [
+    {
+      "old": "export const dict: Record<string, string> = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict: Record<string, string> = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/sk.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/sl.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/sq.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/sr.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/tg.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/tk.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/i18n/uz.ts": [
+    {
+      "old": "export const dict = {",
+      "new": "import { MEDIAFLOW_ENGLISH } from \"./mediaflow\"\n\nexport const dict = {\n  ...MEDIAFLOW_ENGLISH,"
+    }
+  ],
+  "packages/app/src/utils/server-protocol.ts": [
+    {
+      "old": "new URL(path, server.url)",
+      "new": "new URL(server.url.replace(/\\/+$/, \"\") + path)"
+    }
+  ],
+  "packages/app/src/utils/server.ts": [
+    {
+      "old": "import { decode64 } from \"@/utils/base64\"",
+      "new": "import { decode64 } from \"@/utils/base64\"\nimport { prefixFetch } from \"../mediaflow/server-path\""
+    },
+    {
+      "old": "    fetch: input.fetch,",
+      "new": "    fetch: prefixFetch(input.server.url, input.fetch ?? globalThis.fetch),"
+    }
+  ],
+  "packages/app/src/utils/server-health.ts": [
+    {
+      "old": "import { authTokenFromCredentials, createSdkForServer } from \"./server\"",
+      "new": "import { createApiForServer, createSdkForServer } from \"./server\""
+    },
+    {
+      "old": "import { ClientError, OpenCode } from \"@opencode-ai/client\"",
+      "new": "import { ClientError } from \"@opencode-ai/client\""
+    },
+    {
+      "old": "OpenCode.make({\n      baseUrl: server.url,\n      fetch,\n      headers: server.password\n        ? {\n            Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}`,\n          }\n        : undefined,\n    })",
+      "new": "createApiForServer({ server, fetch })"
+    }
+  ],
+  "packages/app/src/utils/terminal-websocket-url.ts": [
+    {
+      "old": "`${input.url}${isV1",
+      "new": "`${input.url.replace(/\\/+$/, \"\")}${isV1"
+    }
+  ],
+  "packages/ui/src/v2/components/wordmark-v2.tsx": [
+    {
+      "old": "          <g opacity=\"0.16\">\n            <path\n              opacity=\"0.7\"\n              d=\"M55.3846 36.4286H18.4615V91.7143H55.3846V36.4286ZM73.8462 110.143H0V18H73.8462V110.143Z\"\n              fill=\"currentColor\"\n            />\n            <path\n              opacity=\"0.7\"\n              d=\"M110.462 91.7143H147.385V36.4286H110.462V91.7143ZM165.846 110.143H110.462V128.571H92V18H165.846V110.143Z\"\n              fill=\"currentColor\"\n            />\n            <path\n              opacity=\"0.7\"\n              d=\"M258.846 73.2857H203.462V91.7143H258.846V110.143H185V18H258.846V73.2857ZM203.462 54.8571H240.385V36.4286H203.462V54.8571Z\"\n              fill=\"currentColor\"\n            />\n            <path\n              opacity=\"0.7\"\n              d=\"M332.385 36.4286H295.462V110.143H277V18H332.385V36.4286ZM350.846 110.143H332.385V36.4286H350.846V110.143Z\"\n              fill=\"currentColor\"\n            />\n            <path\n              opacity=\"0.7\"\n              d=\"M442.846 36.4286H387.462V91.7143H442.846V110.143H369V18H442.846V36.4286Z\"\n              fill=\"currentColor\"\n            />\n            <path\n              opacity=\"0.7\"\n              d=\"M517.385 36.4286H480.462V91.7143H517.385V36.4286ZM535.846 110.143H462V18H535.846V110.143Z\"\n              fill=\"currentColor\"\n            />\n            <path\n              opacity=\"0.7\"\n              d=\"M609.385 36.8571H572.462V92.1429H609.385V36.8571ZM627.846 110.571H554V18.4286H609.385V0H627.846V110.571Z\"\n              fill=\"currentColor\"\n            />\n            <path\n              opacity=\"0.7\"\n              d=\"M664.462 36.4286V54.8571H701.385V36.4286H664.462ZM719.846 73.2857H664.462V91.7143H719.846V110.143H646V18H719.846V73.2857Z\"\n              fill=\"currentColor\"\n            />\n          </g>",
+      "new": "          <g opacity=\"0.16\">\n            <text x=\"360\" y=\"104\" text-anchor=\"middle\" fill=\"currentColor\" font-family=\"system-ui, sans-serif\" font-size=\"120\" font-weight=\"650\">MediaFlow</text>\n          </g>"
+    }
+  ]
+}
