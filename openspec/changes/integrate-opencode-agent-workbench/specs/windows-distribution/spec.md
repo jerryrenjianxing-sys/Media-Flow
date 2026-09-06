@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: 内嵌Agent独立运行及依赖固定
-Windows 安装包 SHALL 携带已校验的原生 Agent 运行时、所需依赖、流程指南及许可证说明；首次启动和日常运行 MUST 不依赖 Codex、WSL、系统 PATH 中开发工具或源码目录，也不得静默下载并运行未锁定版本的组件。
+Windows 安装包 SHALL 携带已校验的原生 Agent 运行时、原生前端静态资源、所需依赖、完整Skill目录及许可证说明；首次启动和日常运行 MUST 不依赖 Codex、WSL、系统 PATH 中开发工具或源码目录，也不得静默下载并运行未锁定版本的组件。dev.24仅本机开发交付，不将本机验收冒充已完成安装包验收。
 
 #### Scenario: 全新Windows用户安装
 - **WHEN** 在没有 Codex、WSL 和开发环境的 Windows 用户下安装并提供自己的模型凭证
