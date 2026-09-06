@@ -15,7 +15,7 @@ import uuid
 
 from agent_platform import bounded_diagnostic
 from agent_process import ChildJob
-from repair_materials import build_bundle, read_bundle, source_path, SECRET
+from repair_materials import build_bundle, read_bundle, source_path, SECRET, development_revision
 from runtime_layout import APP_ROOT, BUNDLED_PYTHON, IS_DISTRIBUTION
 
 
@@ -27,6 +27,7 @@ class AgentRepairs:
     def __init__(self, root, *, bundle=None, source_root=APP_ROOT):
         self.root = Path(root).resolve()
         self.bundle = Path(bundle or APP_ROOT / 'assets/agent/repair-source.zip')
+        self.explicit_bundle = bundle is not None
         self.source_root = Path(source_root)
         self.lock = threading.RLock()
         self.cancellations = {}
@@ -65,11 +66,11 @@ class AgentRepairs:
                        (repair_id, context['session_id'], context['call_id'], purpose, 'creating', '', '{}', time.time()))
         try:
             bundle = self.bundle
-            if not bundle.is_file():
+            if not bundle.is_file() or (not IS_DISTRIBUTION and not self.explicit_bundle):
                 if IS_DISTRIBUTION:
                     raise ValueError('安装包缺少修复源码，请修复安装；不会下载不明源码')
                 bundle = self.root / repair_id / 'development-source.zip'
-                build_bundle(self.source_root, bundle, 'development-working-copy')
+                build_bundle(self.source_root, bundle, development_revision(self.source_root))
             manifest, files = read_bundle(bundle)
             base = self.root / repair_id
             for name, data in files.items():
@@ -111,8 +112,20 @@ class AgentRepairs:
 
     def files(self, repair_id, session_id):
         root = self.workspace(repair_id, session_id)
-        return {'files': [p.relative_to(root).as_posix() for p in sorted(root.rglob('*'))
-                          if p.is_file() and '_test_scratch' not in p.parts and p.suffix != '.pyc'][:1500]}
+        from repair_materials import EXCLUDED
+        files = []
+        for directory, children, names in os.walk(root, followlinks=False):
+            children[:] = [name for name in children if name.lower() not in EXCLUDED and name != '_test_scratch' and (not name.startswith('.') or name == '.openai')]
+            for name in names:
+                path = Path(directory) / name
+                relative = path.relative_to(root).as_posix()
+                try:
+                    source_path(relative)
+                except ValueError:
+                    continue
+                if path.is_file():
+                    files.append(relative)
+        return {'files': sorted(files)[:5000]}
 
     def tests(self, repair_id, session_id):
         self.get(repair_id, session_id)
@@ -185,7 +198,40 @@ class AgentRepairs:
         return {'changed_files': changed, 'source_hash': sha(json.dumps(hashes, sort_keys=True).encode()),
                 'patch': ''.join(patches), 'revision': self.get(repair_id, session_id)['revision']}
 
+    def remove(self, args, session_id):
+        with self.lock:
+            root = self.workspace(args['repair_id'], session_id)
+            path = self.file(root, args.get('path'))
+            with self.database() as db:
+                self.assert_not_testing(db, args['repair_id'])
+            if not path.is_file() or sha(path.read_bytes()) != args.get('expected_sha256'):
+                raise ValueError('候选文件已变化，请重新读取；未删除')
+            before = sha(path.read_bytes())
+            path.unlink()
+            with self.database() as db:
+                db.execute('INSERT INTO edits VALUES(?,?,?,?,?,?)', (uuid.uuid4().hex, args['repair_id'], args['path'], before, sha(b''), time.time()))
+            return {'status': 'completed', 'message': '仅移除候选文件，基准保留，可用repair_revert恢复'}
+
+    def freeze(self, repair_id, session_id, destination, expected_hash):
+        with self.lock:
+            diff = self.diff(repair_id, session_id)
+            if diff['source_hash'] != expected_hash:
+                raise ValueError('修复正在变化，请重新展示当前版本')
+            root = self.workspace(repair_id, session_id)
+            files = {}
+            for name in diff['changed_files']:
+                path = self.file(root, name)
+                files[name] = path.read_bytes().decode('utf-8') if path.is_file() else None
+            payload = {'source_hash': expected_hash, 'files': files}
+            destination = Path(destination)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_suffix('.tmp')
+            temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
+            temporary.replace(destination)
+
     def tool(self, name, args, context):
+        if name == 'repair_delete':
+            return self.remove(args, context['session_id'])
         session_id = context['session_id']
         if name == 'repair_create':
             return self.create(args, context)
@@ -211,10 +257,14 @@ class AgentRepairs:
         repair_id, session_id = args.get('repair_id'), context['session_id']
         with self.lock:
             root = self.workspace(repair_id, session_id)
-            target = source_path(args.get('path'))
+            target = source_path(args.get('path') or 'fixed_runner/test_agent_permissions.py')
             mode = args.get('mode', 'unit')
-            if mode not in {'unit', 'syntax'} or not target.endswith('.py') or not self.file(root, target).is_file():
-                raise ValueError('当前支持Python语法检查和单文件单元测试，请指定源码文件')
+            if mode not in {'unit', 'syntax', 'python', 'frontend', 'lint', 'build', 'openspec', 'all'}:
+                raise ValueError('请选择受支持的测试或构建类型')
+            if mode in {'unit', 'syntax'} and (not target.endswith('.py') or not self.file(root, target).is_file()):
+                raise ValueError('请指定Python测试或源码文件')
+            if mode not in {'unit', 'syntax'} and IS_DISTRIBUTION:
+                raise ValueError('安装版完整构建环境尚未验收；可使用单文件测试和导出，不能声称已应用')
             with self.database() as db:
                 old = db.execute('SELECT id FROM tests WHERE call_id=?', (context['call_id'],)).fetchone()
                 if old:
@@ -256,16 +306,21 @@ class AgentRepairs:
             scratch = root / '_test_scratch'
             scratch.mkdir(exist_ok=True)
             env = {key: value for key, value in os.environ.items() if key.upper() in {'SYSTEMROOT', 'WINDIR', 'COMSPEC'}}
+            if mode not in {'unit', 'syntax'}:
+                env['PATH'] = os.environ.get('PATH', '')
             env.update(TEMP=str(scratch), TMP=str(scratch), PYTHONIOENCODING='utf-8', PYTHONDONTWRITEBYTECODE='1')
             with self.database() as db:
                 db.execute("UPDATE tests SET state='running' WHERE id=?", (test_id,))
             with log.open('wb') as stream:
                 job = ChildJob()
-                process = subprocess.Popen([str(python), '-I', str(Path(__file__).with_name('repair_test_entry.py')), str(root), mode, target],
+                command = [str(python), '-I', str(Path(__file__).with_name('repair_test_entry.py')), str(root), mode, target]
+                if mode not in {'unit', 'syntax'}:
+                    command = [str(python), str(Path(__file__).with_name('repair_validation.py')), str(root), str(self.source_root), mode]
+                process = subprocess.Popen(command,
                     cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=stream, stderr=stream,
                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
                 job.assign(process)
-                deadline = time.monotonic() + 90
+                deadline = time.monotonic() + (90 if mode in {'unit', 'syntax'} else 900)
                 while process.poll() is None:
                     if self.cancellations[test_id].is_set():
                         process.kill()
@@ -320,7 +375,7 @@ class AgentRepairs:
                 raise ValueError('候选没有代码变更')
             if len(diff['patch'].encode()) > 10_000_000:
                 raise ValueError('候选补丁超过10MB，请拆分为较小修复')
-            if not any(t['mode'] == 'unit' for t in tests):
+            if not any(t['mode'] in {'unit', 'python', 'all'} for t in tests):
                 raise ValueError('当前候选尚无通过的单元测试，请先运行测试；语法通过不能当成功能修复')
             output = self.root / repair_id / 'candidate.patch'
             output.write_text(diff['patch'], encoding='utf-8')

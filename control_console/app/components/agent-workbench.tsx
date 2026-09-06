@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-html-link-for-pages, @next/next/no-img-element */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentRequestError, agentRequest, type AgentProvider } from "../lib/agent-api";
-import { chooseSession, loadSessionUi, rememberSession, saveSessionUi, type SessionUi } from "../lib/agent-workspace-state.mjs";
+import { chooseSession, loadSessionUi, rememberSession, saveSessionUi, resizeComposer, type SessionUi } from "../lib/agent-workspace-state.mjs";
 import AgentProviderSettings from "./agent-provider-settings";
 import AgentMemories from "./agent-memories";
 import AgentPlans, { type AgentPlan } from "./agent-plans";
@@ -16,6 +16,8 @@ type EngineStatus = { state:string; message:string; notice?:string; pending_capa
 type Session = {id:string;title:string;provider:string;model:string};
 type Question = {id:string;questions:{question:string;options?:{label:string}[]}[]};
 type Conversation = {
+  permission?:{level:string;label:string;revision:number};
+  updates?:{id:string;status:string;stage:string;message:string}[];
   messages:{id:string;role:string;error?:string;parts:{type:string;text?:string;tool?:string;status?:string}[]}[];
   state:string;questions:Question[];plans?:AgentPlan[];commands?:AgentCommand[];repairs?:AgentRepair[];notice?:string;
   turns?:{id:string;state:string;message_id:string}[];
@@ -34,6 +36,7 @@ export default function AgentWorkbench() {
   const selectedSession=useRef(""), uiRef=useRef<SessionUi>(emptyUi()), restored=useRef(false);
   const inFlight=useRef(new Set<string>()), failures=useRef(0), startDeadline=useRef(0);
   const logRef=useRef<HTMLDivElement>(null),stickBottom=useRef(true);
+  const inputRef=useRef<HTMLTextAreaElement>(null);
   const updateUi=useCallback((patch:Partial<SessionUi>)=>{
     const value={...uiRef.current,...patch};uiRef.current=value;setUi(value);
     if(selectedSession.current) saveSessionUi(window.localStorage,selectedSession.current,value);
@@ -87,6 +90,17 @@ export default function AgentWorkbench() {
     window.addEventListener("popstate",back);return()=>window.removeEventListener("popstate",back);
   },[select]);
   useEffect(()=>{if(stickBottom.current && logRef.current)logRef.current.scrollTop=logRef.current.scrollHeight;},[conversation]);
+  useEffect(()=>{
+    resizeComposer(inputRef.current);
+  },[ui.text,sessionId]);
+  async function permission(level:string){
+    const target=selectedSession.current;if(!target)return;setBusy(true);
+    try{
+      const result=await agentRequest<NonNullable<Conversation["permission"]>>(`sessions/${target}/permissions`,{level});
+      if(selectedSession.current===target){setConversation(v=>({...v,permission:result}));updateUi({notice:`当前会话已切换为${result.label}；新会话仍为操作模式。`});}
+    }catch(e){if(selectedSession.current===target)updateUi({notice:e instanceof Error?e.message:"权限设置失败"});}
+    finally{setBusy(false);}
+  }
   async function connect(){
     setBusy(true);updateUi({notice:""});
     try{startDeadline.current=Date.now()+65000;setStatus(await agentRequest<EngineStatus>("start",{}));failures.current=0;setPolling(true);await refresh();}
@@ -146,6 +160,7 @@ export default function AgentWorkbench() {
     </aside>
     <div className="agent-chat">
       <header className="agent-chat-head"><div><h1>{selected?.title||"MediaFlow 助手"}</h1><small>{selected?`${selected.provider} · ${selected.model}`:"告诉助手你要做什么"}</small></div>
+        {sessionId&&<button type="button" className="secondary agent-permission-badge" onClick={()=>setPanel("settings")}>{conversation.permission?.label||"操作模式"}</button>}
         <button type="button" className="secondary" aria-expanded={panel==="execution"} onClick={()=>setPanel(panel==="execution"?"":"execution")}>计划与执行{planCount?` · ${planCount}`:""}</button>
       </header>
       <div className="agent-connection">
@@ -170,8 +185,8 @@ export default function AgentWorkbench() {
         {ui.notice&&<p className="agent-notice" role="status">{ui.notice}</p>}
         {ui.requestId&&<p role="status">正在核对原消息发送状态；输入已保留，不自动重发。<button type="button" className="secondary" onClick={()=>void refresh()}>核对原请求</button><button type="button" className="secondary" disabled={busy||active||status.state!=="ready"} onClick={()=>void send()}>用原编号重试</button></p>}
         <label className="sr-only" htmlFor="agent-input">给助手的消息</label>
-        <textarea id="agent-input" rows={3} maxLength={12000} value={ui.text} disabled={!!ui.requestId} onChange={e=>updateUi({text:e.target.value})} placeholder="描述你的目标…（API Key 请在助手设置中填写）"/>
-        <div className="agent-toolbar"><small>{conversation.state==="waiting_user"?"等待你回答":active?"助手正在处理…":"计划确认后才会执行设备任务"}</small>
+        <textarea ref={inputRef} id="agent-input" rows={1} maxLength={12000} value={ui.text} disabled={!!ui.requestId} onChange={e=>updateUi({text:e.target.value})} placeholder="描述你的目标…（API Key 请在助手设置中填写）"/>
+        <div className="agent-toolbar"><small>{conversation.state==="waiting_user"?"等待你回答":active?"助手正在处理…":"说清目标即可运行 · 缺少参数时助手会询问"}</small>
           <button type="button" className="secondary" disabled={busy||!sessionId||status.state!=="ready"} onClick={()=>void stop()}>停止对话及本次任务</button>
           <button type="button" className="primary" disabled={busy||!sessionId||active||!!ui.requestId||status.state!=="ready"||!ui.text.trim()} onClick={()=>void send()}>发送 ↑</button>
         </div>
@@ -184,8 +199,21 @@ export default function AgentWorkbench() {
         <AgentPlans key={sessionId} sessionId={sessionId} plans={conversation.plans||[]} onChanged={refresh} onNotice={notice=>updateUi({notice})}/>
         <AgentCommands key={`commands-${sessionId}`} sessionId={sessionId} commands={conversation.commands||[]} onChanged={refresh}/>
         <AgentRepairs key={`repairs-${sessionId}`} sessionId={sessionId} repairs={conversation.repairs||[]} onChanged={refresh}/>
+        {conversation.updates?.map(operation=><section key={operation.id} className="agent-notice"><h3>修复更新 · {({queued:"排队中",running:"正在更新",waiting_user:"等待空闲或处理",completed:"已生效",failed:"未完成",cancelled:"已取消"} as Record<string,string>)[operation.status]||"等待核对"}</h3><p>{operation.message}</p><small>{operation.id}</small>
+          {["queued","running","waiting_user"].includes(operation.status)&&<button type="button" className="secondary" onClick={()=>{void agentRequest(`sessions/${sessionId}/updates/${operation.id}/cancel`,{}).then(()=>refresh()).catch(e=>updateUi({notice:e.message}));}}>取消更新</button>}
+        </section>)}
         <a href="/devices">查看设备与问题 ↗</a><a href="/records">查看任务与证据 ↗</a>
       </>:<>
+        <section aria-label="当前会话权限">
+          <h3>当前会话权限</h3>
+          <label htmlFor="agent-permission">权限等级<select id="agent-permission" disabled={busy||!sessionId} value={conversation.permission?.level||"operate"} onChange={e=>void permission(e.target.value)}>
+            <option value="operate">操作模式 · 默认，可直接启动任务</option>
+            <option value="maintain">维护模式 · 管理虚拟机和运行配置</option>
+            <option value="develop">开发模式 · 修改项目和运行测试</option>
+          </select></label>
+          <p>仅对当前会话持续有效，刷新或重启后保留。开发范围仅 MediaFlow 项目；修改生效前会在聊天中请你确认。</p>
+          <button className="secondary" type="button" disabled={busy||!sessionId||!conversation.permission||conversation.permission.level==="operate"} onClick={()=>void permission("operate")}>撤销高权限</button>
+        </section>
         <button className="secondary" type="button" disabled={busy||status.state!=="ready"} onClick={()=>void loadProviders()}>刷新服务商与模型</button>
         {!!providers.length&&<div className="agent-model-row"><label htmlFor="agent-provider">服务商<select id="agent-provider" value={provider} onChange={e=>{setProvider(e.target.value);setModel(providers.find(p=>p.id===e.target.value)?.models[0]?.id||"");}}>{providers.map(p=><option key={p.id} value={p.id}>{p.name}{p.connected?" · 已连接":""}</option>)}</select></label>
           <label htmlFor="agent-model">模型<select id="agent-model" value={model} onChange={e=>setModel(e.target.value)}>{currentProvider?.models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>

@@ -177,7 +177,7 @@ class AgentPlatform:
                 'config': json.loads(row['config']), 'preview': json.loads(row['preview']),
                 'stopped_device_ids': [device for device in json.loads(row['config'])['device_ids'] if self.store.is_stop_requested(device)],
                 'result': self.store.agent_batch_receipt(plan_id, session_id) or (json.loads(row['result']) if row['result'] else None),
-                'message': '计划已保存，尚未提交；需要用户在首页确认后执行' if state == 'awaiting_confirmation' else '请查看计划状态和阻断原因'}
+                'message': '计划已保存，用户要求执行时助手可直接启动；也可使用计划卡' if state == 'awaiting_confirmation' else '请查看计划状态和阻断原因'}
 
     def plans(self, session_id):
         with self.database() as db:
@@ -185,7 +185,7 @@ class AgentPlatform:
         return {'plans': [self.get(row['id'], session_id) for row in rows]}
 
     def confirm(self, plan_id, session_id, body):
-        """UI-only approval; a model tool cannot invoke this route."""
+        """Shared commit boundary; UI or host-verified conversation authorization."""
         self.get(plan_id, session_id)
         try:
             return self._confirm(plan_id, session_id, body)
@@ -255,7 +255,7 @@ class AgentPlatform:
             message = '计划已交给固定执行程序；查看任务回执了解实际结果，尚未声明任务成功'
         except Exception:
             reason_code = 'worker_start_unconfirmed'
-            message = '任务已保存，但执行者启动未确认；可再次点击确认恢复执行者，不会重复创建任务'
+            message = '任务已保存，但执行者启动未确认；在原会话说“继续”可恢复执行者，也可使用回执按钮，不会重复创建任务'
         feedback = {'message': message, 'reason_code': reason_code, 'updated_at': time.time(),
                     'retryable': reason_code == 'worker_start_unconfirmed', 'batch_id': receipt['batch_id']}
         with self.database() as db:

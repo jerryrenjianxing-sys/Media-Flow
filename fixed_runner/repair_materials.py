@@ -4,21 +4,34 @@ import json
 import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
+import subprocess
 import zipfile
 
-EXTENSIONS = {'.py', '.ts', '.tsx', '.js', '.mjs', '.css', '.json', '.md', '.ps1', '.cs', '.toml', '.txt'}
-EXCLUDED = {'runtime', '.secrets', 'secrets', 'node_modules', 'dist', 'out', 'work', '.git', '__pycache__', 'tools'}
-ROOTS = ('fixed_runner', 'control_console/app', 'control_console/tests', 'device_stream_host/src',
-         'device_stream_host/scripts', 'launcher', 'installer', 'scripts', 'openspec/specs')
+EXTENSIONS = {'.py', '.ts', '.tsx', '.js', '.mjs', '.mts', '.css', '.json', '.md', '.ps1', '.cs', '.toml', '.txt', '.yaml', '.yml', '.svg', '.html', '.csproj', '.manifest', '.cmd', '.bat', '.xml'}
+EXCLUDED = {'runtime', '.secrets', 'secrets', 'node_modules', 'dist', 'out', 'work', '.git', '__pycache__', 'tools', '_dependencies', '_test_scratch'}
+ROOTS = ('fixed_runner', 'control_console', 'device_stream_host/src',
+         'device_stream_host/scripts', 'launcher', 'installer', 'scripts', 'openspec', 'packaging', 'docs')
 LOCAL_FILES = {'device_profiles.json', 'platform_profiles.json', 'installation.json', 'auth.json', 'model-connection.json'}
 SECRET = re.compile(rb'sk-(?:or-v1-|sp-|proj-)[A-Za-z0-9._-]{24,}')
+
+
+def development_revision(root):
+    try:
+        options = {'cwd': str(root), 'stderr': subprocess.DEVNULL, 'text': True, 'timeout': 10,
+                   'creationflags': getattr(subprocess, 'CREATE_NO_WINDOW', 0)}
+        revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], **options).strip()
+        dirty = subprocess.check_output(['git', 'status', '--porcelain'], **options).strip()
+        return revision + ('.dirty' if dirty else '')
+    except (OSError, subprocess.SubprocessError):
+        return 'development-working-copy'
 
 
 def source_path(value):
     if not isinstance(value, str) or '\\' in value or ':' in value:
         raise ValueError('修复文件路径无效')
     path = PurePosixPath(value)
-    if path.is_absolute() or not path.parts or any(x in {'.', '..'} or x.startswith('.') for x in path.parts):
+    special = value == 'control_console/.openai/hosting.json' or (value.startswith('openspec/') and path.name == '.openspec.yaml')
+    if path.is_absolute() or not path.parts or any(x in {'.', '..'} or (x.startswith('.') and not special) for x in path.parts):
         raise ValueError('修复文件不能离开工作区')
     if any(PureWindowsPath(part).is_reserved() or part.endswith((' ', '.')) for part in path.parts):
         raise ValueError('修复文件名不符合Windows路径规则')
@@ -52,8 +65,11 @@ def build_bundle(root, output, revision):
             if SECRET.search(data):
                 raise ValueError('修复源码包含疑似凭证，请先完成发行扫描：' + name)
             entries[name] = data
-    for name in ('packaging/version.json', 'control_console/package.json', 'control_console/package-lock.json',
-                 'AGENTS.md', 'PROJECT.md'):
+    top_level = [p.name for p in root.iterdir() if p.is_file() and p.suffix in {'.md', '.ps1', '.cmd', '.bat'} and not p.name.startswith('.')]
+    for name in (*top_level, 'packaging/version.json', 'control_console/package.json', 'control_console/package-lock.json',
+                 'AGENTS.md', 'PROJECT.md', 'manage-mediaflow.ps1', 'run-mediaflow-console.ps1',
+                 'control_console/vite.config.ts', 'control_console/tsconfig.json', 'control_console/eslint.config.mjs',
+                 'control_console/.openai/hosting.json'):
         path = root / name
         if path.is_file():
             data = path.read_bytes()

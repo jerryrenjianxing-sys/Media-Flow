@@ -110,6 +110,20 @@ class AgentQueueMixin:
             db.execute("UPDATE agent_task_batches SET state='cancelled' WHERE session_id=?", (session_id,))
             return db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_session_stopped; not replayed' WHERE status='pending' AND id IN (SELECT a.task_id FROM agent_batch_tasks a JOIN agent_task_batches b ON b.id=a.batch_id WHERE b.session_id=?)", (now_iso(), session_id)).rowcount
 
+    def control_agent_batch(self, batch_id, session_id, *, stop=False):
+        from task_store import now_iso
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT state FROM agent_task_batches WHERE id=? AND session_id=?', (batch_id, session_id)).fetchone()
+            if not row:
+                raise ValueError('本会话没有该执行批次')
+            if row['state'] != 'cancelled':
+                db.execute('UPDATE agent_task_batches SET state=? WHERE id=?', ('cancelled' if stop else 'paused', batch_id))
+            if stop:
+                db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_batch_stopped; not replayed' WHERE status='pending' AND id IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?)", (now_iso(), batch_id))
+        return {**self.agent_batch_receipt(batch_id, session_id),
+                'message': '本批次已请求安全停止，当前动作在检查点收口' if stop else '本批次已暂停后续领取，当前视频仍可完成'}
+
     @staticmethod
     def close_agent_batch_after_failure(db, task_id):
         from task_store import now_iso

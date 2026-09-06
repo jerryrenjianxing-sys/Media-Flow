@@ -1,4 +1,4 @@
-"""Session-bound VM command proposals; approval is a UI operation, not a tool."""
+"""Session-bound VM proposals; approval comes from validated host user intent."""
 from contextlib import contextmanager
 import hashlib
 import json

@@ -1,6 +1,11 @@
 // Only local interface state. Messages and execution receipts remain server-owned.
 const recentKey = "mediaflow-agent-recent-session";
 const valid = value => typeof value === "string" && /^[A-Za-z0-9_-]{1,160}$/.test(value);
+export function resizeComposer(input) {
+  if (!input) return;
+  input.style.height = "36px";
+  input.style.height = Math.min(200, Math.max(36, input.scrollHeight)) + "px";
+}
 export function rememberSession(storage, id) { try { if (valid(id)) storage.setItem(recentKey,id); } catch { /* optional preference */ } }
 export function chooseSession(search, storage, ids) {
   const requested = new URLSearchParams(search).get("session");

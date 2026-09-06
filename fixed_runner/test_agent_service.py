@@ -127,6 +127,8 @@ class AgentServiceTests(unittest.TestCase):
             self.service.call_tool('run_tasks', {})
 
     def test_tool_idempotency_is_scoped_to_conversation(self):
+        self.service.permissions.set('one', 'develop', source='user_settings')
+        self.service.permissions.set('two', 'develop', source='user_settings')
         with patch.object(self.service, '_tool_session'), patch.object(self.service.repairs, 'tool', return_value={}) as invoke:
             self.service.call_tool('repair_create', {}, context={'session_id': 'one', 'call_id': 'call0'})
             self.service.call_tool('repair_create', {}, context={'session_id': 'two', 'call_id': 'call0'})

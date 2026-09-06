@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadSessionUi, saveSessionUi, chooseSession, rememberSession } from '../app/lib/agent-workspace-state.mjs';
+import { loadSessionUi, saveSessionUi, chooseSession, rememberSession, resizeComposer } from '../app/lib/agent-workspace-state.mjs';
 const storage = () => { const map = new Map(); return { getItem: k => map.get(k) ?? null, setItem: (k,v) => map.set(k,v) }; };
+test('composer starts at 36px, grows to 200px, and shrinks again after clearing', () => {
+  const input={style:{},scrollHeight:24}; resizeComposer(input); assert.equal(input.style.height,'36px');
+  input.scrollHeight=500; resizeComposer(input); assert.equal(input.style.height,'200px');
+  input.scrollHeight=72; resizeComposer(input); assert.equal(input.style.height,'72px');
+  input.scrollHeight=24; resizeComposer(input); assert.equal(input.style.height,'36px');
+  resizeComposer(null);
+});
 test('URL and recent selection survive full-page navigation without replacing authoritative history', () => {
   const s=storage(); rememberSession(s,'ses_two');
   assert.equal(chooseSession('?session=ses_one',s,['ses_one','ses_two']), 'ses_one');

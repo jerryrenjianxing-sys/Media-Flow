@@ -51,6 +51,8 @@
 /.edge-*/
 /.chrome-*/
 /work/
+/_dependencies/
+/_test_scratch/
 /RiskFlow.exe
 /packaging/out/
 /packaging/tools/

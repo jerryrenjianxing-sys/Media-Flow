@@ -44,7 +44,8 @@
 .agent-tool { margin:8px 0; padding:8px 12px; color:var(--ink-muted); background:var(--surface-1); border:1px solid var(--agent-line); border-radius:8px; font-size:13px; }
 .agent-tool summary { cursor:pointer; }
 .agent-composer { width:calc(100% - 48px); max-width:860px; margin:0 auto 20px; padding:12px; border:1px solid var(--agent-line); background:var(--surface-1); border-radius:14px; box-shadow:0 8px 30px #0000000d; }
-.agent-composer textarea { width:100%; resize:vertical; max-height:200px; min-height:72px; border:none; background:transparent; color:var(--ink); font-size:16px; padding:8px; outline-offset:2px; }
+.agent-composer textarea { box-sizing:border-box; width:100%; resize:none; overflow-y:auto; height:36px; max-height:200px; min-height:36px; line-height:24px; border:none; background:transparent; color:var(--ink); font-size:16px; padding:6px 8px; outline-offset:2px; }
+.agent-permission-badge { margin-left:auto; font-size:14px; }
 .agent-composer .agent-toolbar { display:flex; align-items:center; justify-content:flex-end; gap:10px; margin:8px 0 0; flex-wrap:wrap; }
 .agent-composer small { flex:1; font-size:12px; color:var(--ink-subtle); }
 .agent-notice { padding:10px 14px; margin:4px 12px; color:var(--ink-muted); background:var(--surface-2); font-size:14px; line-height:1.7; border-radius:8px; overflow-wrap:anywhere; }

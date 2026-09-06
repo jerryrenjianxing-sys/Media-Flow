@@ -10,6 +10,7 @@ export type AgentPlan = {
   result?: { tasks: { id: string; status: string }[]; state: string };
   execution?: {message:string;reason_code:string;updated_at:number};
   stopped_device_ids?: string[];
+  authorization?:{source:string;request_id:string};
 };
 
 export default function AgentPlans({ plans, sessionId, onChanged, onNotice }: { plans: AgentPlan[]; sessionId: string; onChanged: () => Promise<void>; onNotice?:(value:string)=>void }) {
@@ -38,6 +39,7 @@ export default function AgentPlans({ plans, sessionId, onChanged, onNotice }: { 
   return <section className="agent-plans" aria-label="待确认计划与执行回执">
     {plans.map((plan) => <article key={plan.plan_id} className="agent-question">
       <h3>{plan.result ? "任务执行回执" : "请核对任务计划"}</h3>
+      {plan.authorization?.source==="user_chat"&&<p>授权来源：本会话中的执行要求 · 无需再点确认卡</p>}
       <p>{plan.config.device_ids.length}台设备 · 每轮{plan.config.video_count}条视频 · {plan.config.round_count}轮 · {plan.preview.total_task_count}个任务</p>
       <p>入口：{({ general: "首页", search: "搜索", mixed: "混合", hybrid: "搜索与首页交替" } as Record<string, string>)[plan.config.content_mode]}{plan.config.search_query && ` · 搜索“${plan.config.search_query}”`}</p>
       <p>互动巡检：{plan.config.engagement_inspection_enabled ? `每${plan.config.inspection_every_rounds}轮一次` : "关闭"} · 评论：{plan.preview.comment_mode}</p>

@@ -1,4 +1,5 @@
 export type SessionUi = {text:string;requestId:string|null;notice:string;answers:Record<string,string>};
+export function resizeComposer(input:HTMLTextAreaElement|null):void;
 type StorageLike = Pick<Storage,"getItem"|"setItem">;
 export function rememberSession(storage:StorageLike,id:string):void;
 export function chooseSession(search:string,storage:StorageLike,ids:string[]):string;
