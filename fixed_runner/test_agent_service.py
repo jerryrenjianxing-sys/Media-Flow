@@ -86,6 +86,34 @@ class AgentServiceTests(unittest.TestCase):
         self.assertEqual(restarted.send('ses_test', body)['state'], 'unknown')
         self.assertEqual(sum(path.endswith('/prompt_async') for _, path, _ in self.runtime.calls), 1)
 
+    def test_history_reads_restore_pending_request_and_questions_without_dispatch(self):
+        self.service.send('ses_test', {'text': '检查状态', 'request_id': 'req_restore'})
+        original = self.runtime.request
+        def read(method, path, body=None):
+            if path.endswith('/message?limit=80'):
+                return [{'info': {'id': 'msg_history', 'role': 'user'}, 'parts': [{'type': 'text', 'text': '历史'}]}]
+            if path == '/question':
+                return [{'id': 'que_one', 'sessionID': 'ses_test', 'questions': [{'question': '多少条？'}]}]
+            return original(method, path, body)
+        self.runtime.request = read
+        result = self.service.messages('ses_test')
+        self.assertEqual(result['state'], 'waiting_user')
+        self.assertEqual(result['turns'][0]['id'], 'req_restore')
+        self.assertEqual(result['messages'][0]['id'], 'msg_history')
+        self.assertEqual(sum(path.endswith('/prompt_async') for _, path, _ in self.runtime.calls), 1)
+
+    def test_answer_checks_question_ownership_and_engine_fault_stays_distinct(self):
+        self.runtime.request = Mock(return_value=[{'id': 'que_one', 'sessionID': 'ses_test'}])
+        self.service.answer('ses_test', {'question_id': 'que_one', 'answers': [['两条']]})
+        self.assertEqual(self.runtime.request.call_args.args[:2], ('POST', '/question/que_one/reply'))
+        self.runtime.request.return_value = []
+        with self.assertRaisesRegex(ValueError, '问题已处理'):
+            self.service.answer('ses_test', {'question_id': 'que_one', 'answers': [['两条']]})
+        self.runtime.request.side_effect = AgentRuntimeError('engine_not_started', '请先连接对话引擎')
+        with self.assertRaises(AgentRuntimeError) as raised:
+            self.service.answer('ses_test', {'question_id': 'que_one', 'answers': [['两条']]})
+        self.assertEqual(raised.exception.code, 'engine_not_started')
+
     def test_key_in_chat_rejected_before_dispatch(self):
         with self.assertRaises(ValueError):
             self.service.send('ses_test', {'text': 'sk-sp-' + 'x' * 40, 'request_id': 'req_key'})

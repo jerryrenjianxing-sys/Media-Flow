@@ -1,6 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
   <title id="title">MediaFlow</title>
-  <rect width="64" height="64" rx="15" fill="#5E6AD2"/>
-  <path d="M11 46V30c0-11 8-14 15-5l6 8 9-12c7-8 12-2 12 7v18" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M11 30c5-11 12-11 18-2l7 11c6 9 13 5 17-6" fill="none" stroke="#DDE1FF" stroke-width="4.8" stroke-linecap="round"/>
+  <rect width="64" height="64" rx="16" fill="#146E63"/>
+  <path d="M14 46V19l18 20 18-20v27" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

@@ -1,0 +1,181 @@
+"use client";
+
+/* Form labels wrap their controls; the compact JSX shape is not recognized by the static a11y rule. */
+/* eslint-disable jsx-a11y/label-has-associated-control, jsx-a11y/no-noninteractive-element-interactions */
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import PromptGuideLink from "../components/prompt-guide-link";
+import { DeviceOnboardingDialog } from "../components/device-onboarding-dialog";
+import { API, type ContentMode, type ContentPlan, type Preset, type RunDraft, type StatusPayload, type VirtualDevice, type WorkbenchConfig, type WorkbenchPreview } from "../components/workbench-types";
+import { fetchLocalApi } from "../lib/local-api";
+import { virtualOperationIsActive, virtualOperationStageLabel, waitForVirtualOperation, type VirtualOperation } from "../lib/virtual-device-operations";
+
+const modeCopy: Record<ContentMode, { title: string; detail: string; badge: string }> = {
+  general: { title: "主页不限主题", detail: "在主页视频流运行，保留全部安全检查", badge: "通用回归" },
+  mixed: { title: "主页主题筛选", detail: "主页自然刷，主题相关内容使用匹配策略", badge: "自然推荐" },
+  search: { title: "搜索主题视频", detail: "搜索后进入沉浸流，评论仍严格匹配主题", badge: "主题样本" },
+  hybrid: { title: "搜索＋主页交替", detail: "搜索 7～14 条后回主页 5～10 条，按有效视频循环", badge: "推荐主模式" },
+};
+const intensityPresets = [
+  { name: "只观察", values: [0, 0, 0] }, { name: "轻量互动", values: [0.1, 0.05, 0.02] },
+  { name: "标准测试", values: [0.3, 0.2, 0.1] }, { name: "高互动", values: [0.6, 0.4, 0.2] },
+] as const;
+const percent = (value: number) => `${Math.round(value * 100)}%`;
+function duration(value: number) { if (value < 60) return `约 ${value} 秒`; if (value < 3600) return `约 ${Math.ceil(value / 60)} 分钟`; const hours = Math.floor(value / 3600), minutes = Math.ceil((value % 3600) / 60); return `约 ${hours} 小时${minutes ? ` ${minutes} 分钟` : ""}`; }
+function searchQueryFromTopic(value: string) { const text = value.trim(); if (!text || text.length > 80 || /\r|\n/.test(text)) return null; return text.replace(/[、，；,;/|]/g, " ").replace(/\s+/g, " ").trim(); }
+function Probability({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) { return <label className="probability-control"><span><strong>{label}</strong><b>{percent(value)}</b></span><input type="range" min="0" max="1" step="0.05" value={value} onChange={(event) => onChange(Number(event.target.value))}/></label>; }
+
+export default function TaskWorkbenchPage() {
+  const [draft, setDraft] = useState<RunDraft | null>(null), [config, setConfig] = useState<WorkbenchConfig | null>(null);
+  const [status, setStatus] = useState<StatusPayload | null>(null), [preview, setPreview] = useState<WorkbenchPreview | null>(null);
+  const [plans, setPlans] = useState<ContentPlan[]>([]), [presets, setPresets] = useState<Preset[]>([]), [presetName, setPresetName] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false), [confirmOpen, setConfirmOpen] = useState(false), [submitting, setSubmitting] = useState(false);
+  const [addDeviceOpen, setAddDeviceOpen] = useState(false);
+  const [visitorReminderOpen, setVisitorReminderOpen] = useState(false), [visitorReminderBusy, setVisitorReminderBusy] = useState(false);
+  const [visitorReminderDevices, setVisitorReminderDevices] = useState<Array<{ device_id: string; name: string; acknowledged: boolean }>>([]);
+  const visitorEnablePending = useRef(false);
+  const [startingVirtual, setStartingVirtual] = useState<Set<string>>(new Set());
+  const [notice, setNotice] = useState("正在读取任务草稿…");
+  const [saveState, setSaveState] = useState<"loading" | "dirty" | "saving" | "saved" | "conflict" | "error">("loading");
+  const lastSaved = useRef(""), revisionRef = useRef(0);
+
+  const load = useCallback(async () => {
+    try {
+      const [draftResponse, statusResponse, plansResponse, presetsResponse] = await Promise.all([fetchLocalApi(`${API}/api/workbench/draft`, { cache: "no-store" }), fetchLocalApi(`${API}/api/status`, { cache: "no-store" }), fetchLocalApi(`${API}/api/content-plans`, { cache: "no-store" }), fetchLocalApi(`${API}/api/presets`, { cache: "no-store" })]);
+      if (!draftResponse.ok || !statusResponse.ok) throw new Error("本机控制服务未启动");
+      const nextDraft = ((await draftResponse.json()) as { draft: RunDraft }).draft;
+      setDraft(nextDraft); setConfig(nextDraft.config); revisionRef.current = nextDraft.revision; lastSaved.current = JSON.stringify(nextDraft.config);
+      setStatus(await statusResponse.json() as StatusPayload);
+      if (plansResponse.ok) setPlans(((await plansResponse.json()).content_plans || []) as ContentPlan[]);
+      if (presetsResponse.ok) setPresets(((await presetsResponse.json()).presets || []) as Preset[]);
+      setSaveState("saved"); setNotice("任务草稿已恢复");
+    } catch (error) { setSaveState("error"); setNotice(error instanceof Error ? error.message : "读取失败"); }
+  }, []);
+  const refreshPreview = useCallback(async (revision: number) => {
+    const response = await fetchLocalApi(`${API}/api/workbench/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision }) });
+    const result = await response.json() as { preview?: WorkbenchPreview; draft?: RunDraft; error?: string };
+    if (response.status === 409 && result.draft) { setDraft(result.draft); setConfig(result.draft.config); revisionRef.current = result.draft.revision; lastSaved.current = JSON.stringify(result.draft.config); setSaveState("conflict"); throw new Error("草稿已在其他页面更新，已载入最新版本"); }
+    if (!response.ok || !result.preview) throw new Error(result.error || "任务预览失败"); setPreview(result.preview);
+  }, []);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+  useEffect(() => {
+    if (!config || !draft) return; const serialized = JSON.stringify(config);
+    if (serialized === lastSaved.current) { if (!preview) void refreshPreview(revisionRef.current).catch((error) => setNotice(error.message)); return; }
+    setSaveState("dirty"); setPreview(null);
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSaveState("saving");
+      try {
+        const response = await fetchLocalApi(`${API}/api/workbench/draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision: revisionRef.current, config }), signal: controller.signal });
+        const result = await response.json() as { draft?: RunDraft; error?: string };
+        if (response.status === 409 && result.draft) { setDraft(result.draft); setConfig(result.draft.config); revisionRef.current = result.draft.revision; lastSaved.current = JSON.stringify(result.draft.config); setSaveState("conflict"); setNotice("草稿在其他页面更新，已载入最新版本"); return; }
+        if (!response.ok || !result.draft) throw new Error(result.error || "自动保存失败");
+        setDraft(result.draft); revisionRef.current = result.draft.revision; lastSaved.current = serialized; setSaveState("saved"); setNotice("所有修改已自动保存"); await refreshPreview(result.draft.revision);
+      } catch (error) { if (!controller.signal.aborted) { setSaveState("error"); setNotice(error instanceof Error ? error.message : "自动保存失败"); } }
+    }, 650); return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [config, draft, preview, refreshPreview]);
+  useEffect(() => { if (!draft) return; let refreshing = false; const timer = window.setInterval(async () => { if (refreshing) return; refreshing = true; try { const response = await fetchLocalApi(`${API}/api/status`, { cache: "no-store" }, 4_000); if (response.ok) setStatus(await response.json() as StatusPayload); if (saveState === "saved") await refreshPreview(revisionRef.current); } catch { /* keep last good snapshot */ } finally { refreshing = false; } }, 5000); return () => window.clearInterval(timer); }, [draft, refreshPreview, saveState]);
+
+  const set = <K extends keyof WorkbenchConfig>(key: K, value: WorkbenchConfig[K]) => setConfig((current) => current ? { ...current, [key]: value } : current);
+  const selectedPlan = plans.find((item) => item.revision_id === config?.content_plan_revision_id), selectedIds = config?.device_ids || [];
+  function setMode(mode: ContentMode) { if (!config) return; const searchLike = mode === "search" || mode === "hybrid"; const query = searchLike && !config.search_query ? searchQueryFromTopic(config.topic_prompt) || "" : config.search_query; setConfig({ ...config, content_mode: mode, topic_prompt: mode === "general" && !config.topic_prompt ? "不限主题" : config.topic_prompt, search_query: query, search_trust_results: searchLike ? (mode === "hybrid" ? true : config.search_trust_results) : false }); }
+  function updateTopic(value: string) { if (!config) return; const oldGenerated = searchQueryFromTopic(config.topic_prompt), follows = !config.search_query || config.search_query === oldGenerated, searchLike = config.content_mode === "search" || config.content_mode === "hybrid"; setConfig({ ...config, topic_prompt: value, search_query: searchLike && follows ? searchQueryFromTopic(value) || "" : config.search_query }); }
+  function choosePlan(revisionId: string) { if (!config) return; const plan = plans.find((item) => item.revision_id === revisionId); setConfig({ ...config, content_plan_id: plan?.plan_id || null, content_plan_revision_id: plan?.revision_id || null }); }
+  function toggleDevice(deviceId: string) { if (!config) return; const next = selectedIds.includes(deviceId) ? selectedIds.filter((id) => id !== deviceId) : [...selectedIds, deviceId]; setConfig({ ...config, device_ids: next, device_id: next[0] || "" }); }
+  async function addDeviceToDraft(deviceId: string) { if (!config) return; const nextIds = selectedIds.includes(deviceId) ? selectedIds : [...selectedIds, deviceId]; setConfig({ ...config, device_ids: nextIds, device_id: nextIds[0] }); setNotice("新设备已加入当前草稿；不会自动提交任务"); const response = await fetchLocalApi(`${API}/api/status`, { cache: "no-store" }); if (response.ok) setStatus(await response.json() as StatusPayload); }
+  async function startVirtualFromWorkbench(virtualDevice: VirtualDevice) {
+    setStartingVirtual((current) => new Set(current).add(virtualDevice.virtual_device_id));
+    setNotice(`正在启动 ${virtualDevice.name}；完成复验前不会加入任务`);
+    try {
+      const response = await fetchLocalApi(`${API}/api/virtual-devices/${encodeURIComponent(virtualDevice.virtual_device_id)}/operations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", idempotency_key: crypto.randomUUID() }) }, 20_000);
+      const payload = await response.json() as { operation?: VirtualOperation; error?: string };
+      if (!response.ok || !payload.operation) throw new Error(payload.error || "虚拟机启动失败");
+      const operation = await waitForVirtualOperation(API, payload.operation, (next) => setNotice(`${virtualDevice.name} · ${virtualOperationStageLabel(next.stage)} · ${next.progress}%`));
+      if (["failed", "cancelled"].includes(operation.status)) throw new Error(operation.error || "虚拟机启动失败");
+      const statusResponse = await fetchLocalApi(`${API}/api/status`, { cache: "no-store" });
+      if (statusResponse.ok) setStatus(await statusResponse.json() as StatusPayload);
+      await refreshPreview(revisionRef.current).catch(() => undefined);
+      setNotice(operation.status === "waiting_user" ? operation.error || "虚拟机需要你处理后继续" : `${virtualDevice.name} 已启动；复验通过后即可选择`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "虚拟机启动失败"); }
+    finally { setStartingVirtual((current) => { const next = new Set(current); next.delete(virtualDevice.virtual_device_id); return next; }); }
+  }
+  function applyIntensity(values: readonly number[]) { if (!config) return; setConfig({ ...config, like_probability: values[0], favorite_probability: values[1], comment_probability: values[2], matched_like_probability: values[0], matched_favorite_probability: values[1], matched_comment_probability: values[2] }); }
+  function applyPreset() { const preset = presets.find((item) => item.name === presetName); if (!preset || !config) return; setConfig({ ...config, ...preset.config, device_ids: config.device_ids, device_id: config.device_id, seed: config.seed, preview_only: config.preview_only }); setNotice(`已套用“${preset.name}”，设备与评论发送方式保持不变`); }
+  async function prepareVisitorReminder(enableAfterConfirmation: boolean) {
+    if (!config) return;
+    if (!selectedIds.length) {
+      if (enableAfterConfirmation) set("engagement_inspection_enabled", true);
+      setNotice("已开启互动巡检；选择标准虚拟机后还需确认访客记录设置");
+      return;
+    }
+    visitorEnablePending.current = enableAfterConfirmation;
+    setVisitorReminderBusy(true);
+    try {
+      const response = await fetchLocalApi(`${API}/api/engagement-preflight?device_ids=${encodeURIComponent(selectedIds.join(","))}`, { cache: "no-store" });
+      const result = await response.json() as { required?: boolean; devices?: Array<{ device_id: string; name: string; acknowledged: boolean }>; error?: string };
+      if (!response.ok) throw new Error(result.error || "无法读取访客记录提醒状态");
+      if (!result.required) {
+        if (enableAfterConfirmation) set("engagement_inspection_enabled", true);
+        setNotice("所选虚拟机已确认访客记录设置");
+        return;
+      }
+      setVisitorReminderDevices(result.devices || []);
+      setVisitorReminderOpen(true);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "无法读取访客记录提醒状态"); }
+    finally { setVisitorReminderBusy(false); }
+  }
+  async function confirmVisitorReminder() {
+    if (!config) return;
+    setVisitorReminderBusy(true);
+    try {
+      const response = await fetchLocalApi(`${API}/api/engagement-preflight/visitor-acknowledgement`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_ids: selectedIds }) });
+      const result = await response.json() as { required?: boolean; error?: string };
+      if (!response.ok || result.required) throw new Error(result.error || "访客记录提醒确认失败");
+      if (visitorEnablePending.current) set("engagement_inspection_enabled", true);
+      visitorEnablePending.current = false;
+      setVisitorReminderOpen(false);
+      setNotice("访客记录提醒已按设备保存；Android身份变化后会再次提醒");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "访客记录提醒确认失败"); }
+    finally { setVisitorReminderBusy(false); }
+  }
+  async function submit(confirmWrites: boolean) { if (!preview || !draft) return; setSubmitting(true); setNotice("正在提交不可变任务快照…"); try { const response = await fetchLocalApi(`${API}/api/workbench/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision: draft.revision, plan_hash: preview.plan_hash, confirm_writes: confirmWrites }) }, 20_000); const result = await response.json() as { error?: string; task_ids?: string[] }; if (!response.ok) throw new Error(result.error || "提交失败"); setConfirmOpen(false); setNotice(`已创建 ${result.task_ids?.length || preview.total_task_count} 个任务，快照不会再被草稿修改`); window.setTimeout(() => { window.location.href = "/run"; }, 700); } catch (error) { setNotice(error instanceof Error ? error.message : "提交失败"); await refreshPreview(revisionRef.current).catch(() => undefined); } finally { setSubmitting(false); } }
+
+  if (!config || !draft) return <main className="app-shell"><div className="page-shell"><section className="panel workbench-loading"><strong>正在准备任务台</strong><span>{notice}</span></section></div></main>;
+  const activeProbabilities = config.content_mode === "search" ? [config.matched_like_probability, config.matched_favorite_probability, config.matched_comment_probability] : config.content_mode === "hybrid" ? [Math.max(config.like_probability, config.matched_like_probability), Math.max(config.favorite_probability, config.matched_favorite_probability), Math.max(config.comment_probability, config.matched_comment_probability)] : [config.like_probability, config.favorite_probability, config.comment_probability];
+  const virtualDevices = status?.devices.filter((device) => device.device_type === "virtual") || [];
+  const physicalDevices = status?.device_preferences?.physical_devices_enabled ? status.devices.filter((device) => (device.device_type || "physical") === "physical") : [];
+  const knownVirtuals = status?.virtualization?.devices || [];
+  const hasAnyVirtual = knownVirtuals.some((virtualDevice) => virtualDevice.state !== "retired");
+  return <main className="app-shell task-workbench-page"><div className="page-shell">
+    
+    <section className="workbench-hero" data-motion><div><p className="eyebrow">TASK WORKBENCH</p><h1>创建并启动任务</h1><p>从目标到设备在一页完成；每次修改自动保存，提交后冻结为独立快照。</p></div><div className={`draft-state ${saveState}`}><i/><span>{saveState === "saving" ? "正在自动保存" : saveState === "dirty" ? "有修改待保存" : saveState === "conflict" ? "已同步其他页面修改" : saveState === "error" ? "保存失败" : `草稿 v${draft.revision} 已保存`}</span></div></section>
+    <div className="workbench-layout"><div className="workbench-flow">
+      <section className="panel workbench-step" data-motion><header><span>01</span><div><h2>从哪里开始</h2><p>推荐使用搜索与主页交替；旧模式完整保留在备用区。</p></div></header><button type="button" className={`primary-mode-choice ${config.content_mode === "hybrid" ? "selected" : ""}`} onClick={() => setMode("hybrid")}><span>{modeCopy.hybrid.badge}</span><strong>{modeCopy.hybrid.title}</strong><small>{modeCopy.hybrid.detail}</small></button><details className="backup-mode-choice" open={config.content_mode !== "hybrid"}><summary>备用模式</summary><div className="mode-choice-grid">{(["general", "mixed", "search"] as ContentMode[]).map((mode) => <button type="button" key={mode} className={config.content_mode === mode ? "selected" : ""} onClick={() => setMode(mode)}><span>{modeCopy[mode].badge}</span><strong>{modeCopy[mode].title}</strong><small>{modeCopy[mode].detail}</small></button>)}</div></details></section>
+      <section className="panel workbench-step" data-motion><header><span>02</span><div><h2>关注什么</h2><p>{config.content_mode === "general" ? "不限主题不需要额外配置。" : "选择单主题或内容计划；复杂规则留在资产页维护。"}</p></div></header>{config.content_mode === "general" ? <div className="workbench-callout"><strong>不限主题</strong><span>所有安全视频使用通用概率，广告、直播和危险页面仍会跳过。</span></div> : <><div className="content-source-row"><label className="field"><span>主题来源</span><select value={config.content_plan_revision_id || ""} onChange={(event) => choosePlan(event.target.value)}><option value="">当前单主题</option>{plans.map((plan) => <option key={plan.revision_id} value={plan.revision_id}>{plan.document.name} · v{plan.revision_number}</option>)}</select></label><a className="secondary" href="/content">管理内容资产</a></div>{selectedPlan ? <div className="round-preview"><span>轮次预览</span><b>{selectedPlan.document.themes.filter((item) => item.enabled).slice(0, 6).map((item) => item.name).join(" → ") || "没有启用主题"}</b></div> : <div className="topic-fields"><label className="field"><span className="field-title">目标主题<PromptGuideLink section="topic"/></span><input value={config.topic_prompt} onChange={(event) => updateTopic(event.target.value)} placeholder="例如：人工智能、智能制造、塑料包装"/></label>{(config.content_mode === "search" || config.content_mode === "hybrid") && <label className="field"><span className="field-title">实际搜索词<PromptGuideLink section="search"/></span><div className="inline-input"><input maxLength={80} value={config.search_query} onChange={(event) => set("search_query", event.target.value)} placeholder="例如：人工智能 智能制造"/><button type="button" onClick={() => set("search_query", searchQueryFromTopic(config.topic_prompt) || "")}>跟随主题</button></div></label>}</div>}</>}</section>
+      <section className="panel workbench-step" data-motion><header><span>03</span><div><h2>如何运行</h2><p>设置规模和互动强度；只有确认有效的视频才计入进度。</p></div></header><div className="scale-grid"><label className="field"><span>每轮有效视频数</span><input type="number" min="1" max="200" value={config.video_count} onChange={(event) => set("video_count", Number(event.target.value))}/></label><label className="field"><span>轮数</span><input type="number" min="1" max="20" value={config.round_count} onChange={(event) => set("round_count", Number(event.target.value))}/></label><label className="field"><span>最短观看</span><div className="unit-input"><input type="number" min="1" value={config.dwell_min} onChange={(event) => set("dwell_min", Number(event.target.value))}/><em>秒</em></div></label><label className="field"><span>最长观看</span><div className="unit-input"><input type="number" min="1" value={config.dwell_max} onChange={(event) => set("dwell_max", Number(event.target.value))}/><em>秒</em></div></label></div>{config.content_mode === "hybrid" && <div className="segment-config"><div><span>搜索视频流</span><label>最少<input type="number" min="1" max="200" value={config.search_segment_min} onChange={(event) => set("search_segment_min", Number(event.target.value))}/></label><label>最多<input type="number" min="1" max="200" value={config.search_segment_max} onChange={(event) => set("search_segment_max", Number(event.target.value))}/></label></div><b>交替</b><div><span>主页视频流</span><label>最少<input type="number" min="1" max="200" value={config.home_segment_min} onChange={(event) => set("home_segment_min", Number(event.target.value))}/></label><label>最多<input type="number" min="1" max="200" value={config.home_segment_max} onChange={(event) => set("home_segment_max", Number(event.target.value))}/></label></div></div>}<div className="intensity-row">{intensityPresets.map((item) => <button type="button" key={item.name} className={activeProbabilities.every((value, index) => value === item.values[index]) ? "selected" : ""} onClick={() => applyIntensity(item.values)}>{item.name}</button>)}</div>{config.content_mode === "hybrid" ? <div className="probability-groups"><section><header><strong>搜索流动作概率</strong><small>安全结果可点赞收藏；评论仍需主题精确匹配</small></header><div className="probability-grid three"><Probability label="点赞" value={config.matched_like_probability} onChange={(value) => set("matched_like_probability", value)}/><Probability label="收藏" value={config.matched_favorite_probability} onChange={(value) => set("matched_favorite_probability", value)}/><Probability label="评论" value={config.matched_comment_probability} onChange={(value) => set("matched_comment_probability", value)}/></div></section><section><header><strong>主页流动作概率</strong><small>安全内容随机点赞收藏；主题不符不评论</small></header><div className="probability-grid three"><Probability label="点赞" value={config.like_probability} onChange={(value) => set("like_probability", value)}/><Probability label="收藏" value={config.favorite_probability} onChange={(value) => set("favorite_probability", value)}/><Probability label="主题匹配评论" value={config.comment_probability} onChange={(value) => set("comment_probability", value)}/></div></section></div> : <div className="probability-grid three"><Probability label="点赞概率" value={activeProbabilities[0]} onChange={(value) => set(config.content_mode === "search" ? "matched_like_probability" : "like_probability", value)}/><Probability label="收藏概率" value={activeProbabilities[1]} onChange={(value) => set(config.content_mode === "search" ? "matched_favorite_probability" : "favorite_probability", value)}/><Probability label="评论概率" value={activeProbabilities[2]} onChange={(value) => set(config.content_mode === "search" ? "matched_comment_probability" : "comment_probability", value)}/></div>}<label className="capsule-switch comment-mode-switch"><span><strong>{config.preview_only ? "评论仅生成预览" : "允许真实发送评论"}</strong><small>{config.preview_only ? "模型会生成并留档，但不会输入手机" : "只有通过全部安全与主题规则后才发送"}</small></span><input type="checkbox" checked={!config.preview_only} onChange={(event) => set("preview_only", !event.target.checked)}/><i aria-hidden="true"/></label></section>
+      <section className="panel workbench-step" data-motion>
+        <header><span>04</span><div><h2>在哪些虚拟机运行</h2><p>显示本机MuMu虚拟机；每项任务按实际能力判断是否可用。</p></div><div className="workbench-device-actions"><button type="button" className="primary" onClick={() => setAddDeviceOpen(true)}>添加虚拟机</button><a className="secondary" href="/devices">管理虚拟机</a></div></header>
+        <div className="workbench-device-grid">
+          {!!virtualDevices.length && <div className="workbench-device-group"><strong>MuMu虚拟机</strong><small>任务按900×1600、320 DPI和实际能力预检</small></div>}
+          {virtualDevices.map((device) => { const online = device.state === "device", selected = selectedIds.includes(device.device_id), previewDevice = preview?.devices.find((item) => item.device_id === device.device_id), available = online && previewDevice?.available !== false; return <label key={device.device_id} className={`workbench-device ${selected ? "selected" : ""} ${available ? "" : "unavailable"}`}><input type="checkbox" disabled={!available} checked={selected} onChange={() => toggleDevice(device.device_id)}/><span><strong>{device.friendly_name || device.device_id}</strong><small>{device.model || device.device_id}</small></span><em>{available ? selected ? "已选择" : "可用" : previewDevice?.reason || "不可用"}</em></label>; })}
+          {knownVirtuals.filter((virtualDevice) => (virtualDevice.state !== "retired" || virtualDevice.presence_status === "identity_conflict") && !virtualDevices.some((device) => device.device_id === virtualDevice.adb_endpoint)).map((virtualDevice) => {
+            const busy = startingVirtual.has(virtualDevice.virtual_device_id) || virtualOperationIsActive(virtualDevice.active_operation);
+            const unavailable = ["missing", "engine_unavailable", "identity_conflict"].includes(virtualDevice.presence_status || "");
+            const connectionLabel = busy ? virtualOperationStageLabel(virtualDevice.active_operation?.stage) : virtualDevice.user_message || (virtualDevice.state === "stopped" ? "虚拟机已停止" : "设备待连接");
+            const canStartOrRetry = virtualDevice.available_actions?.some((action) => action === "start" || action === "retry_connection");
+            const sourceLabel = virtualDevice.discovery_source === "mediaflow_created" ? "MediaFlow创建" : virtualDevice.discovery_source === "mediaflow_adopted" ? "用户接入" : "本机MuMu发现";
+            return <div key={virtualDevice.virtual_device_id} className="workbench-device virtual-offline"><span className="virtual-device-symbol">虚</span><span><strong>{virtualDevice.name}</strong><small>{sourceLabel} · {connectionLabel}</small></span>{canStartOrRetry ? <button type="button" className="secondary" disabled={busy || unavailable || virtualDevice.can_start === false} onClick={() => void startVirtualFromWorkbench(virtualDevice)}>{busy ? `${virtualOperationStageLabel(virtualDevice.active_operation?.stage)}…` : virtualDevice.available_actions?.includes("retry_connection") ? "重试连接" : virtualDevice.profile_status === "ready" ? "启动" : "启动并接入"}</button> : <a className="secondary" href={`/devices#virtual-${virtualDevice.virtual_device_id}`}>查看处理方法</a>}</div>;
+          })}
+          {!!physicalDevices.length && <><div className="workbench-device-group optional"><strong>真机（已在设备设置开启）</strong><small>真机档案仅在本机复验后生效</small></div>{physicalDevices.map((device) => { const online = device.state === "device", selected = selectedIds.includes(device.device_id), previewDevice = preview?.devices.find((item) => item.device_id === device.device_id), available = online && previewDevice?.available !== false; return <label key={device.device_id} className={`workbench-device ${selected ? "selected" : ""} ${available ? "" : "unavailable"}`}><input type="checkbox" disabled={!available} checked={selected} onChange={() => toggleDevice(device.device_id)}/><span><strong>{device.friendly_name || device.device_id}</strong><small>{device.model || device.device_id}</small></span><em>{available ? selected ? "已选择" : "可用" : previewDevice?.reason || "不可用"}</em></label>; })}</>}
+          {status && !virtualDevices.length && !hasAnyVirtual && !physicalDevices.length && <div className="workbench-device-empty"><strong>还没有MuMu虚拟机</strong><span>创建或启动任意MuMu实例后，MediaFlow会自动发现并核对显示环境。</span><button type="button" className="primary" onClick={() => setAddDeviceOpen(true)}>添加虚拟机</button></div>}
+          {status && (virtualDevices.length > 0 || physicalDevices.length > 0) && !(preview?.devices || []).some((item) => item.available) && <div className="workbench-device-empty"><strong>当前设备都不可执行此任务</strong><span>请到设备管理查看显示环境或本任务所需能力。</span><a className="secondary" href="/devices">查看设备管理</a></div>}
+        </div>
+        {status && (hasAnyVirtual || virtualDevices.length > 0 || physicalDevices.length > 0) && <button type="button" className="workbench-add-more text-button" onClick={() => setAddDeviceOpen(true)}>＋ 添加虚拟机</button>}
+      </section>
+      <section className="panel advanced-workbench" data-motion><button type="button" className="advanced-workbench-toggle" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((value) => !value)}><span><strong>高级设置</strong><small>预设、轮次间隔、互动巡检、评论约束和异常保护</small></span><b>{advancedOpen ? "收起" : "展开"}</b></button>{advancedOpen && <div className="advanced-workbench-body"><div className="preset-row"><label className="field"><span>参数预设</span><select value={presetName} onChange={(event) => setPresetName(event.target.value)}><option value="">选择预设</option>{presets.map((item) => <option key={item.name}>{item.name}</option>)}</select></label><button type="button" className="secondary" disabled={!presetName} onClick={applyPreset}>应用预设</button></div><div className="advanced-grid"><label className="field"><span>轮次间隔（分钟）</span><input type="number" min="0" value={config.round_interval_minutes} onChange={(event) => set("round_interval_minutes", Number(event.target.value))}/></label><label className="field"><span>连续异常停止阈值</span><input type="number" min="1" max="50" value={config.max_gate_skips} onChange={(event) => set("max_gate_skips", Number(event.target.value))}/></label><label className="field"><span>随机种子</span><input type="number" value={config.seed} onChange={(event) => set("seed", Number(event.target.value))}/></label></div><label className="capsule-switch"><span><strong>互动巡检 v3</strong><small>只检查互动消息聚合页，不进入普通私信</small></span><input type="checkbox" checked={config.engagement_inspection_enabled} onChange={(event) => event.target.checked ? void prepareVisitorReminder(true) : set("engagement_inspection_enabled", false)}/><i aria-hidden="true"/></label>{config.engagement_inspection_enabled && <><label className="field compact-field"><span>每几轮检查互动</span><input type="number" min="1" max="20" value={config.inspection_every_rounds} onChange={(event) => set("inspection_every_rounds", Number(event.target.value))}/></label><button type="button" className="secondary visitor-reminder-button" disabled={visitorReminderBusy} onClick={() => void prepareVisitorReminder(false)}>{visitorReminderBusy ? "正在检查…" : "确认访客记录设置"}</button></>}<label className="capsule-switch"><span><strong>评论发送前约束</strong><small>命中约束会取消当前评论，但继续后续视频</small></span><input type="checkbox" checked={config.comment_policy_enabled} onChange={(event) => set("comment_policy_enabled", event.target.checked)}/><i aria-hidden="true"/></label>{config.comment_policy_enabled && <label className="field"><span className="field-title">不希望发表评论的内容或表达<PromptGuideLink section="comment-policy"/></span><textarea rows={3} value={config.comment_policy_prompt} onChange={(event) => set("comment_policy_prompt", event.target.value)}/></label>}</div>}</section>
+    </div><aside className="workbench-summary" data-motion><section className="panel launch-summary"><div className="launch-summary-head"><div><span className={`dot ${preview?.ready ? "online" : "paused"}`}/><strong>{preview?.ready ? "任务已准备好" : "还差一步"}</strong></div><small>{saveState === "saved" ? `草稿 v${draft.revision}` : "等待保存"}</small></div><dl><div><dt>内容入口</dt><dd>{modeCopy[config.content_mode].title}</dd></div>{preview?.segments && <div><dt>阶段循环</dt><dd>搜索 {preview.segments.search.min}～{preview.segments.search.max} → 主页 {preview.segments.home.min}～{preview.segments.home.max}</dd></div>}<div><dt>可执行设备</dt><dd>{preview?.eligible_device_ids.length ?? 0} 台</dd></div><div><dt>任务总数</dt><dd>{preview?.total_task_count ?? "—"}</dd></div><div><dt>预计耗时</dt><dd>{preview ? duration(preview.estimated_seconds) : "计算中"}</dd></div></dl><div className="launch-action-summary"><span>可能执行</span><div><b>点赞 {percent(preview?.probabilities.like || 0)}</b><b>收藏 {percent(preview?.probabilities.favorite || 0)}</b><b>评论 {preview?.comment_mode || "—"}</b></div></div>{preview?.warnings.map((item) => <p className="plan-warning" key={item}>{item}</p>)}{preview?.blockers.map((item) => <p className="plan-blocker" key={item}>{item}</p>)}<button type="button" className="primary launch-button" disabled={!preview?.ready || saveState !== "saved" || submitting} onClick={() => preview?.requires_confirmation ? setConfirmOpen(true) : void submit(false)}>{submitting ? "正在提交…" : preview?.requires_confirmation ? "核对并开始" : "开始任务"}</button><p className="launch-note">提交后冻结参数与内容版本；后续草稿修改不会影响已排队任务。</p></section><p className="workbench-notice" role="status">{notice}</p></aside></div>
+    {visitorReminderOpen && <div className="confirmation-backdrop" role="presentation" onMouseDown={() => !visitorReminderBusy && setVisitorReminderOpen(false)}><section className="confirmation-dialog visitor-reminder-dialog" role="dialog" aria-modal="true" aria-labelledby="visitor-reminder-title" onMouseDown={(event) => event.stopPropagation()}><p className="section-index">INSPECTION PRECHECK</p><h2 id="visitor-reminder-title">巡检前确认访客记录</h2><p>请先在抖音隐私设置中打开访客记录，否则访客类互动可能不完整。</p><div className="visitor-reminder-list">{visitorReminderDevices.filter((item) => !item.acknowledged).map((item) => <strong key={item.device_id}>{item.name} · 待确认</strong>)}</div><p className="fine-print">确认只保存到这台虚拟机；Android身份或应用数据变化后，MediaFlow会再次提醒。巡检全程不会打开具体互动、用户主页或私信。</p><div className="dialog-actions"><button type="button" className="secondary" disabled={visitorReminderBusy} onClick={() => { visitorEnablePending.current = false; setVisitorReminderOpen(false); }}>稍后处理</button><button type="button" className="primary" disabled={visitorReminderBusy} onClick={() => void confirmVisitorReminder()}>{visitorReminderBusy ? "正在保存…" : "我已打开，继续"}</button></div></section></div>}
+    {confirmOpen && preview && <div className="confirmation-backdrop" role="presentation" onMouseDown={() => setConfirmOpen(false)}><section className="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" onMouseDown={(event) => event.stopPropagation()}><p className="section-index">WRITE CONFIRMATION</p><h2 id="confirm-title">确认本次真实互动</h2><p>本任务可能在 {preview.eligible_device_ids.length} 台设备上执行以下写入动作：</p><div className="confirmation-actions">{preview.write_actions.map((item) => <strong key={item}>{item}</strong>)}</div><dl><div><dt>内容</dt><dd>{preview.topic}</dd></div><div><dt>规模</dt><dd>{preview.video_task_count} 个视频轮次，共 {config.video_count * preview.video_task_count} 条</dd></div><div><dt>评论方式</dt><dd>{preview.comment_mode}</dd></div></dl><p className="fine-print">所有动作仍需通过页面、安全、主题和动作后验证；结果未知时不会自动重放。</p><div className="dialog-actions"><button type="button" className="secondary" onClick={() => setConfirmOpen(false)}>返回修改</button><button type="button" className="primary" disabled={submitting} onClick={() => void submit(true)}>{submitting ? "正在提交…" : "确认并开始"}</button></div></section></div>}
+    <DeviceOnboardingDialog open={addDeviceOpen} source="workbench" onClose={() => setAddDeviceOpen(false)} onDeviceReady={addDeviceToDraft}/>
+  </div></main>;
+}

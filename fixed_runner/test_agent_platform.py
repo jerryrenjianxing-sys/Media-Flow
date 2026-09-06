@@ -107,6 +107,35 @@ class AgentPlatformTests(unittest.TestCase):
         self.assertEqual(self.platform.tools('list_devices', {}, self.context)['devices'][0]['provider_instance_id'], '0')
         self.assertEqual(self.platform.tools('list_tasks', {}, self.context)['tasks'], [])
 
+    def test_launch_failure_receipt_survives_reload_and_recovers_same_batch(self):
+        self.launch.side_effect = RuntimeError('worker unavailable')
+        plan = self.planned()
+        result = self.confirm(plan)
+        saved = self.platform.get(plan['plan_id'], 'ses_one')
+        self.assertEqual(saved['execution']['reason_code'], 'worker_start_unconfirmed')
+        self.assertIn('执行者', saved['execution']['message'])
+        self.launch.side_effect = None
+        repeated = self.confirm(plan)
+        self.assertEqual(repeated['task_ids'], result['task_ids'])
+        self.assertEqual(self.platform.get(plan['plan_id'], 'ses_one')['execution']['reason_code'], 'worker_dispatch_checked')
+
+    def test_worker_report_not_running_is_not_vm_offline_or_success(self):
+        self.launch.return_value = [{'running': False, 'identity': 'supervisor_pending'}]
+        result = self.confirm(self.planned())
+        self.assertEqual(result['reason_code'], 'worker_start_unconfirmed')
+        self.assertEqual(len(self.store.list()), 2)
+
+    def test_repreview_is_idempotent_and_does_not_submit_or_change_old_plan(self):
+        plan = self.planned()
+        with self.platform.database() as db:
+            db.execute('UPDATE plans SET deadline=0 WHERE id=?', (plan['plan_id'],))
+        new = self.platform.repreview(plan['plan_id'], 'ses_one', {'request_id': 'retry1'})
+        repeated = self.platform.repreview(plan['plan_id'], 'ses_one', {'request_id': 'retry1'})
+        self.assertEqual(new['plan_id'], repeated['plan_id'])
+        self.assertNotEqual(new['plan_id'], plan['plan_id'])
+        self.assertEqual(self.platform.get(plan['plan_id'], 'ses_one')['state'], 'expired')
+        self.assertEqual(self.store.list(), [])
+
     def test_home_topic_filter_does_not_require_unrelated_search_query(self):
         self.config.update(content_mode='mixed')
         result=self.planned()

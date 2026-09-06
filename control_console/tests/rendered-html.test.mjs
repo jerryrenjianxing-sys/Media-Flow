@@ -17,18 +17,18 @@ async function source(path) {
   return readFile(new URL(path, import.meta.url), "utf8");
 }
 
-test("homepage adds Agent without replacing the existing workbench or claiming full control", async () => {
+test("homepage is Agent-only and preserves the traditional workbench under management", async () => {
   const response = await render();
   const html = await response.text();
   assert.equal(response.status, 200);
   assert.match(html, /告诉助手你要做什么/);
-  assert.match(html, /正在准备任务台/);
-  assert.match(html, /不会假装执行成功/);
+  assert.doesNotMatch(html, /正在准备任务台/);
+  assert.match(html, /管理中心/);
   const page = await source("../app/components/agent-workbench.tsx");
-  assert.match(page, /request_id: id/);
-  assert.match(page, /failures.current >= 3/);
+  assert.match(page, /request_id:id/);
+  assert.match(page, /failures.current>=3/);
   const api = await source('../app/lib/agent-api.ts');
-  assert.match(api, /当前后台尚未提供助手接口/);
+  assert.match(api, /result.user_message \|\| result.error/);
   assert.match(api, /无法连接本机对话服务/);
   assert.match(page, /尚未完成的接入/);
 });
@@ -56,12 +56,12 @@ test("model settings expose isolated experimental Token Plan save test and enabl
   assert.match(page, /finally \{ setModelAction\(""\); setBusy\(false\); \}/);
 });
 
-test("renders the five-workspace shell and persisted presentation controls", async () => {
+test("renders management navigation and persisted presentation controls", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /MediaFlow 媒体自动化平台/);
-  for (const label of ["任务台", "运行", "结果", "设备", "资产与设置"]) assert.match(html, new RegExp(label));
+  for (const label of ["MediaFlow 助手", "管理中心", "安全停止"]) assert.match(html, new RegExp(label));
   assert.match(html, /workspace-sidebar-toggle/);
   assert.match(html, /workspace-sidebar-scrim/);
   assert.match(html, /workspace-sidebar-head/);
@@ -70,7 +70,7 @@ test("renders the five-workspace shell and persisted presentation controls", asy
   assert.match(html, /切换到浅色主题/);
   assert.match(html, /mediaflow-asset-recovery/);
   assert.match(html, /asset_reload/);
-  assert.match(html, /正在准备任务台/);
+  assert.doesNotMatch(html, /正在准备任务台/);
   assert.doesNotMatch(html, /Building your site|Your site is taking shape/);
 
   const shell = await source("../app/components/console-shell.tsx");
@@ -95,7 +95,7 @@ test("renders the five-workspace shell and persisted presentation controls", asy
 });
 
 test("task workbench follows the four decisions and server-owned planning contract", async () => {
-  const page = await source("../app/page.tsx");
+  const page = await source("../app/workbench/page.tsx");
   for (const text of ["从哪里开始", "关注什么", "如何运行", "在哪些虚拟机运行"]) assert.match(page, new RegExp(text));
   for (const mode of ["搜索＋主页交替", "主页不限主题", "主页主题筛选", "搜索主题视频"]) assert.match(page, new RegExp(mode));
   for (const field of ["search_segment_min", "search_segment_max", "home_segment_min", "home_segment_max"]) assert.match(page, new RegExp(field));
@@ -115,7 +115,7 @@ test("task workbench follows the four decisions and server-owned planning contra
 });
 
 test("task workbench preserves precise controls behind progressive disclosure", async () => {
-  const page = await source("../app/page.tsx");
+  const page = await source("../app/workbench/page.tsx");
   assert.match(page, /高级设置/);
   assert.match(page, /连续异常停止阈值/);
   assert.match(page, /轮次间隔/);
@@ -336,7 +336,7 @@ test("prompt guide documents every user-authored content field and links from fo
     assert.match(html, new RegExp(label));
   }
 
-  const taskPage = await source("../app/page.tsx");
+  const taskPage = await source("../app/workbench/page.tsx");
   const assetPage = await source("../app/content/page.tsx");
   for (const section of ["topic", "search", "comment-policy"]) assert.match(taskPage, new RegExp(`PromptGuideLink section="${section}"`));
   for (const section of ["topic", "search", "comment-template", "theme-template", "comment-pool"]) assert.match(assetPage, new RegExp(`PromptGuideLink section="${section}"`));

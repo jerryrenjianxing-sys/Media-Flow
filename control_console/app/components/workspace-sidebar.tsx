@@ -7,11 +7,14 @@ import { BRAND } from "../brand";
 
 export type WorkspaceIconName = "create" | "run" | "results" | "devices" | "assets";
 
-export const workspaceGroups = [
+type WorkspaceRoute = {href:string;label:string;icon:WorkspaceIconName;description:string};
+export const workspaceGroups: readonly {label:string;links:readonly WorkspaceRoute[]}[] = [
   {
     label: "任务生命周期",
     links: [
-      { href: "/", label: "任务台", icon: "create" as const, description: "创建、预览并启动任务" },
+      { href: "/", label: "MediaFlow 助手", icon: "create" as const, description: "对话、计划与执行" },
+      { href: "/manage", label: "管理中心", icon: "assets" as const, description: "任务、设备与完整设置" },
+      { href: "/workbench", label: "任务台", icon: "create" as const, description: "创建、预览并启动任务" },
       { href: "/run", label: "运行", icon: "run" as const, description: "队列监控与安全控制" },
       { href: "/records", label: "结果", icon: "results" as const, description: "任务、纠错与互动凭证" },
       { href: "/devices", label: "设备", icon: "devices" as const, description: "健康、画面与初始化" },
@@ -75,7 +78,7 @@ export default function WorkspaceSidebar({
       <nav id="workspace-navigation" className="workspace-nav">
         {workspaceGroups.map((group) => <section key={group.label}>
           <h2>{group.label}</h2>
-          {group.links.map((link) => {
+          {group.links.filter((link) => link.href === "/" || link.href === "/manage").map((link) => {
             const active = pathname === link.href || (link.href !== "/" && pathname.startsWith(`${link.href}/`));
             return <a key={link.href} href={link.href} className={active ? "active" : ""} aria-current={active ? "page" : undefined} title={collapsed ? `${link.label} · ${link.description}` : undefined}>
               <span className="workspace-nav-mark"><WorkspaceIcon name={link.icon}/></span>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./agent.css";
+import "./agent-studio.css";
 import ConsoleShell from "./components/console-shell";
 import { BRAND } from "./brand";
 

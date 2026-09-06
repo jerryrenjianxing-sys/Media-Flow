@@ -265,6 +265,14 @@ class AgentService:
     def messages(self, session_id):
         self._session(session_id)
         messages = self.runtime.request('GET', f'/session/{session_id}/message?limit=80')
+        observed = {item.get('info', {}).get('id') for item in messages}
+        # A timed-out POST can have reached OpenCode. Reconcile its actual message
+        # identity, never resubmit it as a fresh turn merely because the UI reloaded.
+        with self.database() as db:
+            unknown = db.execute("SELECT id,message_id FROM turns WHERE session=? AND state IN ('unknown','dispatching')", (session_id,)).fetchall()
+            for turn in unknown:
+                if turn['message_id'] in observed:
+                    db.execute("UPDATE turns SET state='accepted' WHERE id=?", (turn['id'],))
         states = self.runtime.request('GET', '/session/status')
         state = states.get(session_id, {}).get('type', 'idle')
         questions = self.runtime.request('GET', '/question')
@@ -273,10 +281,11 @@ class AgentService:
             state = 'waiting_user'
         with self.database() as db:
             latest = db.execute('SELECT state FROM turns WHERE session=? ORDER BY created DESC LIMIT 1', (session_id,)).fetchone()
+            turns = [dict(row) for row in db.execute('SELECT id,state,message_id FROM turns WHERE session=? ORDER BY created DESC LIMIT 20', (session_id,))]
         notice = '任务和维护操作请查看下方回执。'
         if latest and latest['state'] == 'timed_out':
             state, notice = 'idle', '这次对话已超过10分钟，已停止新增调用。请查看已有操作回执后重新提问，不会自动重放。'
-        return {'messages': public_messages(messages), 'state': state, 'questions': questions,
+        return {'messages': public_messages(messages), 'state': state, 'questions': questions, 'turns': turns,
                 'plans': self.platform.plans(session_id)['plans'] if self.platform else [],
                 'commands': self.operations.list(session_id) if self.operations else [],
                 'repairs': self.repairs.list(session_id),
@@ -424,12 +433,13 @@ def handle_agent_http(handler, method, path, body=None):
             result = service.start()
         elif method == 'POST' and path == '/api/agent/sessions':
             result = service.create_session(body or {})
-        elif method == 'POST' and (match := re.fullmatch(r'/api/agent/sessions/([A-Za-z0-9_-]+)/plans/([a-f0-9]+)/confirm', path)):
+        elif method == 'POST' and (match := re.fullmatch(r'/api/agent/sessions/([A-Za-z0-9_-]+)/plans/([a-f0-9]+)/(confirm|repreview)', path)):
             service._session(match[1])
             if not service.platform:
                 raise ValueError('平台任务接口未就绪')
             with service._lock:
-                result = service.platform.confirm(match[2], match[1], body or {})
+                action = service.platform.confirm if match[3] == 'confirm' else service.platform.repreview
+                result = action(match[2], match[1], body or {})
         elif method == 'POST' and (match := re.fullmatch(r'/api/agent/sessions/([A-Za-z0-9_-]+)/commands/([a-f0-9]+)/confirm', path)):
             service._session(match[1])
             if not service.operations:
@@ -466,7 +476,7 @@ def handle_agent_http(handler, method, path, body=None):
         else:
             match = re.fullmatch(r'/api/agent/sessions/([A-Za-z0-9_-]+)/(?P<action>messages|stop|answer)', path)
             if not match:
-                handler._json({'error': 'Agent接口不存在'}, 404)
+                handler._json({'error': '请求的助手接口不存在，请检查软件版本；原会话仍保留', 'reason_code': 'agent_route_not_found'}, 404)
                 return
             session_id, action = match.group(1), match.group('action')
             if method == 'GET' and action == 'messages':

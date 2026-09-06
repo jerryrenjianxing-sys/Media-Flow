@@ -32,7 +32,8 @@ class AgentPlatform:
         try:
             db.executescript('''CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY, session_id TEXT,
                 call_id TEXT UNIQUE, config TEXT, preview TEXT, identity TEXT, state TEXT, deadline REAL,
-                created REAL, result TEXT); CREATE INDEX IF NOT EXISTS idx_agent_plan_session ON plans(session_id,created);''')
+                created REAL, result TEXT); CREATE INDEX IF NOT EXISTS idx_agent_plan_session ON plans(session_id,created);
+                CREATE TABLE IF NOT EXISTS execution_feedback(plan_id TEXT PRIMARY KEY, payload TEXT NOT NULL);''')
             with db:
                 yield db
         finally:
@@ -146,10 +147,12 @@ class AgentPlatform:
     def get(self, plan_id, session_id):
         with self.database() as db:
             row = db.execute('SELECT * FROM plans WHERE id=? AND session_id=?', (plan_id, session_id)).fetchone()
+            feedback = db.execute('SELECT payload FROM execution_feedback WHERE plan_id=?', (plan_id,)).fetchone()
         if not row:
             raise ValueError('计划不存在或不属于当前会话')
         state = 'expired' if row['state'] == 'awaiting_confirmation' and row['deadline'] < time.time() else row['state']
         return {'plan_id': row['id'], 'session_id': session_id, 'state': state, 'deadline': row['deadline'],
+                'execution': json.loads(feedback['payload']) if feedback else None,
                 'config': json.loads(row['config']), 'preview': json.loads(row['preview']),
                 'result': self.store.agent_batch_receipt(plan_id, session_id) or (json.loads(row['result']) if row['result'] else None),
                 'message': '计划已保存，尚未提交；需要用户在首页确认后执行' if state == 'awaiting_confirmation' else '请查看计划状态和阻断原因'}
@@ -200,12 +203,33 @@ class AgentPlatform:
             receipt = self.store.agent_batch_receipt(plan_id, session_id)
         if receipt['state'] == 'cancelled' or receipt['deadline'] <= time.time():
             return {**receipt, 'message': '本次执行已停止或到期，不会自动重新执行'}
+        reason_code = 'worker_dispatch_checked'
         try:
-            self.worker_launcher(sorted({row['device_id'] for row in receipt['tasks'] if row['status'] == 'pending'}))
+            workers = self.worker_launcher(sorted({row['device_id'] for row in receipt['tasks'] if row['status'] == 'pending'}))
+            if isinstance(workers, list) and any(row.get('running') is False for row in workers):
+                raise RuntimeError('worker_not_running')
             message = '计划已交给固定执行程序；查看任务回执了解实际结果，尚未声明任务成功'
         except Exception:
+            reason_code = 'worker_start_unconfirmed'
             message = '任务已保存，但执行者启动未确认；可再次点击确认恢复执行者，不会重复创建任务'
-        return {**receipt, 'message': message}
+        feedback = {'message': message, 'reason_code': reason_code, 'updated_at': time.time(),
+                    'retryable': reason_code == 'worker_start_unconfirmed', 'batch_id': receipt['batch_id']}
+        with self.database() as db:
+            db.execute('INSERT INTO execution_feedback VALUES(?,?) ON CONFLICT(plan_id) DO UPDATE SET payload=excluded.payload',
+                       (plan_id, json.dumps(feedback, ensure_ascii=False)))
+        return {**receipt, **feedback}
+
+    def repreview(self, plan_id, session_id, body):
+        original = self.get(plan_id, session_id)
+        if original['result']:
+            raise ValueError('计划已经提交，请查看原批次；不会重新创建任务')
+        request_id = str(body.get('request_id') or '')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', request_id):
+            raise ValueError('请提供重新预览请求编号')
+        allowed = set(PRESET_FIELDS) | {'device_ids', 'preview_only', 'seed', 'engagement_inspection_enabled', 'inspection_every_rounds'}
+        config = {key: value for key, value in original['config'].items() if key in allowed}
+        return self.plan({'config': config}, {'session_id': session_id,
+                         'call_id': 'repreview:' + session_id + ':' + plan_id + ':' + request_id})
 
     def stop_session(self, session_id):
         count = self.store.stop_agent_session(session_id)
