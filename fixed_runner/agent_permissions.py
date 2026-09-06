@@ -89,10 +89,13 @@ class AgentPermissions:
             # Preserve the user-origin consent statement, not model/tool output.
             db.execute('INSERT INTO requests VALUES(?,?,?,?)', (request_id, session, json.dumps(intent), time.time()))
             db.execute('INSERT INTO current_requests VALUES(?,?) ON CONFLICT(session) DO UPDATE SET request_id=excluded.request_id', (session, request_id))
-        match = re.fullmatch(r'\s*(?:请)?(?:开启|切换到|启用)(操作模式|维护模式|开发模式)[。！!\s]*', text)
+        # Accept a complete leading user directive followed by task details,
+        # never a quoted/example sentence or a question about permissions.
+        directive = re.split(r'[。！!\n]', text, maxsplit=1)[0].strip()
+        match = re.fullmatch(r'(?:请)?(?:确认)?(?:开启|切换到|启用)(操作模式|维护模式|开发模式)', directive)
         if match:
             self.set(session, next(key for key, value in LEVELS.items() if value == match[1]), source='user_chat')
-        elif re.fullmatch(r'\s*(?:请)?(?:撤销|关闭)(?:高权限|开发模式|维护模式)[。！!\s]*', text):
+        elif re.fullmatch(r'(?:请)?(?:确认)?(?:撤销|关闭)(?:高权限|开发模式|维护模式)', directive):
             self.set(session, 'operate', source='user_chat')
 
     def record_answer(self, session, question_id, answers, questions):

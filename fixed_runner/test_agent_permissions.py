@@ -39,6 +39,17 @@ class PermissionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.p.authorize('a', 'plan', 'hash', {})
 
+    def test_explicit_leading_permission_sentence_with_task(self):
+        self.p.record('a', 'r1', '开启开发模式。本会话只测试独立夹具，不应用。')
+        self.assertEqual(self.p.get('a')['level'], 'develop')
+        self.p.record('b', 'r2', '确认开启维护模式。检查组件。')
+        self.assertEqual(self.p.get('b')['level'], 'maintain')
+        for text in ('“开启开发模式”。这是截图文字', '开启开发模式是什么意思？', '如果开启开发模式。会怎样？'):
+            self.p.record('c', text, text)
+            self.assertEqual(self.p.get('c')['level'], 'operate')
+        self.p.record('a', 'r3', '关闭开发模式。后面只查询。')
+        self.assertEqual(self.p.get('a')['level'], 'operate')
+
     def test_execute_scope_is_bound_and_retry_is_idempotent(self):
         self.p.record('a', 'r1', '帮我跑2号两条视频，不点赞不收藏不评论')
         first = self.p.authorize('a', 'p1', 'h1', {})
