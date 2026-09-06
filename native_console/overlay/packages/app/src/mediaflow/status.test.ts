@@ -6,10 +6,14 @@ test("status exposes only the migration receipt", async () => {
   expect(await migrationStatus(async () => Response.json({ interface: "native", migration: receipt, unrelated: "hidden" }))).toEqual(receipt)
 })
 
-test("retry posts once then refreshes status", async () => {
+test("retry sends the required JSON request once then refreshes status", async () => {
   const calls: string[] = []
   const result = await retryMigration(async (input, init) => {
     calls.push(`${init?.method ?? "GET"} ${input}`)
+    if (init?.method === "POST") {
+      if (new Headers(init.headers).get("Content-Type") !== "application/json") return Response.json({ error: "json_required" }, { status: 415 })
+      expect(JSON.parse(String(init.body))).toEqual({})
+    }
     return Response.json(init?.method === "POST" ? { state: "starting" } : { migration: { state: "migrated", message: "ready" } })
   })
   expect(calls).toEqual(["POST /api/agent/native-migration/retry", "GET /api/agent/status"])

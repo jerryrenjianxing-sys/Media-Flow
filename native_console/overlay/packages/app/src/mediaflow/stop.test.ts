@@ -9,6 +9,7 @@ test("emergency stop sends one real PUT with explicit stopped state", async () =
     response.setHeader("Access-Control-Allow-Methods", "PUT, OPTIONS")
     response.setHeader("Access-Control-Allow-Headers", "Content-Type")
     if (request.method === "OPTIONS") { response.end(); return }
+    expect(request.headers["content-type"]).toBe("application/json")
     const chunks = []
     for await (const chunk of request) chunks.push(chunk)
     received.push({ method: request.method!, body: JSON.parse(Buffer.concat(chunks).toString()), path: request.url! })

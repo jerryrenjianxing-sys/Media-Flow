@@ -10,7 +10,12 @@ export async function migrationStatus(request: Request = fetch): Promise<Migrati
 }
 
 export async function retryMigration(request: Request = fetch) {
-  const response = await request("/api/agent/native-migration/retry", { method: "POST", signal: AbortSignal.timeout(10000) })
+  const response = await request("/api/agent/native-migration/retry", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(10000),
+  })
   if (!response.ok) throw new Error("migration_retry_unconfirmed")
   return migrationStatus(request)
 }
