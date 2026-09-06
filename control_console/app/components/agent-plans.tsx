@@ -9,17 +9,20 @@ export type AgentPlan = {
   preview: { plan_hash: string; total_task_count: number; write_actions: string[]; requires_confirmation: boolean; warnings: string[]; blockers: string[]; probabilities: Record<string, number>; comment_mode: string };
   result?: { tasks: { id: string; status: string }[]; state: string };
   execution?: {message:string;reason_code:string;updated_at:number};
+  stopped_device_ids?: string[];
 };
 
 export default function AgentPlans({ plans, sessionId, onChanged, onNotice }: { plans: AgentPlan[]; sessionId: string; onChanged: () => Promise<void>; onNotice?:(value:string)=>void }) {
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [writeConfirm, setWriteConfirm] = useState<Record<string, boolean>>({});
+  const [resumeConfirm, setResumeConfirm] = useState<Record<string, boolean>>({});
   async function confirm(plan: AgentPlan) {
     setBusy(plan.plan_id); setNotice("");
     try {
       const result = await agentRequest<{ message: string }>(`sessions/${sessionId}/plans/${plan.plan_id}/confirm`, {
         plan_hash: plan.preview.plan_hash, confirmed: true, confirm_writes: writeConfirm[plan.plan_id] === true,
+        resume_stopped_devices: resumeConfirm[plan.plan_id] === true,
       });
       setNotice(result.message); onNotice?.(result.message); await onChanged();
     } catch (error) { const message=error instanceof Error ? error.message : "提交结果待确认，请刷新本计划；不会重复建任务";setNotice(message);onNotice?.(message); }
@@ -42,12 +45,13 @@ export default function AgentPlans({ plans, sessionId, onChanged, onNotice }: { 
       <details><summary>设备、提醒与参数</summary><p>{plan.config.device_ids.join("、")}</p>{plan.preview.warnings.map((x, i) => <p key={i}>{x}</p>)}</details>
       {plan.preview.blockers.map((x, i) => <p key={i} role="alert">{x}</p>)}
       {plan.execution && <p role="status">{plan.execution.message}</p>}
+      {!!plan.stopped_device_ids?.length && <div role="status"><p>这些设备保留着任务“安全停止”标志，不代表虚拟机关机。只恢复这份计划，其他任务继续暂停。</p><label><input type="checkbox" checked={resumeConfirm[plan.plan_id]||false} onChange={e=>setResumeConfirm(v=>({...v,[plan.plan_id]:e.target.checked}))}/>恢复本计划所选设备的任务执行</label></div>}
       {plan.result ? <div><p>本批次：{plan.result.state === "cancelled" ? "已停止" : "已提交，实际进度如下"}</p>
         {plan.result.tasks.map((task) => <p key={task.id}><a href="/results">{task.id.slice(0, 12)} · {({ pending: "排队", running: "执行中", completed: "完成", failed: "失败", degraded: "部分完成", cancelled: "已取消", stopped: "已停止" } as Record<string, string>)[task.status] || task.status}</a></p>)}
-        {plan.result.state === "active" && plan.result.tasks.some((t) => t.status === "pending") && <button type="button" className="secondary" disabled={!!busy} onClick={() => void confirm(plan)}>检查并恢复本批执行者</button>}
+        {["active","paused"].includes(plan.result.state) && plan.result.tasks.some((t) => ["pending","running"].includes(t.status)) && <button type="button" className="secondary" disabled={!!busy|| (!!plan.stopped_device_ids?.length&&!resumeConfirm[plan.plan_id])} onClick={() => void confirm(plan)}>检查并恢复本批执行者</button>}
       </div> : plan.state === "awaiting_confirmation" ? <>
         {plan.preview.requires_confirmation && <label><input type="checkbox" checked={writeConfirm[plan.plan_id] || false} onChange={(e) => setWriteConfirm((v) => ({ ...v, [plan.plan_id]: e.target.checked }))}/>我确认本计划允许{plan.preview.write_actions.join("、")}</label>}
-        <button type="button" className="primary" disabled={!!busy || (plan.preview.requires_confirmation && !writeConfirm[plan.plan_id])} onClick={() => void confirm(plan)}>{busy === plan.plan_id ? "正在提交…" : "确认并执行这份计划"}</button>
+        <button type="button" className="primary" disabled={!!busy || (plan.preview.requires_confirmation && !writeConfirm[plan.plan_id]) || (!!plan.stopped_device_ids?.length&&!resumeConfirm[plan.plan_id])} onClick={() => void confirm(plan)}>{busy === plan.plan_id ? "正在提交…" : "确认并执行这份计划"}</button>
       </> : <div><p>{plan.state === "expired" ? "计划已过期，需重新检查后确认" : plan.state === "cancelled" ? "计划已取消" : "当前条件不满足，请处理后重新检查"}</p>{plan.state !== "cancelled" && <button type="button" className="secondary" disabled={!!busy} onClick={()=>void repreview(plan)}>重新检查这份计划</button>}</div>}
     </article>)}
     {notice && <p role="status" className="agent-notice">{notice}</p>}

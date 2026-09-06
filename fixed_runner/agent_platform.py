@@ -175,6 +175,7 @@ class AgentPlatform:
         return {'plan_id': row['id'], 'session_id': session_id, 'state': state, 'deadline': row['deadline'],
                 'execution': json.loads(feedback['payload']) if feedback else None,
                 'config': json.loads(row['config']), 'preview': json.loads(row['preview']),
+                'stopped_device_ids': [device for device in json.loads(row['config'])['device_ids'] if self.store.is_stop_requested(device)],
                 'result': self.store.agent_batch_receipt(plan_id, session_id) or (json.loads(row['result']) if row['result'] else None),
                 'message': '计划已保存，尚未提交；需要用户在首页确认后执行' if state == 'awaiting_confirmation' else '请查看计划状态和阻断原因'}
 
@@ -185,6 +186,18 @@ class AgentPlatform:
 
     def confirm(self, plan_id, session_id, body):
         """UI-only approval; a model tool cannot invoke this route."""
+        self.get(plan_id, session_id)
+        try:
+            return self._confirm(plan_id, session_id, body)
+        except ValueError as exc:
+            feedback = {'message': bounded_diagnostic(exc), 'reason_code': 'plan_confirmation_blocked',
+                        'updated_at': time.time(), 'retryable': True, 'batch_id': plan_id}
+            with self.database() as db:
+                db.execute('INSERT INTO execution_feedback VALUES(?,?) ON CONFLICT(plan_id) DO UPDATE SET payload=excluded.payload',
+                           (plan_id, json.dumps(feedback, ensure_ascii=False)))
+            raise
+
+    def _confirm(self, plan_id, session_id, body):
         plan = self.get(plan_id, session_id)
         if body.get('plan_hash') != plan['preview']['plan_hash'] or body.get('confirmed') is not True:
             raise ValueError('请核对这份计划并明确确认')
@@ -216,7 +229,8 @@ class AgentPlatform:
             if duration > 86400:
                 raise ValueError('这份计划超过一天，请拆分成较短的批次')
             self.store.submit_agent_batch(plan_id, session_id, scheduled.tasks,
-                                          fingerprint=preview['plan_hash'], deadline=time.time() + duration)
+                                          fingerprint=preview['plan_hash'], deadline=time.time() + duration,
+                                          resume_stopped_devices=body.get('resume_stopped_devices') is True)
             # A crash between these two databases is reconciled using the unique
             # batch receipt, never by re-creating the scheduled tasks.
             with self.database() as db:
@@ -224,6 +238,15 @@ class AgentPlatform:
             receipt = self.store.agent_batch_receipt(plan_id, session_id)
         if receipt['state'] == 'cancelled' or receipt['deadline'] <= time.time():
             return {**receipt, 'message': '本次执行已停止或到期，不会自动重新执行'}
+        if receipt['state'] == 'paused' or any(self.store.is_stop_requested(task['device_id']) for task in receipt['tasks'] if task['status'] in {'pending', 'running'}):
+            snapshot = self.status_reader()
+            current_identity = self.identities(snapshot, plan['config']['device_ids'])
+            with self.database() as db:
+                original_identity = json.loads(db.execute('SELECT identity FROM plans WHERE id=?', (plan_id,)).fetchone()[0])
+            if current_identity != original_identity:
+                raise ValueError('设备身份或连接发生变化，原批次未恢复；请检查设备，不会重建任务')
+            self.store.resume_agent_batch(plan_id, session_id, resume_stopped_devices=body.get('resume_stopped_devices') is True)
+            receipt = self.store.agent_batch_receipt(plan_id, session_id)
         reason_code = 'worker_dispatch_checked'
         try:
             workers = self.worker_launcher(sorted({row['device_id'] for row in receipt['tasks'] if row['status'] == 'pending'}))

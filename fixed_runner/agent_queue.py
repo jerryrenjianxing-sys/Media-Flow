@@ -30,7 +30,35 @@ class AgentQueueMixin:
         db.execute("UPDATE agent_task_batches SET state='cancelled' WHERE deadline<=? AND state!='cancelled'", (time.time(),))
         db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_batch_expired_or_stopped; not replayed' WHERE status='pending' AND id IN (SELECT a.task_id FROM agent_batch_tasks a JOIN agent_task_batches b ON b.id=a.batch_id WHERE b.state='cancelled')", (now_iso(),))
 
-    def submit_agent_batch(self, batch_id, session_id, tasks, *, fingerprint, deadline):
+    def _check_agent_admission(self, db, devices, *, resume_stopped_devices=False, batch_id=None):
+        self._expire_device_view_sessions(db)
+        stopped = db.execute("SELECT config_json FROM automation_profiles WHERE name='automation-stop'").fetchone()
+        if stopped and json.loads(stopped[0]).get('stopped'):
+            raise ValueError('所有自动操作已停止，请先在设备页解除停止所有自动操作；未恢复任务')
+        for device in devices:
+            if db.execute("SELECT 1 FROM tasks WHERE device_id=? AND status IN ('pending','running') AND id NOT IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?) LIMIT 1", (device, batch_id or '')).fetchone():
+                raise ValueError('所选设备已有其他排队或运行任务，请处理后重新确认')
+            if db.execute("SELECT 1 FROM device_view_sessions WHERE device_id=? AND mode='control' AND status IN ('created','connected','disconnected')", (device,)).fetchone():
+                raise ValueError('设备正在人工接管，请退出后重新确认')
+            if db.execute("SELECT 1 FROM device_initializations WHERE device_id=? AND status IN ('queued','running')", (device,)).fetchone():
+                raise ValueError('设备正在准备，请完成或取消后重新确认')
+            if not resume_stopped_devices and db.execute("SELECT 1 FROM system_state WHERE key=? AND value='1'", ('stop:' + device,)).fetchone():
+                raise ValueError('所选设备的任务保留安全停止标志，不代表虚拟机关机；请勾选恢复本计划设备后确认')
+        if resume_stopped_devices:
+            for device in devices:
+                db.execute('DELETE FROM system_state WHERE key=?', ('stop:' + device,))
+
+    def resume_agent_batch(self, batch_id, session_id, *, resume_stopped_devices=False):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            batch = db.execute('SELECT * FROM agent_task_batches WHERE id=? AND session_id=?', (batch_id, session_id)).fetchone()
+            if not batch or batch['state'] == 'cancelled' or batch['deadline'] <= time.time():
+                raise ValueError('本批次已停止或过期，不能恢复或重放')
+            devices = {row[0] for row in db.execute("SELECT DISTINCT device_id FROM tasks WHERE status IN ('pending','running') AND id IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?)", (batch_id,))}
+            self._check_agent_admission(db, devices, resume_stopped_devices=resume_stopped_devices, batch_id=batch_id)
+            db.execute("UPDATE agent_task_batches SET state='active' WHERE id=?", (batch_id,))
+
+    def submit_agent_batch(self, batch_id, session_id, tasks, *, fingerprint, deadline, resume_stopped_devices=False):
         from task_store import now_iso
         tasks = list(tasks)
         if not tasks or len(tasks) > 1000 or not time.time() < deadline <= time.time() + 86400:
@@ -44,19 +72,7 @@ class AgentQueueMixin:
                 if existing['session_id'] != session_id or existing['fingerprint'] != fingerprint:
                     raise ValueError('同一计划不能改换参数后重复提交')
                 return [r[0] for r in db.execute('SELECT task_id FROM agent_batch_tasks WHERE batch_id=? ORDER BY position', (batch_id,))]
-            self._expire_device_view_sessions(db)
-            stopped = db.execute("SELECT config_json FROM automation_profiles WHERE name='automation-stop'").fetchone()
-            if stopped and json.loads(stopped[0]).get('stopped'):
-                raise ValueError('所有自动操作已停止，请先在平台解除停止状态')
-            for device in {item.device_id for item in tasks}:
-                if db.execute("SELECT 1 FROM tasks WHERE device_id=? AND status IN ('pending','running') LIMIT 1", (device,)).fetchone():
-                    raise ValueError('所选设备已有排队或运行任务，请处理后重新确认')
-                if db.execute("SELECT 1 FROM device_view_sessions WHERE device_id=? AND mode='control' AND status IN ('created','connected','disconnected')", (device,)).fetchone():
-                    raise ValueError('设备正在人工接管，请退出后重新确认')
-                if db.execute("SELECT 1 FROM device_initializations WHERE device_id=? AND status IN ('queued','running')", (device,)).fetchone():
-                    raise ValueError('设备正在准备，请完成或取消后重新确认')
-                if db.execute("SELECT 1 FROM system_state WHERE key=? AND value='1'", ('stop:' + device,)).fetchone():
-                    raise ValueError('设备处于停止状态，请在平台明确恢复后重试')
+            self._check_agent_admission(db, {item.device_id for item in tasks}, resume_stopped_devices=resume_stopped_devices)
             db.execute('INSERT INTO agent_task_batches VALUES(?,?,?,?,?,?)',
                        (batch_id, session_id, fingerprint, 'active', deadline, time.time()))
             result = []

@@ -127,6 +127,42 @@ class AgentPlatformTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '不唯一'):
             self.planned()
 
+    def test_safety_stop_is_explicit_scoped_and_not_reported_as_vm_offline(self):
+        self.store.request_stop(['vm-one', 'other'])
+        plan = self.planned()
+        self.assertEqual(plan['stopped_device_ids'], ['vm-one'])
+        with self.assertRaisesRegex(ValueError, '任务.*安全停止'):
+            self.confirm(plan)
+        self.assertIn('安全停止', self.platform.get(plan['plan_id'], 'ses_one')['execution']['message'])
+        self.assertTrue(self.store.is_stop_requested('vm-one'))
+        self.assertEqual(self.store.list(), [])
+        result = self.platform.confirm(plan['plan_id'], 'ses_one', {
+            'confirmed': True, 'plan_hash': plan['preview']['plan_hash'], 'resume_stopped_devices': True})
+        self.assertFalse(self.store.is_stop_requested('vm-one'))
+        self.assertTrue(self.store.is_stop_requested('other'))
+        self.assertTrue(self.store.is_paused())
+        self.assertEqual(len(result['tasks']), 2)
+
+    def test_resume_admission_failure_keeps_all_safety_stops(self):
+        self.store.request_stop(['vm-one', 'other'])
+        plan = self.planned()
+        self.store.save_profile('automation-stop', {'stopped': True})
+        with self.assertRaisesRegex(ValueError, '所有自动操作'):
+            self.platform.confirm(plan['plan_id'], 'ses_one', {
+                'confirmed': True, 'plan_hash': plan['preview']['plan_hash'], 'resume_stopped_devices': True})
+        self.assertTrue(self.store.is_stop_requested('vm-one'))
+        self.assertEqual(self.store.list(), [])
+
+    def test_paused_batch_explicit_confirm_resumes_only_original_tasks(self):
+        plan = self.planned()
+        first = self.confirm(plan)
+        self.store.set_paused(True)
+        self.assertFalse(self.store.has_ready('vm-one'))
+        again = self.confirm(plan)
+        self.assertEqual(first['task_ids'], again['task_ids'])
+        self.assertTrue(self.store.has_ready('vm-one'))
+        self.assertTrue(self.store.is_paused())
+
     def test_launch_failure_receipt_survives_reload_and_recovers_same_batch(self):
         self.launch.side_effect = RuntimeError('worker unavailable')
         plan = self.planned()
