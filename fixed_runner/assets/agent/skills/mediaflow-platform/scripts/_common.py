@@ -1,5 +1,6 @@
 """Standard-library loopback HTTP and durable at-most-once write admission."""
 import hashlib
+import http.client
 import ipaddress
 import json
 import os
@@ -100,7 +101,7 @@ def invoke(url, receipt_path, body, timeout=30):
                     # Server errors can occur after dispatch. Preserve this uncertainty locally.
                     result = unknown
                     break
-            except (OSError, ValueError, urllib.error.URLError):
+            except (OSError, ValueError, urllib.error.URLError, http.client.HTTPException):
                 result = unknown if write else error('read_failed', '本机接口读取失败；检查服务地址和状态')
             if not write and attempt < 2:
                 time.sleep(0.1 * (attempt + 1))

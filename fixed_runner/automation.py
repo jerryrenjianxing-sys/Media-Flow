@@ -126,7 +126,8 @@ class AutomationService:
                 status = result.get('state', 'submitted')
             unknown = (operation.get('stage') or result.get('stage')) == 'result_unknown'
             status = 'unknown' if unknown else status
-            blocked = status in {'blocked', 'failed', 'unknown', 'waiting_user', 'expired', 'cancelled'}
+            blocked = status in {'blocked', 'failed', 'unknown', 'waiting_user', 'expired', 'cancelled',
+                                 'timeout', 'interrupted'}
             message = (operation.get('message') or operation.get('error') or result.get('user_message')
                 or result.get('message') or result.get('error') or '已读取实际业务回执')
             if status == 'blocked' and (result.get('preview') or {}).get('blockers'):
@@ -229,6 +230,14 @@ class AutomationService:
             return {**result, 'workspace_path': str(repairs.workspace(result['id'], session))} if result['state'] == 'ready' else result
         if action == 'repair_validate':
             return repairs.test({'repair_id': repair_id, 'mode': 'all'}, context)
+        if action == 'repair_export':
+            repairs.get(repair_id, session)
+            candidate_root = (repairs.root / repair_id).resolve()
+            artifact = (candidate_root / 'candidate.patch').resolve()
+            if not candidate_root.is_relative_to(repairs.root.resolve()) or not artifact.is_relative_to(candidate_root):
+                raise ValueError('候选导出路径越界，未导出')
+            result = repairs.export(repair_id, session)
+            return {**{k: v for k, v in result.items() if k != 'download_url'}, 'artifact_path': str(artifact)}
         if action == 'repair_close':
             return repairs.close(repair_id, session)
         if action == 'repair_cancel':

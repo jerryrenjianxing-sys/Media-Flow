@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -217,6 +218,69 @@ class AutomationTests(unittest.TestCase):
         self.assertIn('device unavailable', result['user_message'])
         self.assertIsNotNone(result['operation_id'])
 
+    def repair_fixture(self):
+        from agent_repairs import AgentRepairs
+        files = {'fixed_runner/page.py': b'VALUE = 1\n',
+            'fixed_runner/test_page.py': b'import unittest\nfrom page import VALUE\nclass T(unittest.TestCase):\n def test_value(self): self.assertEqual(VALUE, 2)\n',
+            'fixed_runner/test_slow.py': b'import unittest, time\nclass T(unittest.TestCase):\n def test_wait(self): time.sleep(30)\n'}
+        bundle = self.root/'fixture.zip'
+        with zipfile.ZipFile(bundle, 'w') as archive:
+            for name, content in files.items():
+                archive.writestr(name, content)
+            archive.writestr('manifest.json', json.dumps({'schema': 1, 'source_revision': 'a'*40,
+                'contains_runtime_data': False, 'files': {k: hashlib.sha256(v).hexdigest() for k, v in files.items()}}))
+        self.host.repairs = AgentRepairs(self.root/'repairs', bundle=bundle, source_root=self.root)
+        created = self.service().call({'action': 'repair_create', 'arguments': {'purpose': 'review fixture'}, 'request_id': 'fixture-new'})
+        self.assertTrue(created['ok'], created)
+        return created['result']['id'], Path(created['result']['workspace_path'])
+
+    def wait_repair_test(self, test_id):
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            result = self.service().call({'action': 'repair_test_status', 'arguments': {'test_id': test_id}})
+            if result['status'] not in {'queued', 'running'}:
+                return result
+            time.sleep(.05)
+        self.fail('Isolated repair fixture did not terminate')
+
+    def test_real_repair_timeout_receipt_is_not_success(self):
+        repair_id, _ = self.repair_fixture()
+        # Run an actual isolated child process, advancing only the repair module's
+        # deadline clock to avoid a 90-second test. No process/device mock.
+        ticks = iter([0, 1000])
+        timer = SimpleNamespace(time=time.time, sleep=time.sleep, monotonic=lambda: next(ticks))
+        with patch('agent_repairs.time', timer):
+            test = self.service().call({'action': 'repair_test', 'arguments': {
+                'repair_id': repair_id, 'path': 'fixed_runner/test_slow.py'}, 'request_id': 'timeout-test'})
+            result = self.wait_repair_test(test['operation_id'])
+        self.assertEqual(result['result']['state'], 'timeout', result)
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['reason_code'], 'timeout')
+        # This state is persisted by real restart recovery, not an API mock.
+        with self.host.repairs.database() as db:
+            db.execute("UPDATE tests SET state='running' WHERE id=?", (test['operation_id'],))
+        from agent_repairs import AgentRepairs
+        self.host.repairs = AgentRepairs(self.host.repairs.root, bundle=self.root/'fixture.zip', source_root=self.root)
+        interrupted = self.service().call({'action': 'repair_test_status', 'arguments': {'test_id': test['operation_id']}})
+        self.assertEqual(interrupted['status'], 'interrupted')
+        self.assertFalse(interrupted['ok'])
+
+    def test_native_repair_export_returns_verified_candidate_path_without_host_session(self):
+        repair_id, workspace = self.repair_fixture()
+        (workspace/'fixed_runner/page.py').write_text('VALUE = 2\n', encoding='utf-8')
+        test = self.service().call({'action': 'repair_test', 'arguments': {
+            'repair_id': repair_id, 'path': 'fixed_runner/test_page.py'}, 'request_id': 'export-test'})
+        self.assertEqual(self.wait_repair_test(test['operation_id'])['status'], 'passed')
+        result = self.service().call({'action': 'repair_export', 'arguments': {'repair_id': repair_id}, 'request_id': 'export-1'})
+        self.assertTrue(result['ok'], result)
+        self.assertNotIn('download_url', result['result'])
+        artifact = Path(result['result']['artifact_path'])
+        self.assertTrue(artifact.is_relative_to(self.host.repairs.root))
+        self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(), result['result']['patch_sha256'])
+        self.assertIn('+VALUE = 2', artifact.read_text(encoding='utf-8'))
+        denied = self.service().call({'action': 'repair_export', 'arguments': {'repair_id': '../outside'}, 'request_id': 'escape-export'})
+        self.assertFalse(denied['ok'])
+
 
 class AutomationCliTests(unittest.TestCase):
     def setUp(self):
@@ -225,12 +289,21 @@ class AutomationCliTests(unittest.TestCase):
         self.hits = []
         self.failures = 0
         self.drop_response = False
+        self.truncate_response = False
         outer = self
         class Endpoint(BaseHTTPRequestHandler):
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 outer.hits.append(body)
                 if outer.drop_response:
+                    self.close_connection = True
+                    return
+                if outer.truncate_response:
+                    self.send_response(200)
+                    self.send_header('Content-Length', '1000')
+                    self.end_headers()
+                    self.wfile.write(b'{"ok": true')
+                    self.wfile.flush()
                     self.close_connection = True
                     return
                 failed = len(outer.hits) <= outer.failures
@@ -304,3 +377,20 @@ class AutomationCliTests(unittest.TestCase):
         self.assertIn('reason_code', json.loads(result.stdout))
         self.assertNotIn('Traceback', result.stderr)
         self.assertEqual(self.hits, [])
+
+    def test_truncated_http_body_write_is_durable_unknown_and_read_attempts_are_bounded(self):
+        self.truncate_response = True
+        first = self.run_cli('execute_plan', '--request-id', 'short-body', '--arguments', '{"plan_id":"one"}')
+        self.assertNotEqual(first.returncode, 0)
+        self.assertTrue(first.stdout.strip(), first.stderr)
+        self.assertEqual(json.loads(first.stdout)['status'], 'unknown')
+        self.assertNotIn('Traceback', first.stderr)
+        second = self.run_cli('execute_plan', '--request-id', 'short-body', '--arguments', '{"plan_id":"one"}')
+        self.assertEqual(first.stdout, second.stdout)
+        self.assertEqual(len(self.hits), 1)
+        self.hits.clear()
+        read = self.run_cli('list_tasks')
+        self.assertNotEqual(read.returncode, 0)
+        self.assertEqual(json.loads(read.stdout)['reason_code'], 'read_failed')
+        self.assertNotIn('Traceback', read.stderr)
+        self.assertEqual(len(self.hits), 3)

@@ -7,6 +7,8 @@
 - expired：先确认原计划没有result，再repreview_plan；已提交禁止重建。
 - request_id_conflict：该编号已有其他参数，核对原回执。只有确实的新操作才生成新编号。
 - 更新补丁变化或基准不一致：返回diff与真实原因，重新验证候选，不能跳过哈希或空闲检查。result_unknown的更新不重复启动。
+- timeout/interrupted：修复测试超时或后台重启中断，ok=false；读取原测试输出，不能当作验证通过。需要重新测试时保留原回执并使用新的测试请求编号。
+- HTTP响应体被截断：写入返回并持久化unknown，同编号不再发送；读取最多尝试3次。不能把部分响应或连接成功当作业务成功。
 - 缺少证据：明确现场未保存，不能推断根因、重新运行历史任务或批量分析所有异常。
 - local_only/json_required：检查回环地址、JSON Content-Type和本机页面Origin，不改为公网监听。配置优先MEDIAFLOW_API_URL，其次config.json。
 
