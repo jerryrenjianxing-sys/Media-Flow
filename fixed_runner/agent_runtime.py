@@ -82,6 +82,9 @@ class AgentRuntime:
         self._state = 'stopped'
         self._error = ''
         self._code = ''
+        self._diagnostic = ''
+        self._phase = ''
+        self._progress = ''
         self._lease = DirectoryLease(self.root / 'engine.lock')
         self._job = None
 
@@ -91,7 +94,8 @@ class AgentRuntime:
         if process and process.poll() is not None and self._state == 'ready':
             self._state, self._code, self._error = 'failed', 'engine_exited', '对话引擎已退出，请重新连接；不会重放旧操作'
         return {'state': self._state, 'engine': 'OpenCode', 'engine_version': ENGINE_VERSION,
-                'reason_code': self._code, 'message': self._error,
+                'reason_code': self._code, 'message': self._progress if self._state == 'starting' else self._error,
+                'stage':self._phase, 'diagnostic_id':self._diagnostic,
                 'retryable': self._state in {'failed', 'stopped'}}
 
     def start(self, config: dict, *, timeout=55):
@@ -101,7 +105,13 @@ class AgentRuntime:
             # Release only our previous handles; never look up or kill a PID file.
             self.stop()
             self._state, self._error, self._code = 'starting', '', ''
+            self._diagnostic = ''
+            started = time.monotonic()
+            def progress(phase, done=0, total=None):
+                self._phase = phase
+                self._progress = f'{phase}（{done}/{total}）' if total else f'{phase}（已检查 {done} 项）'
             try:
+                progress('检查引擎文件')
                 if not self._lease.acquire():
                     raise AgentRuntimeError('engine_owned', '同一数据目录已有对话引擎，请使用原服务，不会启动第二份')
                 if not self.binary.is_file():
@@ -113,9 +123,31 @@ class AgentRuntime:
                 deadline = time.monotonic() + timeout
                 if timeout > 0:
                     try:
-                        prepare_dependencies(APP_ROOT, self.root, deadline)
-                    except Exception:
-                        raise AgentRuntimeError('engine_dependencies', '插件运行资源缺失、损坏或准备超时，请修复安装后重试；不会临时下载依赖') from None
+                        prepare_dependencies(APP_ROOT, self.root, deadline, progress=progress)
+                    except Exception as problem:
+                        if isinstance(problem, TimeoutError):
+                            code, message = 'timeout', '插件资源准备超时，已准备文件保留；请点击连接助手重试'
+                        elif isinstance(problem, FileNotFoundError):
+                            code, message = 'missing', '插件资源文件缺失，请修复安装后重新连接'
+                        elif isinstance(problem, PermissionError):
+                            code, message = 'permission', '插件资源无法读取或写入，请检查当前用户的文件权限后重新连接'
+                        elif isinstance(problem, (ValueError, TypeError, KeyError)):
+                            code, message = 'invalid', '插件资源或清单校验不通过，请修复安装后重新连接'
+                        elif isinstance(problem, OSError):
+                            code, message = 'io', '插件文件读写失败，请检查磁盘空间或文件占用后重新连接'
+                        else:
+                            code, message = 'internal', '插件准备程序出错，请提供诊断编号进行修复'
+                        self._diagnostic = secrets.token_hex(6)
+                        record = {'id':self._diagnostic, 'stage':self._phase, 'progress':self._progress,
+                                  'reason_code':'engine_dependencies_'+code, 'exception_type':type(problem).__name__,
+                                  'errno':getattr(problem,'errno',None), 'winerror':getattr(problem,'winerror',None),
+                                  'elapsed_seconds':round(time.monotonic()-started,3)}
+                        try:
+                            with (self.root/'startup-diagnostics.jsonl').open('a',encoding='utf-8') as log:
+                                log.write(json.dumps(record,ensure_ascii=False)+'\n')
+                        except OSError: pass
+                        raise AgentRuntimeError('engine_dependencies_'+code, message+'；诊断编号 '+self._diagnostic) from None
+                progress('启动对话引擎')
                 env = isolated_environment(self.root)
                 env['OPENCODE_SERVER_PASSWORD'] = self._password
                 env['OPENCODE_CONFIG_CONTENT'] = json.dumps(config, ensure_ascii=False)
@@ -132,6 +164,7 @@ class AgentRuntime:
                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
                 self._job.assign(self._process)
                 while time.monotonic() < deadline:
+                    progress('等待服务商就绪')
                     if self._process.poll() is not None:
                         raise AgentRuntimeError('engine_exited', 'OpenCode 启动失败，请查看引擎诊断后重试')
                     try:

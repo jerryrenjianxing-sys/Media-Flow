@@ -8,6 +8,21 @@ from agent_runtime import AgentRuntime, AgentRuntimeError, build_config, isolate
 
 
 class AgentRuntimeTests(unittest.TestCase):
+    def test_dependency_errors_are_specific_and_do_not_leak_exception(self):
+        for problem,code in [(TimeoutError('private'), 'engine_dependencies_timeout'),
+                             (PermissionError('private'), 'engine_dependencies_permission'),
+                             (FileNotFoundError('private'), 'engine_dependencies_missing')]:
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmp:
+                binary=Path(tmp)/'fixture.exe';binary.write_bytes(b'fixture')
+                runtime=AgentRuntime(Path(tmp)/'state',binary=binary)
+                with patch('agent_runtime.hashlib.file_digest') as digest, patch('agent_runtime.prepare_dependencies',side_effect=problem):
+                    from agent_runtime import ENGINE_SHA256
+                    digest.return_value.hexdigest.return_value=ENGINE_SHA256
+                    with self.assertRaises(AgentRuntimeError) as failure:runtime.start({})
+                    self.assertEqual(failure.exception.code,code)
+                    self.assertNotIn('private',runtime.status()['message'])
+                    self.assertTrue(runtime.status()['diagnostic_id'])
+
     def test_provider_overlay_preserves_catalog(self):
         config = build_config('http://127.0.0.1:49200', 'ephemeral', ['python', 'mcp.py'])
         self.assertNotIn('enabled_providers', config)

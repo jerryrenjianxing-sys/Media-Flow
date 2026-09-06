@@ -96,7 +96,8 @@ class AgentService:
         from agent_mcp import TOOLS
         result = self.runtime.status()
         if self._starting:
-            result = {**result, 'state': 'starting'}
+            result = {**result, 'state': 'starting', 'reason_code':'',
+                      'message':result.get('message','') if result['state']=='starting' else '正在准备连接助手'}
         return {**result, 'message': self._error or result.get('message', ''),
                 'capability_stage': 'platform_integration',
                 'supported_tools': [tool['name'] for tool in TOOLS],
