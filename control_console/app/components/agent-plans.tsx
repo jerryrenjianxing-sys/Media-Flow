@@ -28,8 +28,7 @@ export default function AgentPlans({ plans, sessionId, onChanged, onNotice }: { 
   async function repreview(plan:AgentPlan){
     setBusy(plan.plan_id);
     const key=`mediaflow-repreview:${plan.plan_id}`;
-    const id=window.localStorage.getItem(key)||crypto.randomUUID();window.localStorage.setItem(key,id);
-    try{await agentRequest(`sessions/${sessionId}/plans/${plan.plan_id}/repreview`,{request_id:id});await onChanged();onNotice?.("已重新检查，请核对新计划并确认；尚未执行。");}
+    try{const id=window.localStorage.getItem(key)||crypto.randomUUID();window.localStorage.setItem(key,id);await agentRequest(`sessions/${sessionId}/plans/${plan.plan_id}/repreview`,{request_id:id});await onChanged();onNotice?.("已重新检查，请核对新计划并确认；尚未执行。");}
     catch(error){onNotice?.(error instanceof Error?error.message:"重新检查失败");}finally{setBusy("");}
   }
   if (!plans?.length) return null;

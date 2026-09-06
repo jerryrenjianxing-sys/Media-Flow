@@ -197,7 +197,7 @@ export default function ConsoleShell({ children }: { children: React.ReactNode }
               ? <button type="button" className="workspace-status-pill issue danger" onClick={() => void refresh()}><i className="dot danger"/>本机服务未连接 · 点击重试</button>
               : <span className="workspace-status-pill"><i className={status && online ? "dot online" : "dot"}/>{deviceLabel}</span>}
             <a href="/run" className="workspace-status-pill queue">{queueLabel}</a>
-            <a href="/run#safe-stop" className="workspace-status-pill">暂停 / 安全停止</a>
+            <a href="/run" className="workspace-status-pill safety-control">暂停 / 安全停止</a>
             {!statusError && issueCount > 0 && <a className="workspace-status-pill issue" href="/devices#device-issues"><i className="dot warning"/>{issueCount} 项问题待处理</a>}
             <span className="environment" title={status?.product_version?.channel === "development" ? "当前为源码开发运行，不是安装包" : "当前为安装发行版"}>{status?.product_version?.display_version ? `${status.product_version.channel === "development" ? "开发版" : "安装版"} ${status.product_version.display_version}` : "本机 · 内部安全测试"}</span>
             <button ref={themeButtonRef} type="button" className="theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}><span className={`theme-icon ${theme === "dark" ? "sun" : "moon"}`} aria-hidden="true"/></button>

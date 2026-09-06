@@ -1,6 +1,7 @@
 .assistant-shell { display:block; }
 .assistant-shell > .workspace-sidebar, .assistant-shell > .workspace-sidebar-scrim { display:none; }
 .assistant-shell .workspace-topbar { padding:0 20px; }
+.assistant-shell .workspace-status-pill.safety-control { display:inline-flex; }
 .assistant-shell .workspace-current-page small { display:none; }
 .agent-home { --primary:#168575; --primary-hover:#1d9e8c; --agent-line:var(--hairline); }
 .agent-studio { height:calc(100dvh - 58px); min-height:580px; display:grid; grid-template-columns:236px minmax(0,1fr); background:var(--canvas); color:var(--ink); }
