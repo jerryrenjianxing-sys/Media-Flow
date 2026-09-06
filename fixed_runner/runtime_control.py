@@ -540,7 +540,7 @@ def api_spec() -> ProcessSpec:
     )
 
 
-def ui_spec() -> ProcessSpec:
+def ui_spec(*, native=True) -> ProcessSpec:
     node = str(BUNDLED_NODE) if BUNDLED_NODE.is_file() else (
         shutil.which("node.exe") or shutil.which("node")
     )
@@ -551,6 +551,12 @@ def ui_spec() -> ProcessSpec:
     # subcommand. Without this flag it serves Vite HMR modules, whose console
     # forwarding transport can fail before its websocket is connected.
     environment["NODE_ENV"] = "production"
+    if native and (PROJECT_ROOT / 'native_console/dist/index.html').is_file():
+        return ProcessSpec(role='control-ui',
+            command=(str(PROJECT_PYTHON), str(FIXED_RUNNER_ROOT/'native_console_host.py')),
+            cwd=str(PROJECT_ROOT), log_path=str(RUNTIME_ROOT/'control-ui.log'),
+            expected_executable=str(project_python_executable()),
+            required_markers=('native_console_host.py',), env=environment)
     if UI_STANDALONE_SERVER.is_file():
         command = (str(node), str(UI_STANDALONE_SERVER))
         cwd = UI_STANDALONE_ROOT

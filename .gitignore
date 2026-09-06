@@ -51,6 +51,9 @@
 /.edge-*/
 /.chrome-*/
 /work/
+/opencode-source/
+/native_console/dist/
+/native_console/baseline-dist/
 /_dependencies/
 /_test_scratch/
 /RiskFlow.exe

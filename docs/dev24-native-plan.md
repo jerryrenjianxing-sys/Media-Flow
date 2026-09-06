@@ -44,4 +44,5 @@ OpenSpec strict、隔离 Python、旧/原生前端测试、lint、typecheck、bu
 ## 进度
 
 - 基准 073e217，源主分支保持不变；独立工作区 work/dev24-native。
-- 原生源码已定位，下载及基线测试进行中。
+- 原生源码、Skill、迁移与同源网关已完成；验证及真实请求范围见 `docs/dev24-acceptance.md`。
+- 本机切换结果以忽略目录 `work/dev24-local-update` 的前后比对回执为准。

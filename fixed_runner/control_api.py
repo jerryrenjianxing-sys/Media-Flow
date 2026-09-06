@@ -2873,7 +2873,8 @@ class Handler(BaseHTTPRequestHandler):
                 store = self.store
                 service = AgentService(lambda: build_status_payload(store, normalized_config(store.get_profile(PROFILE_NAME) or {})),
                                        store=store, model_status_reader=openrouter_key_status, worker_launcher=ensure_workers,
-                                       virtual_dispatch=lambda device_id, body: submit_vm_command(store, device_id, body), evidence_root=DEFAULT_ARTIFACTS)
+                                       virtual_dispatch=lambda device_id, body: submit_vm_command(store, device_id, body), evidence_root=DEFAULT_ARTIFACTS,
+                                       native_frontend=(PROJECT_ROOT/'native_console/dist/index.html').is_file())
                 self.server._mediaflow_agent = service
             return service
 

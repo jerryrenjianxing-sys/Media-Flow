@@ -56,15 +56,18 @@ def public_messages(messages):
 
 
 class AgentService:
-    def __init__(self, status_reader, *, root=None, runtime=None, bridge=None, store=None, model_status_reader=None, worker_launcher=None, virtual_dispatch=None, evidence_root=None):
+    def __init__(self, status_reader, *, root=None, runtime=None, bridge=None, store=None, model_status_reader=None, worker_launcher=None, virtual_dispatch=None, evidence_root=None, native_frontend=False):
         self.root = Path(root or RUNTIME_ROOT / 'agent')
         self.status_reader = status_reader
         self.evidence_root = evidence_root
         self.runtime = runtime or AgentRuntime(self.root / 'engine')
         self.bridge = bridge
+        self.native_frontend = native_frontend
         self._lock = threading.RLock()
         self.recovery = ReplyRecovery(self.database, self.runtime)
         self.auth = AgentProviders(self.root / 'provider-state', self.runtime, self._lock, reference_resolver=current_qwen_key)
+        from agent_native import NativeMigration
+        self.native_migration = NativeMigration(self.root/'native-migration-dev24', self.auth, lambda: current_qwen_key())
         self.memory = AgentMemory(self.root / 'memory')
         self.platform = AgentPlatform(self.root / 'platform', store, status_reader,
             model_status_reader=model_status_reader or (lambda: {}), worker_launcher=worker_launcher) if store else None
@@ -105,6 +108,9 @@ class AgentService:
         if self._starting:
             result = {**result, 'state': 'starting', 'reason_code':'',
                       'message':result.get('message','') if result['state']=='starting' else '正在准备连接助手'}
+        if self.native_frontend:
+            return {**result, 'message': self._error or result.get('message', ''),
+                    'interface': 'native', 'migration': self.native_migration.status()}
         return {**result, 'message': self._error or result.get('message', ''),
                 'capability_stage': 'platform_integration',
                 'supported_tools': [tool['name'] for tool in TOOLS],
@@ -121,6 +127,16 @@ class AgentService:
 
     def _start(self):
         try:
+            if self.native_frontend:
+                from agent_native import native_config
+                self.native_migration.backup({'host': self.root/'sessions.db',
+                    'native': self.runtime.root/'data/opencode/opencode.db'})
+                self.runtime.start(native_config(), native=True)
+                self.native_migration.credentials()
+                with self.database() as db:
+                    retained = {row['id'] for row in db.execute('SELECT id FROM sessions')}
+                self.native_migration.archive_cleared(retained)
+                return
             if self.bridge is None:
                 self.bridge = AgentBridge(self.root / 'bridge', self.call_tool, key_resolver=self.auth.qwen_key, context_guard=self._tool_session)
             self.bridge.start()
@@ -586,6 +602,11 @@ def handle_agent_http(handler, method, path, body=None):
                 return
         elif method == 'POST' and path == '/api/agent/start':
             result = service.start()
+        elif method == 'POST' and path == '/api/agent/native-migration/retry':
+            if service.runtime.status()['state'] != 'ready':
+                result = service.start()
+            else:
+                result = service.native_migration.credentials()
         elif method == 'POST' and path == '/api/agent/sessions':
             result = service.create_session(body or {})
         elif (match := re.fullmatch(r'/api/agent/sessions/([A-Za-z0-9_-]+)/permissions', path)) and method in {'GET', 'POST'}:

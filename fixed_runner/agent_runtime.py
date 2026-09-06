@@ -1,4 +1,4 @@
-"""Own the embedded OpenCode process; never expose its admin API to the browser."""
+"""Own the embedded OpenCode process and its private gateway connection."""
 from __future__ import annotations
 
 import hashlib
@@ -9,6 +9,7 @@ import secrets
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 
@@ -24,13 +25,17 @@ MODEL_ID = 'qwen3.8-flash'
 
 
 def install_platform_skill(root: Path):
-    """Publish only the bundled guide into this engine's native skill directory."""
-    source = Path(__file__).parent / 'assets/agent/skills/mediaflow-platform/SKILL.md'
-    target = root / 'config/opencode/skills/mediaflow-platform/SKILL.md'
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if not target.is_file() or target.read_bytes() != source.read_bytes():
-        shutil.copyfile(source, target)
-    return target
+    """Publish the complete bundled package; never prune unrelated user skills."""
+    source = Path(__file__).parent / 'assets/agent/skills/mediaflow-platform'
+    target = root / 'config/opencode/skills/mediaflow-platform'
+    for file in source.rglob('*'):
+        if not file.is_file() or '__pycache__' in file.parts or file.suffix == '.pyc':
+            continue
+        destination = target / file.relative_to(source)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.is_file() or destination.read_bytes() != file.read_bytes():
+            shutil.copyfile(file, destination)
+    return target / 'SKILL.md'
 
 
 def available_port():
@@ -110,7 +115,7 @@ class AgentRuntime:
                 'stage':self._phase, 'diagnostic_id':self._diagnostic,
                 'retryable': self._state in {'failed', 'stopped'}}
 
-    def start(self, config: dict, *, timeout=55):
+    def start(self, config: dict, *, timeout=55, native=False):
         with self._lock:
             if self.status()['state'] == 'ready':
                 return self.status()
@@ -133,7 +138,9 @@ class AgentRuntime:
                 if digest != ENGINE_SHA256:
                     raise AgentRuntimeError('engine_checksum', 'OpenCode 引擎校验失败，请修复安装，不会启动未知程序')
                 deadline = time.monotonic() + timeout
-                if timeout > 0:
+                # Native tools/skills are built into the pinned executable. The old
+                # host context plugin SDK is not part of the native integration.
+                if timeout > 0 and not native:
                     try:
                         prepare_dependencies(APP_ROOT, self.root, deadline, progress=progress)
                     except Exception as problem:
@@ -161,6 +168,12 @@ class AgentRuntime:
                         raise AgentRuntimeError('engine_dependencies_'+code, message+'；诊断编号 '+self._diagnostic) from None
                 progress('启动对话引擎')
                 env = isolated_environment(self.root)
+                if native:
+                    env.pop('OPENCODE_DISABLE_PROJECT_CONFIG', None)
+                    env.pop('OPENCODE_DISABLE_MODELS_FETCH', None)
+                    bundled_python = APP_ROOT / 'runtime/python/python.exe'
+                    env['MEDIAFLOW_PYTHON'] = str(bundled_python if bundled_python.is_file() else Path(sys.executable))
+                    env['MEDIAFLOW_API_URL'] = os.environ.get('MEDIAFLOW_API_URL', 'http://127.0.0.1:48138')
                 install_platform_skill(self.root)
                 env['OPENCODE_SERVER_PASSWORD'] = self._password
                 env['OPENCODE_CONFIG_CONTENT'] = json.dumps(config, ensure_ascii=False)
@@ -188,6 +201,7 @@ class AgentRuntime:
                             if not isinstance(catalog, dict) or not catalog.get('all'):
                                 continue
                             self._state = 'ready'
+                            self._publish_connection()
                             return self.status()
                     except (requests.RequestException, AgentRuntimeError):
                         pass
@@ -199,6 +213,15 @@ class AgentRuntime:
                 self._code = getattr(exc, 'code', 'engine_start_failed')
                 self._error = str(exc) if isinstance(exc, AgentRuntimeError) else '对话引擎启动失败，请查看诊断并重试'
                 raise AgentRuntimeError(self._code, self._error) from None
+
+    def _publish_connection(self):
+        # Private IPC for the same-user local gateway; never served as a static asset.
+        path = self.root / 'gateway-connection.json'
+        pending = path.with_suffix('.tmp')
+        pending.write_text(json.dumps({'url': f'http://127.0.0.1:{self._port}',
+            'username': 'opencode', 'password': self._password,
+            'workspace': str(self.root / 'workspace')}), encoding='utf-8')
+        pending.replace(path)
 
     def request(self, method, path, body=None, *, timeout=15):
         if not path.startswith('/') or path.startswith('//') or '..' in path or '\\' in path:
@@ -216,6 +239,7 @@ class AgentRuntime:
 
     def stop(self):
         with self._lock:
+            (self.root / 'gateway-connection.json').unlink(missing_ok=True)
             if self._process and self._process.poll() is None:
                 self._process.terminate()
                 try:
