@@ -1,0 +1,1 @@
+{"config":{"device_ids":["REPLACE_WITH_CURRENT_DEVICE_UUID"],"video_count":20,"round_count":1,"content_mode":"general","dwell_min":8,"dwell_max":25,"engagement_inspection_enabled":false,"preview_only":true,"like_probability":0,"favorite_probability":0,"comment_probability":0,"matched_like_probability":0,"matched_favorite_probability":0,"matched_comment_probability":0}}

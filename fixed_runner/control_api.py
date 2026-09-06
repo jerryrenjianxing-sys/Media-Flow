@@ -2927,6 +2927,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == '/api/automation':
+            from automation import handle_automation_http
+            handle_automation_http(self, 'GET', path)
+            return
         if path.startswith('/api/agent/'):
             from agent_service import handle_agent_http
             handle_agent_http(self, 'GET', path)
@@ -3430,6 +3434,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             path = urlparse(self.path).path
+            if path == '/api/automation':
+                from automation import handle_automation_http
+                handle_automation_http(self, 'POST', path, body)
+                return
             if path.startswith('/api/agent/'):
                 from agent_service import handle_agent_http
                 handle_agent_http(self, 'POST', path, body)

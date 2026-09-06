@@ -3,7 +3,7 @@ name: mediaflow-platform
 description: 操作MediaFlow平台：根据用户目标查询设备、安排并启动任务、恢复进度、分析证据和修复项目。用于平台实际操作及相关咨询。
 compatibility: opencode
 metadata:
-  version: "23"
+  version: "24"
 ---
 
 # MediaFlow 平台操作
@@ -12,7 +12,11 @@ metadata:
 
 ## 去哪里做
 
-所有下列工具在引擎中带 `mediaflow_` 前缀。使用现有平台工具；它们连接真实任务队列和固定执行器。模型回答、计划生成和任务执行是三个不同结果，按回执报告。
+使用本Skill目录的 `scripts/mediaflow.py`，通过安装附带的Python直接访问本机 `/api/automation`。不需要MCP工具或MediaFlow自建会话、回合、权限等级。使用原生命令工具运行脚本；Python路径从安装运行环境提供的 `MEDIAFLOW_PYTHON` 获取（源码运行可使用已配置虚拟环境）。不要下载另一套Python。
+
+先按需读取 [API和命令参数](references/api.md)、[任务与修复流程](references/workflows.md)、[故障排查](references/troubleshooting.md)。用 `MEDIAFLOW_API_URL` 或本Skill的 `config.json` 配置地址，默认 `http://127.0.0.1:48138`，只接受回环地址。脚本只用标准库。
+
+命令形态：`mediaflow.py <action> --arguments-file <JSON文件> --request-id <唯一ID> --session-id <原生会话ID>`。纯读不需要request-id；session-id可省略，默认skill-local，只用于关联。所有写操作（包括计划/记忆）使用稳定唯一编号并保留原回执；同编号重复调用不执行新操作。模型回答、计划生成和任务执行是三个不同结果，按结构化JSON回执报告，退出码非零表示尚未完成。
 
 | 目的 | 工具路线 |
 | --- | --- |
@@ -22,7 +26,7 @@ metadata:
 | 管理虚拟机 | plan_virtual_operation → execute_virtual_operation |
 | 复盘 | task_evidence；需要异常图像时incident_evidence |
 | 偏好 | memory_list、memory_save |
-| 修代码 | repair_create → repair_files/read → repair_edit → repair_test/validate → repair_diff → repair_prepare_apply/apply |
+| 修代码 | repair_create → 返回的workspace_path用原生文件工具编辑 → repair_test/validate → repair_diff → repair_prepare_apply/apply |
 | 查看异步修复 | repair_test_status、repair_update_status |
 
 首页负责对话；设备在 `/devices`，批次运行在 `/run`，任务与异常证据在 `/records`，互动回执在 `/interactions`，完整表单在 `/workbench`，模型和内容在 `/content`，管理入口 `/manage`。不要把用户赶去页面点确认来替代可以调用的工具。
@@ -50,6 +54,8 @@ metadata:
 
 请求超时或结果不明，查询原回执再决定下一步。创建、删除、提交和未知写入不能靠重复发送来“试成功”。登录/验证码由用户在模拟器完成。删除、重建、覆盖恢复先明确实际对象和数据后果，不扩大用户原意。
 
+脚本本机SQLite记录写请求接入前状态和响应，写入不自动重试；纯读失败最多尝试3次。未知结果用 `request_status` + 原request_id，以及 `plan_status`、`virtual_operation_status` 或 `repair_update_status` 查原操作。原批次可恢复时使用新请求编号调用execute_plan/resume_plan并携带原plan_id；这代表用户请求恢复，不能拿新编号重跑结果未知的创建、删除或修复应用。
+
 ## 固定业务程序的指导思想
 
 标准MuMu实际900×1600、320 DPI；名称、来源、Root、自动旋转和精确版本不是整机门票。ADB在线即可看屏；缺能力仅准备本次依赖的步骤，不要求每台重复三次校准。
@@ -65,3 +71,5 @@ metadata:
 修复在项目独立工作区：读取真实文件和哈希、改代码、运行测试、查看差异，再通过可回退更新生效。没有等级申请和固定“应用这个修复”句式；根据用户本次目标判断是只分析、修改还是应用。完整验证与补丁一致性是技术步骤，不省略、不伪报通过。实际安装版尚未支持的能力如实说明。不要修改无关项目、把密钥放进记忆/日志/发行包，或以删除数据解决未知故障。
 
 结束时给用户结果和证据入口；仍受阻则给具体原因、你已尝试什么及下一步，而不是再要求一次泛泛授权。
+
+包结构与HTTP客户端组织方式借鉴Hermes Skill模式；本实现为MediaFlow标准库客户端，未复制Hermes源码或写请求重试策略。第三方归属见 [NOTICE](NOTICE.md)，原程序第三方许可随发行资料保留。
