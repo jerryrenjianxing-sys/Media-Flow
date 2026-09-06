@@ -19,8 +19,11 @@ WRITE_FIELDS = {'点赞': ('like_probability', 'matched_like_probability'),
 def user_intent(text):
     # Quoted instructions and questions about execution are not commands.
     plain = re.sub(r'```[\s\S]*?```|“[^”]*”|「[^」]*」|"[^"]*"', '', text).strip()
-    preview = bool(re.search(r'只.{0,5}(计划|方案|预览)|先.{0,5}(方案|计划)|(?:不要|别|不必|不需要|暂不|先不|不)(?:直接)?(?:启动|执行|运行|开跑)|^(?:请)?(?:暂停|停止|取消)|如何|怎么|示例|举例', plain))
-    execute = not preview and bool(re.search(r'启动|执行|运行|开跑|开始|帮我跑|跑一|跑两|跑[0-9]|恢复.{0,12}(任务|批次)|^(?:继续|确认|可以|开始吧|按这个来)[。！!\s]*$', plain))
+    # Excluding other devices/history is a scope restriction, not cancellation
+    # of the separately requested task. An exclusion alone never authorizes it.
+    action_text = re.sub(r'(?:不要|不|别)(?:启动|执行|运行|开跑)\s*(?:[0-9一二三四五六七八九十]+号|其他|旧|历史|另外)[^，,。；;!?\n]*', '', plain)
+    preview = bool(re.search(r'只.{0,5}(计划|方案|预览)|先.{0,5}(方案|计划)|(?:不要|别|不必|不需要|暂不|先不|不)(?:直接)?(?:启动|执行|运行|开跑)|^(?:请)?(?:暂停|停止|取消)|如何|怎么|示例|举例', action_text))
+    execute = not preview and bool(re.search(r'启动|执行|运行|开跑|开始|帮我跑|跑一|跑两|跑[0-9]|恢复.{0,12}(任务|批次)|^(?:继续|确认|可以|开始吧|按这个来)[。！!\s]*$', action_text))
     resume = execute and bool(re.search(r'(恢复|解除).{0,16}(任务|批次|停止)', plain))
     writes = {}
     for label, fields in WRITE_FIELDS.items():

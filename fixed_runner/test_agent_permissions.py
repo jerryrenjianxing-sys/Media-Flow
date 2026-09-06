@@ -90,5 +90,12 @@ class PermissionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.p.authorize('a', 'p2', 'h2', {'like_probability':.2})
 
+    def test_scope_exclusion_does_not_cancel_positive_request(self):
+        self.p.record('a', 'r1', '启动2号两条视频，不启动1号，不执行旧任务')
+        self.p.authorize('a', 'p1', 'h1', {})
+        self.p.record('a', 'r2', '不要启动1号')
+        with self.assertRaises(ValueError):
+            self.p.authorize('a', 'p2', 'h2', {})
+
 if __name__ == '__main__':
     unittest.main()
