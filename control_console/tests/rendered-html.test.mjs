@@ -41,6 +41,15 @@ test('Agent settings keep native authentication and expose recoverable OAuth pro
   assert.ok(!page.includes('localStorage'));
 });
 
+test('legacy task links lead to workbench and emergency access remains visible', async () => {
+  for (const path of ['devices', 'run']) {
+    const page = await source(`../app/${path}/page.tsx`);
+    assert.doesNotMatch(page, /href="\/"/);
+    assert.match(page, /href="\/workbench"/);
+  }
+  assert.match(await source('../app/agent-studio.css'), /safety-control.*display:inline-flex/);
+});
+
 test("model settings expose isolated experimental Token Plan save test and enable", async () => {
   const response = await render("/content");
   assert.equal(response.status, 200);

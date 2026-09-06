@@ -35,7 +35,7 @@ TOOLS = [
      'inputSchema': {'type': 'object', 'properties': {'task_id': {'type': 'string'}}, 'required': ['task_id'], 'additionalProperties': False}},
     {'name': 'plan_tasks', 'description': '生成独立任务计划供用户确认，不启动任务。不完整参数先集中询问；默认零点赞收藏评论，不继承旧草稿。',
      'inputSchema': {'type': 'object', 'properties': {'config': {'type': 'object', 'properties': {
-         'device_ids': {'type': 'array', 'items': {'type': 'string'}}, 'video_count': {'type': 'integer'},
+         'device_ids': {'type': 'array', 'items': {'type': 'string'}, 'description': '使用list_devices返回的virtual_device_id，或当前在线device_id/ADB地址；不能使用名称猜测身份'}, 'video_count': {'type': 'integer'},
          'round_count': {'type': 'integer'}, 'content_mode': {'type': 'string', 'enum': ['general', 'mixed', 'search', 'hybrid']},
          'search_query': {'type': 'string'}, 'topic_prompt': {'type': 'string'}, 'round_interval_minutes': {'type': 'integer'},
          'engagement_inspection_enabled': {'type': 'boolean'}, 'inspection_every_rounds': {'type': 'integer'},

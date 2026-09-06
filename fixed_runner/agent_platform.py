@@ -81,6 +81,24 @@ class AgentPlatform:
                 'video_count': task.payload.get('video_count')}
 
     @staticmethod
+    def resolve_devices(snapshot, selected):
+        """Accept inventory UUIDs or current endpoints, never infer a device by name."""
+        virtual = (snapshot.get('virtualization') or {}).get('devices') or []
+        endpoints = []
+        for value in selected:
+            matches = [row for row in virtual if value in (row.get('virtual_device_id'), row.get('adb_endpoint'))]
+            if not matches:
+                raise ValueError('所选设备未找到当前MuMu实例映射，请刷新设备后重新预览')
+            if len(matches) != 1:
+                raise ValueError('设备身份映射不唯一，请到设备页核对；未创建任务')
+            endpoint = matches[0].get('adb_endpoint')
+            if not endpoint:
+                raise ValueError('所选虚拟机ADB尚未连接，请到设备页连接后重新检查计划')
+            if endpoint not in endpoints:
+                endpoints.append(endpoint)
+        return endpoints
+
+    @staticmethod
     def identities(snapshot, device_ids):
         virtual = (snapshot.get('virtualization') or {}).get('devices') or []
         result = {}
@@ -120,6 +138,9 @@ class AgentPlatform:
         if not selected:
             raise ValueError('请选择要运行的虚拟机')
         snapshot = self.status_reader()
+        selected = self.resolve_devices(snapshot, selected)
+        config['device_ids'] = selected
+        config['device_id'] = selected[0]
         if any(row.get('device_type') != 'virtual' for row in snapshot.get('devices', []) if row.get('device_id') in selected):
             raise ValueError('本版本Agent任务仅使用MuMu虚拟机')
         identity = self.identities(snapshot, selected)

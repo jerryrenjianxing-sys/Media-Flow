@@ -107,6 +107,26 @@ class AgentPlatformTests(unittest.TestCase):
         self.assertEqual(self.platform.tools('list_devices', {}, self.context)['devices'][0]['provider_instance_id'], '0')
         self.assertEqual(self.platform.tools('list_tasks', {}, self.context)['tasks'], [])
 
+    def test_plan_accepts_inventory_permanent_id_and_freezes_current_endpoint(self):
+        self.config['device_ids'] = ['vm-uuid']
+        plan = self.planned()
+        self.assertEqual(plan['config']['device_ids'], ['vm-one'])
+        self.assertEqual(plan['state'], 'awaiting_confirmation')
+        self.assertEqual(self.store.list(), [])
+        self.snapshot['virtualization']['devices'][0]['adb_endpoint'] = 'changed-port'
+        with self.assertRaisesRegex(ValueError, '映射|变化'):
+            self.confirm(plan)
+
+    def test_plan_rejects_offline_or_ambiguous_permanent_identity(self):
+        self.config['device_ids'] = ['vm-uuid']
+        self.snapshot['virtualization']['devices'][0]['adb_endpoint'] = None
+        with self.assertRaisesRegex(ValueError, 'ADB'):
+            self.planned()
+        self.snapshot['virtualization']['devices'][0]['adb_endpoint'] = 'vm-one'
+        self.snapshot['virtualization']['devices'].append(dict(self.snapshot['virtualization']['devices'][0]))
+        with self.assertRaisesRegex(ValueError, '不唯一'):
+            self.planned()
+
     def test_launch_failure_receipt_survives_reload_and_recovers_same_batch(self):
         self.launch.side_effect = RuntimeError('worker unavailable')
         plan = self.planned()
