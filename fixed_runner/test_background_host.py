@@ -235,6 +235,19 @@ class RuntimeSupervisorTests(unittest.TestCase):
         ):
             self.assertFalse(default_role_health_probe("control-ui"))
 
+    def test_ui_health_probe_accepts_native_production_and_checks_its_asset(self) -> None:
+        body = '<script type="module" src="/_native/assets/index-native.js"></script>'
+        with patch('background_host.urllib.request.urlopen',
+                   side_effect=[FakeHttpResponse(body), FakeHttpResponse('native code')]) as request:
+            self.assertTrue(default_role_health_probe('control-ui'))
+            self.assertEqual(request.call_args_list[1].args[0], 'http://127.0.0.1:3000/_native/assets/index-native.js')
+
+    def test_ui_health_probe_rejects_missing_native_asset(self) -> None:
+        body = '<script type="module" src="/_native/assets/index-missing.js"></script>'
+        with patch('background_host.urllib.request.urlopen',
+                   side_effect=[FakeHttpResponse(body), OSError('missing asset')]):
+            self.assertFalse(default_role_health_probe('control-ui'))
+
     def test_shutdown_refuses_while_task_is_running(self) -> None:
         self.store.running = 1
         (self.root / "stop.json").write_text("{}", encoding="utf-8")

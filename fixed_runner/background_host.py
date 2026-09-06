@@ -113,8 +113,9 @@ def default_role_health_probe(role: str) -> bool:
             if role in {"control-api", "device-stream-host"}:
                 return True
             body = response.read(128 * 1024).decode("utf-8", errors="replace")
+            asset_prefixes = ("/_next/static/", "/_native/assets/")
             if (
-                "/_next/static/" not in body
+                not any(prefix in body for prefix in asset_prefixes)
                 or "/@vite/" in body
                 or "/@id/" in body
             ):
@@ -128,7 +129,7 @@ def default_role_health_probe(role: str) -> bool:
                 for match in re.findall(
                     r'(?:src|href)=["\']([^"\']+)["\']', body, flags=re.IGNORECASE
                 )
-                if match.startswith("/_next/static/")
+                if match.startswith(asset_prefixes)
                 and match.split("?", 1)[0].lower().endswith((".js", ".css"))
             }
             if not asset_paths:
