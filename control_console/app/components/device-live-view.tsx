@@ -6,7 +6,7 @@ import {
   BitmapVideoFrameRenderer,
   WebCodecsVideoDecoder,
 } from "@yume-chan/scrcpy-decoder-webcodecs";
-import type { ScrcpyMediaStreamPacket } from "@yume-chan/scrcpy";
+import { ScrcpyVideoCodecId, type ScrcpyMediaStreamPacket } from "@yume-chan/scrcpy";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { fetchLocalApi } from "../lib/local-api";
 
@@ -139,8 +139,13 @@ export function DeviceLiveView({
               const height = Number(item.height || 1600);
               setSize({ width, height });
               const renderer = new BitmapVideoFrameRenderer(canvasRef.current!);
+              const codec = Number(item.codec_id);
+              if (codec !== ScrcpyVideoCodecId.H264 && codec !== ScrcpyVideoCodecId.H265 && codec !== ScrcpyVideoCodecId.AV1) {
+                enterFallback("视频编码不受支持，已切换截图模式");
+                return;
+              }
               const decoder = new WebCodecsVideoDecoder({
-                codec: Number(item.codec_id),
+                codec,
                 renderer,
               });
               decoderRef.current = decoder;

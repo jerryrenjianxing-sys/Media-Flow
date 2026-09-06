@@ -1,4 +1,4 @@
-"""User-approved, hash-bound development updates with durable operation receipts."""
+"""Hash-bound project updates with durable user-request operation receipts."""
 from contextlib import contextmanager
 import hashlib
 import json
@@ -32,9 +32,11 @@ class AgentRepairUpdates:
                 target_revision TEXT,rollback_revision TEXT);
         """)
         columns = {row[1] for row in db.execute('PRAGMA table_info(jobs)')}
-        for name, kind in (('worker_pid', 'INTEGER'), ('lease_until', 'REAL')):
+        for name, kind in (('worker_pid', 'INTEGER'), ('lease_until', 'REAL'), ('snapshot_hash', 'TEXT')):
             if name not in columns:
                 db.execute('ALTER TABLE jobs ADD COLUMN ' + name + ' ' + kind)
+        if 'snapshot_hash' not in {row[1] for row in db.execute('PRAGMA table_info(offers)')}:
+            db.execute('ALTER TABLE offers ADD COLUMN snapshot_hash TEXT')
         try:
             with db:
                 yield db
@@ -43,6 +45,9 @@ class AgentRepairUpdates:
 
     def prepare(self, repair_id, session):
         self.permissions.require(session, 'repair_prepare_apply')
+        request = self.permissions.current(session)
+        if not request:
+            raise ValueError('修复应用需要当前已登记的真实用户请求')
         diff = self.repairs.diff(repair_id, session)
         if not diff['changed_files']:
             raise ValueError('候选没有修改')
@@ -53,13 +58,17 @@ class AgentRepairUpdates:
         tests = self.repairs.tests(repair_id, session)
         if not any(t['mode'] == 'all' and t['state'] == 'passed' and t['source_hash'] == diff['source_hash'] for t in tests):
             raise ValueError('当前补丁尚未通过完整验证，请运行 repair_validate 后再准备应用')
-        self.repairs.freeze(repair_id, session, self.root / 'approved' / (diff['source_hash'] + '.json'), diff['source_hash'])
+        snapshot = self.root / 'approved' / (diff['source_hash'] + '.json')
+        self.repairs.freeze(repair_id, session, snapshot, diff['source_hash'])
+        snapshot_hash = hashlib.sha256(snapshot.read_bytes()).hexdigest()
         with self.database() as db:
-            db.execute('INSERT INTO offers VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hash=excluded.hash,base=excluded.base,created=excluded.created',
-                (repair_id, session, diff['source_hash'], diff['revision'], time.time()))
+            self.bind_request(db, request['id'], session, repair_id, diff['source_hash'])
+            db.execute('INSERT INTO offers(id,session,hash,base,created,snapshot_hash) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hash=excluded.hash,base=excluded.base,created=excluded.created,snapshot_hash=excluded.snapshot_hash',
+                (repair_id, session, diff['source_hash'], diff['revision'], time.time(), snapshot_hash))
         return {'repair_id': repair_id, 'source_hash': diff['source_hash'], 'revision': diff['revision'],
-                'changed_files': diff['changed_files'], 'status': 'waiting_user',
-                'message': '完整验证已通过。请展示差异；用户回复“应用这个修复”后可调用 repair_apply，尚未更新程序'}
+                'snapshot_hash': snapshot_hash,
+                'changed_files': diff['changed_files'], 'status': 'ready', 'request_id': request['id'],
+                'message': '完整验证已通过并绑定当前请求与补丁。请展示差异；用户任务包含应用时调用 repair_apply，尚未更新程序'}
 
     def rollback_candidate(self, operation_id, context):
         session = context['session_id']
@@ -83,26 +92,20 @@ class AgentRepairUpdates:
                 self.repairs.edit({**args, 'content': old.read_text(encoding='utf-8-sig')}, session)
             else:
                 self.repairs.remove(args, session)
-        return {**candidate, 'message': '已生成回退候选，未改变运行程序。验证、展示差异后，用户回复应用这个修复，再递增版本生效；数据不回滚'}
+        return {**candidate, 'message': '已生成回退候选，未改变运行程序。验证并展示差异后按用户任务应用，再递增版本生效；数据不回滚'}
 
     def capture_user_approval(self, session, request_id, text):
-        if not re.fullmatch(r'\s*(?:请|确认)?应用(?:这个修复|修复\s*[a-f0-9]{32})[。！!\s]*', text):
+        # Compatibility with older admission callers. User prose is never a
+        # patch selector: prepare/apply bind the concrete repair and its hash.
+        return None
+
+    def bind_request(self, db, request_id, session, repair_id, source_hash):
+        prior = db.execute('SELECT * FROM approvals WHERE request_id=?', (request_id,)).fetchone()
+        if prior:
+            if (prior['session'], prior['repair'], prior['hash']) != (session, repair_id, source_hash):
+                raise ValueError('当前请求已绑定另一份修复或补丁；请核对差异后使用新的请求')
             return
-        self.permissions.require(session, 'repair_apply')
-        with self.database() as db:
-            if db.execute('SELECT 1 FROM approvals WHERE request_id=?', (request_id,)).fetchone():
-                return
-            rows = db.execute("SELECT * FROM offers WHERE session=? AND id NOT IN (SELECT repair FROM jobs WHERE status='completed')", (session,)).fetchall()
-            explicit = re.search(r'[a-f0-9]{32}', text)
-            if explicit:
-                rows = [row for row in rows if row['id'] == explicit[0]]
-            if len(rows) != 1:
-                raise ValueError('没有唯一的待应用修复，请先展示并指定修复编号；未更新')
-            row = rows[0]
-            diff = self.repairs.diff(row['id'], session)
-            if diff['source_hash'] != row['hash']:
-                raise ValueError('补丁已变化，请重新验证并展示差异后确认')
-            db.execute('INSERT INTO approvals VALUES(?,?,?,?,?)', (request_id, session, row['id'], row['hash'], self.permissions.get(session)['revision']))
+        db.execute('INSERT INTO approvals VALUES(?,?,?,?,?)', (request_id, session, repair_id, source_hash, self.permissions.get(session)['revision']))
 
     def apply(self, repair_id, session):
         self.permissions.require(session, 'repair_apply')
@@ -110,32 +113,49 @@ class AgentRepairUpdates:
             raise ValueError('安装版独立更新链尚未验收，本次仅支持本机开发服务')
         request = self.permissions.current(session)
         if not request:
-            raise ValueError('请在聊天中确认应用这份修复')
+            raise ValueError('修复应用需要当前已登记的真实用户请求')
         with self.database() as db:
-            approval = db.execute('SELECT * FROM approvals WHERE request_id=? AND session=? AND repair=?',
-                (request['id'], session, repair_id)).fetchone()
-            if not approval or approval['revision'] != self.permissions.get(session)['revision']:
-                raise ValueError('尚无本补丁的用户应用确认，或授权等级已变；请重新确认')
-            old = db.execute('SELECT id FROM jobs WHERE request_id=?', (request['id'],)).fetchone()
-            if old:
-                return self.get(old['id'], session)
+            offer = db.execute('SELECT * FROM offers WHERE id=? AND session=?', (repair_id, session)).fetchone()
+            if not offer:
+                raise ValueError('尚无已验证的本补丁回执，请先调用 repair_prepare_apply')
+            self.bind_request(db, request['id'], session, repair_id, offer['hash'])
+            old = self.existing_job(db, session, repair_id, offer['hash'], request['id'])
+        if old:
+            return self.get(old['id'], session)
         diff = self.repairs.diff(repair_id, session)
-        if diff['source_hash'] != approval['hash']:
+        if diff['source_hash'] != offer['hash']:
             raise ValueError('确认后补丁已变化，不能应用；请重新验证确认')
-        self.prepare(repair_id, session)
+        prepared = self.prepare(repair_id, session)
         with self.database() as db:
             db.execute('BEGIN IMMEDIATE')
-            if db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','running','waiting_user')").fetchone():
-                raise ValueError('已有更新操作，请等待或取消')
-            job_id, now = uuid.uuid4().hex, time.time()
-            db.execute('INSERT INTO jobs(id,session,repair,hash,base,request_id,status,stage,message,created,updated,deadline) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-                (job_id, session, repair_id, diff['source_hash'], diff['revision'], request['id'], 'queued',
-                 'waiting_idle', '正在等待任务与设备操作空闲；可取消', now, now, now + 1800))
+            old = self.existing_job(db, session, repair_id, diff['source_hash'], request['id'])
+            if not old:
+                if db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','running','waiting_user')").fetchone():
+                    raise ValueError('已有更新操作，请等待或取消')
+                job_id, now = uuid.uuid4().hex, time.time()
+                db.execute('INSERT INTO jobs(id,session,repair,hash,base,request_id,status,stage,message,created,updated,deadline,snapshot_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    (job_id, session, repair_id, diff['source_hash'], diff['revision'], request['id'], 'queued',
+                     'waiting_idle', '正在等待任务与设备操作空闲；可取消', now, now, now + 1800, prepared['snapshot_hash']))
+        if old:
+            return self.get(old['id'], session)
         try:
             self.launcher(job_id)
         except Exception:
             self.update(job_id, status='failed', stage='launch_failed', message='更新进程未启动，旧程序未变；可重新展示并确认')
         return self.get(job_id, session)
+
+    @staticmethod
+    def existing_job(db, session, repair_id, source_hash, request_id):
+        # Same admission always returns its own outcome. Only a proven failure
+        # to launch can be retried by a new user request; unknown is not failure.
+        own = db.execute('SELECT * FROM jobs WHERE request_id=?', (request_id,)).fetchone()
+        if own:
+            return own
+        latest = db.execute('SELECT * FROM jobs WHERE session=? AND repair=? AND hash=? ORDER BY created DESC LIMIT 1',
+                            (session, repair_id, source_hash)).fetchone()
+        if latest and not (latest['status'] == 'failed' and latest['stage'] == 'launch_failed' and latest['worker_pid'] is None):
+            return latest
+        return None
 
     def launch(self, job_id):
         # No parent-owned Job Object: this process must survive the API restart.

@@ -4,10 +4,32 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from agent_runtime import AgentRuntime, AgentRuntimeError, build_config, isolated_environment
+from agent_runtime import AgentRuntime, AgentRuntimeError, build_config, isolated_environment, install_platform_skill
 
 
 class AgentRuntimeTests(unittest.TestCase):
+    def test_bundled_skill_install_preserves_other_skills_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            other = root / 'config/opencode/skills/custom/SKILL.md'
+            other.parent.mkdir(parents=True)
+            other.write_text('user guide', encoding='utf-8')
+            target = install_platform_skill(root)
+            modified = target.stat().st_mtime_ns
+            install_platform_skill(root)
+            self.assertEqual(target.stat().st_mtime_ns, modified)
+            self.assertEqual(other.read_text(encoding='utf-8'), 'user guide')
+            guide = target.read_text(encoding='utf-8')
+            self.assertIn('name: mediaflow-platform', guide)
+            self.assertIn('execute_plan', guide)
+            self.assertIn('matched_comment_probability', guide)
+
+    def test_platform_skill_is_native_and_has_no_arbitrary_twelve_step_limit(self):
+        config=build_config('http://127.0.0.1:49200','ephemeral',['python','mcp.py'])
+        self.assertNotIn('steps',config['agent']['mediaflow'])
+        self.assertEqual(config['permission'].get('skill',{}).get('mediaflow-platform'),'allow')
+        self.assertIn('mediaflow-platform',config['agent']['mediaflow']['prompt'])
+
     def test_dependency_errors_are_specific_and_do_not_leak_exception(self):
         for problem,code in [(TimeoutError('private'), 'engine_dependencies_timeout'),
                              (PermissionError('private'), 'engine_dependencies_permission'),

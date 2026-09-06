@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./agent.css";
 import "./agent-studio.css";
+import "./workspace-pages.css";
 import ConsoleShell from "./components/console-shell";
 import { BRAND } from "./brand";
 
@@ -24,7 +25,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var saved=localStorage.getItem("mediaflow-theme")||localStorage.getItem("riskflow-theme");document.documentElement.dataset.theme=saved==="light"?"light":"dark"}catch(e){document.documentElement.dataset.theme="dark"}var key="mediaflow-asset-recovery";window.addEventListener("error",function(event){var target=event.target;var url=target&&(target.src||target.href)||"";if(!url||url.indexOf("/_next/static/")<0)return;try{var marker=location.pathname;if(sessionStorage.getItem(key)===marker)return;sessionStorage.setItem(key,marker);var next=new URL(location.href);next.searchParams.set("asset_reload",Date.now().toString());location.replace(next.toString())}catch(e){}},true);window.addEventListener("pageshow",function(){setTimeout(function(){try{sessionStorage.removeItem(key)}catch(e){}},10000)})})();`,
+            __html: `(function(){try{var saved=localStorage.getItem("mediaflow-theme")||localStorage.getItem("riskflow-theme");document.documentElement.dataset.theme=saved==="light"||saved==="dark"?saved:(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){document.documentElement.dataset.theme="dark"}var key="mediaflow-asset-recovery";window.addEventListener("error",function(event){var target=event.target;var url=target&&(target.src||target.href)||"";if(!url||url.indexOf("/_next/static/")<0)return;try{var marker=location.pathname;if(sessionStorage.getItem(key)===marker)return;sessionStorage.setItem(key,marker);var next=new URL(location.href);next.searchParams.set("asset_reload",Date.now().toString());location.replace(next.toString())}catch(e){}},true);window.addEventListener("pageshow",function(){setTimeout(function(){try{sessionStorage.removeItem(key)}catch(e){}},10000)})})();`,
           }}
         />
       </head>

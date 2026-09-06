@@ -7,13 +7,13 @@ import urllib.request
 from urllib.parse import urlparse
 
 TOOLS = [
-    {'name': 'execute_virtual_operation', 'description': '维护或开发模式下执行本会话已规划的虚拟机操作，复用原操作回执。普通操作不重复要求点卡片，删除须用户明确完整名称与数据后果。',
+    {'name': 'execute_virtual_operation', 'description': '执行本会话已规划的虚拟机操作，复用原操作回执。普通操作不重复要求点卡片，删除须用户明确完整名称与数据后果。',
      'inputSchema': {'type': 'object', 'properties': {'command_id': {'type': 'string'}}, 'required': ['command_id'], 'additionalProperties': False}},
-    {'name': 'session_permissions', 'description': '读取当前会话权限。默认操作模式可设置、启动和恢复任务。权限升级只能由用户在聊天明确开启或在设置中选择。',
+    {'name': 'session_permissions', 'description': '读取平台工具可用状态；所有会话默认可操作、维护和修复，无需升级等级。',
      'inputSchema': {'type': 'object', 'properties': {}, 'additionalProperties': False}},
     {'name': 'incident_evidence', 'description': '读取指定Android异常的受限语义与可选截图，用当前对话模型分析。include_image=true会把该应用截图发送给当前服务商；仅在用户要求分析现场时使用，不读取电脑桌面、任意文件或全部历史，不修改任务终态。',
      'inputSchema': {'type': 'object', 'properties': {'incident_id': {'type': 'string'}, 'include_image': {'type': 'boolean'}}, 'required': ['incident_id'], 'additionalProperties': False}},
-    {'name': 'plan_virtual_operation', 'description': '为指定永久ID的MuMu制定管理计划。维护模式下，用户聊天已明确操作时再调用execute_virtual_operation，无需点卡片。复制和删除结果未知不得重放。',
+    {'name': 'plan_virtual_operation', 'description': '为指定永久ID的MuMu制定管理计划。根据用户目标调用execute_virtual_operation，无需点卡片。复制和删除结果未知不得重放。',
      'inputSchema': {'type': 'object', 'properties': {'virtual_device_id': {'type': 'string'},
          'action': {'type': 'string', 'enum': ['start', 'stop', 'restart', 'clone', 'backup', 'repair_standard', 'settings', 'delete']},
          'settings': {'type': 'object', 'properties': {'cpu': {'type': 'integer'}, 'memory_gb': {'type': 'number'},
@@ -37,7 +37,7 @@ TOOLS = [
          'offset': {'type': 'integer', 'minimum': 0}}, 'additionalProperties': False}},
     {'name': 'task_evidence', 'description': '查询用户指定任务的异常阶段、原因、恢复结果及现有证据链接，不重放或批量重分析历史。',
      'inputSchema': {'type': 'object', 'properties': {'task_id': {'type': 'string'}}, 'required': ['task_id'], 'additionalProperties': False}},
-    {'name': 'plan_tasks', 'description': '生成独立任务计划供用户确认，不启动任务。不完整参数先集中询问；默认零点赞收藏评论，不继承旧草稿。',
+    {'name': 'plan_tasks', 'description': '冻结当前目标的任务参数，不启动任务。合理默认值由Skill提供，只追问真正缺项；默认零点赞收藏评论，不继承旧草稿。',
      'inputSchema': {'type': 'object', 'properties': {'config': {'type': 'object', 'properties': {
          'device_ids': {'type': 'array', 'items': {'type': 'string'}, 'description': '使用list_devices返回的virtual_device_id，或当前在线device_id/ADB地址；不能使用名称猜测身份'}, 'video_count': {'type': 'integer'},
          'round_count': {'type': 'integer'}, 'content_mode': {'type': 'string', 'enum': ['general', 'mixed', 'search', 'hybrid']},
@@ -54,17 +54,20 @@ TOOLS = [
 for _name, _description in {
     'execute_plan': '启动或恢复本会话已有冻结计划。用户明确要求执行且参数齐全时直接调用，不需要点击卡片。缺参数先问；只策划不执行；明确恢复才能解除任务停止。重复调用查询原批次，不创建第二批。',
     'plan_status': '查询本会话计划、原批次进度和执行者错误；发送结果未知先查询，不重新建任务。',
+    'repreview_plan': '重新检查本会话尚未执行的过期或受阻计划，保留原参数和历史，返回新预览ID；不会启动任务。',
     'pause_batch': '暂停本会话指定批次领取后续任务，不暂停其他批次；当前视频会完成。',
     'stop_batch': '安全停止并取消本会话指定批次，不操作其他任务，不重启模拟器。',
 }.items():
     TOOLS.append({'name': _name, 'description': _description, 'inputSchema': {
-        'type': 'object', 'properties': {'plan_id': {'type': 'string'}}, 'required': ['plan_id'], 'additionalProperties': False}})
+        'type': 'object', 'properties': {'plan_id': {'type': 'string'}, **(
+            {'resume_stopped_devices': {'type': 'boolean', 'description': '本次目标包含恢复该批次时为true；不恢复时为false。'}} if _name == 'execute_plan' else {})},
+        'required': [] if _name == 'plan_status' else ['plan_id'], 'additionalProperties': False}})
 
 _REPAIR_TOOLS = {
     'repair_delete': ('移除独立候选中的指定源码文件，基准保留可撤销。需要读回SHA-256，不影响运行程序。', {'path': {'type':'string'}, 'expected_sha256': {'type':'string'}}, ['path', 'expected_sha256']),
-    'repair_validate': ('开发模式：在独立工作区运行完整本机验证，包含规范、Python、前端、lint和构建。返回测试ID，轮询到终态，未通过不能申请应用。', {'mode': {'type': 'string', 'enum': ['all', 'python', 'frontend', 'lint', 'build', 'openspec']}}, []),
-    'repair_prepare_apply': ('完整验证通过后登记待应用补丁哈希并展示差异；提示用户在聊天回复应用这个修复。不会更新运行程序。', {}, []),
-    'repair_apply': ('消费用户刚在聊天给出的本补丁应用确认，启动独立更新操作。缺确认、版本变化、工作区冲突时拒绝；不可用其他批准字段替代用户消息。', {}, []),
+    'repair_validate': ('在独立工作区运行完整本机验证，包含规范、Python、前端、lint和构建。返回测试ID，轮询到终态，未通过不能申请应用。', {'mode': {'type': 'string', 'enum': ['all', 'python', 'frontend', 'lint', 'build', 'openspec']}}, []),
+    'repair_prepare_apply': ('完整验证通过后登记待应用补丁哈希并展示差异；用户要求应用时继续repair_apply。不会更新运行程序。', {}, []),
+    'repair_apply': ('应用已经验证并准备好的本会话补丁，启动独立更新。绑定真实用户请求与补丁哈希；变化或冲突返回具体错误，无需固定授权话术。', {}, []),
     'repair_create': ('为指定问题建立独立修复工作区，不修改运行程序。返回材料版本；开发工作副本不能当成发布提交。', {'purpose': {'type': 'string'}}, ['purpose']),
     'repair_files': ('列出当前修复工作区的第一方源码文件。', {}, []),
     'repair_read': ('分页读取修复文件并返回SHA-256，用于防止覆盖未读的新修改。', {'path': {'type': 'string'}, 'offset': {'type': 'integer'}, 'limit': {'type': 'integer'}}, ['path']),

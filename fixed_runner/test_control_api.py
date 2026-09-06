@@ -993,7 +993,12 @@ class ControlApiTest(unittest.TestCase):
                 }
             )
             first_id, second_id = submit_scheduled_rounds(store, config)
-            first = store.claim_next("device-1", "worker-1")
+            # Planned timestamps use microseconds, while the real queue clock
+            # uses milliseconds. This result aggregation test must not rely on
+            # the host clock advancing between submit and claim.
+            ready_at = store.get(second_id).not_before
+            with patch("task_store.now_iso", return_value=ready_at):
+                first = store.claim_next("device-1", "worker-1")
             self.assertEqual(first.id, first_id)
             store.finish(
                 first_id,
@@ -1007,7 +1012,8 @@ class ControlApiTest(unittest.TestCase):
                     "favorites": 0,
                 },
             )
-            second = store.claim_next("device-1", "worker-1")
+            with patch("task_store.now_iso", return_value=ready_at):
+                second = store.claim_next("device-1", "worker-1")
             self.assertEqual(second.id, second_id)
             store.finish(
                 second_id,
@@ -1039,7 +1045,9 @@ class ControlApiTest(unittest.TestCase):
                 }
             )
             first_id, second_id = submit_scheduled_rounds(store, config)
-            store.claim_next("device-1", "worker-1")
+            ready_at = store.get(second_id).not_before
+            with patch("task_store.now_iso", return_value=ready_at):
+                self.assertEqual(store.claim_next("device-1", "worker-1").id, first_id)
             store.finish(
                 first_id,
                 status="completed",
@@ -1051,7 +1059,8 @@ class ControlApiTest(unittest.TestCase):
                     "model_errors": 0,
                 },
             )
-            store.claim_next("device-1", "worker-1")
+            with patch("task_store.now_iso", return_value=ready_at):
+                self.assertEqual(store.claim_next("device-1", "worker-1").id, second_id)
             store.finish(
                 second_id,
                 status="degraded",

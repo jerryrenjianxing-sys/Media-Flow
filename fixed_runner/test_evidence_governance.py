@@ -1,15 +1,40 @@
 from __future__ import annotations
 
 import sqlite3
+import os
 import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from evidence_governance import EvidenceGovernance
 
 
 class EvidenceGovernanceTest(unittest.TestCase):
+    def test_inventory_does_not_descend_into_excluded_backups(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "evidence"
+            backups = evidence / "backups"
+            backups.mkdir(parents=True)
+            (evidence / "proof.png").write_bytes(b"proof")
+            (backups / "large-backup.bin").write_bytes(b"excluded")
+            governance = EvidenceGovernance(root / "tasks.db", [evidence], backups)
+            scan = os.scandir
+
+            def checked_scan(path):
+                if Path(path).resolve() == backups:
+                    raise RuntimeError("Excluded backups must not be traversed")
+                return scan(path)
+
+            with patch("os.scandir", side_effect=checked_scan):
+                inventory = governance.inventory()
+            self.assertEqual(inventory["file_count"], 1)
+            self.assertEqual(inventory["total_bytes"], 5)
+            self.assertIsNotNone(inventory["oldest_at"])
+            self.assertEqual((backups / "large-backup.bin").read_bytes(), b"excluded")
+
     def test_inventory_policy_and_backup_are_non_destructive(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

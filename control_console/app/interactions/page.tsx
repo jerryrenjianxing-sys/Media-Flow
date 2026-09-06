@@ -48,7 +48,7 @@ type Alert = {
 function formatTime(value: string) {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "";
 }
-function reasonText(value?: string) { return value ? navigationReason(value) || reasonLabels[value] || "页面检查未完成，请查看异常现场" : ""; }
+function reasonText(value?: string | null) { return value ? navigationReason(value) || reasonLabels[value] || "页面检查未完成，请查看异常现场" : ""; }
 function receiptState(item: Inspection) {
   if (item.status === "completed") return resultLabels[item.result_kind];
   return item.result_kind === "alert" ? "发现互动 · 检查未完成" : "检查未完成";

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime
@@ -72,24 +73,36 @@ class EvidenceGovernance:
         return self.policy()
 
     def inventory(self) -> dict[str, Any]:
-        files: list[tuple[Path, int, float]] = []
-        for root in self.roots:
-            if not root.exists():
+        file_count = total_bytes = 0
+        oldest = newest = None
+        pending = list(self.roots)
+        while pending:
+            directory = pending.pop()
+            if directory == self.backup_root or self.backup_root in directory.parents:
                 continue
-            for path in root.rglob("*"):
-                if not path.is_file() or self.backup_root == path.parent or self.backup_root in path.parents:
-                    continue
-                try:
-                    stat = path.stat()
-                except OSError:
-                    continue
-                files.append((path, stat.st_size, stat.st_mtime))
-        timestamps = [item[2] for item in files]
+            try:
+                # DirEntry reuses enumeration metadata on Windows. Do not issue
+                # two extra filesystem queries or retain every file's Path.
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        try:
+                            if entry.is_dir(follow_symlinks=False):
+                                pending.append(Path(entry.path))
+                            elif entry.is_file():
+                                stat = entry.stat()
+                                file_count += 1
+                                total_bytes += stat.st_size
+                                oldest = stat.st_mtime if oldest is None else min(oldest, stat.st_mtime)
+                                newest = stat.st_mtime if newest is None else max(newest, stat.st_mtime)
+                        except OSError:
+                            continue
+            except OSError:
+                continue
         return {
-            "file_count": len(files),
-            "total_bytes": sum(item[1] for item in files),
-            "oldest_at": datetime.fromtimestamp(min(timestamps)).astimezone().isoformat(timespec="seconds") if timestamps else None,
-            "newest_at": datetime.fromtimestamp(max(timestamps)).astimezone().isoformat(timespec="seconds") if timestamps else None,
+            "file_count": file_count,
+            "total_bytes": total_bytes,
+            "oldest_at": datetime.fromtimestamp(oldest).astimezone().isoformat(timespec="seconds") if oldest is not None else None,
+            "newest_at": datetime.fromtimestamp(newest).astimezone().isoformat(timespec="seconds") if newest is not None else None,
             "database_bytes": self.db_path.stat().st_size if self.db_path.is_file() else 0,
             "roots": [str(root) for root in self.roots],
             "policy": self.policy(),

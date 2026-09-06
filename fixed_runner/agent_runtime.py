@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import socket
 import subprocess
 import threading
@@ -20,6 +21,16 @@ ENGINE_VERSION = '1.18.29'
 ENGINE_SHA256 = '32675fbf8fcb804c6ee4e048ff0926cd64bf54d1b6185bf2c09e93a2662dd69d'
 PROVIDER_ID = 'mediaflow-qwen-token-plan'
 MODEL_ID = 'qwen3.8-flash'
+
+
+def install_platform_skill(root: Path):
+    """Publish only the bundled guide into this engine's native skill directory."""
+    source = Path(__file__).parent / 'assets/agent/skills/mediaflow-platform/SKILL.md'
+    target = root / 'config/opencode/skills/mediaflow-platform/SKILL.md'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.is_file() or target.read_bytes() != source.read_bytes():
+        shutil.copyfile(source, target)
+    return target
 
 
 def available_port():
@@ -55,7 +66,7 @@ def build_config(bridge_url: str, bridge_token: str, mcp_command: list[str], *, 
         'default_agent': 'mediaflow',
         'plugin': [(Path(__file__).parent / 'assets/agent/context-plugin.mjs').resolve().as_uri()] if tool_context else [],
         'agent': {'mediaflow': {'mode': 'primary', 'description': 'MediaFlow软件操作与修复助手',
-            'steps': 12, 'prompt': (Path(__file__).parent / 'assets/agent/workflow.md').read_text(encoding='utf-8')}},
+            'prompt': (Path(__file__).parent / 'assets/agent/workflow.md').read_text(encoding='utf-8')}},
         'provider': {PROVIDER_ID: {
             'npm': '@ai-sdk/openai-compatible', 'name': '千问AI平台 · Token Plan（实验性）',
             'options': {'baseURL': bridge_url + '/model', 'apiKey': bridge_token},
@@ -63,7 +74,8 @@ def build_config(bridge_url: str, bridge_token: str, mcp_command: list[str], *, 
                 'attachment': True, 'modalities': {'input': ['text', 'image'], 'output': ['text']},
                 'limit': {'context': 128000, 'output': 8192}}},
         }},
-        'permission': {'*': 'deny', 'mediaflow_*': 'allow', 'question': 'allow'},
+        'permission': {'*': 'deny', 'mediaflow_*': 'allow', 'question': 'allow',
+                       'skill': {'mediaflow-platform': 'allow'}},
         'mcp': {'mediaflow': {'type': 'local', 'command': mcp_command, 'enabled': True,
             'environment': {'MEDIAFLOW_AGENT_BRIDGE_URL': bridge_url, 'MEDIAFLOW_AGENT_BRIDGE_TOKEN': bridge_token}}},
     }
@@ -149,6 +161,7 @@ class AgentRuntime:
                         raise AgentRuntimeError('engine_dependencies_'+code, message+'；诊断编号 '+self._diagnostic) from None
                 progress('启动对话引擎')
                 env = isolated_environment(self.root)
+                install_platform_skill(self.root)
                 env['OPENCODE_SERVER_PASSWORD'] = self._password
                 env['OPENCODE_CONFIG_CONTENT'] = json.dumps(config, ensure_ascii=False)
                 workspace = self.root / 'workspace'

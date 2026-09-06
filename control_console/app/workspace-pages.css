@@ -1,0 +1,63 @@
+/* Shared business workspace layout; never styles Agent chat or status glyphs. */
+.mf-management-shell .app-shell { min-height:0; }
+.mf-management-shell .page-shell { width:min(1280px,calc(100% - 56px)); padding-bottom:32px; }
+.mf-management-shell .records-hero,.mf-management-shell .page-intro { padding:32px 0 24px; gap:24px; }
+.mf-management-shell h1 { font-size:30px; line-height:1.3; letter-spacing:-.035em; }
+.mf-management-shell .records-hero p,.mf-management-shell .page-intro > div > p:last-child { font-size:15px; line-height:1.7; color:var(--ink-muted); }
+.mf-management-shell .hero-actions { flex-wrap:wrap; justify-content:flex-end; gap:8px; }
+.mf-management-shell .panel-heading { gap:16px; margin-bottom:18px; }
+.mf-management-shell .panel-heading h2 { font-size:18px; font-weight:600; line-height:1.5; }
+.mf-management-shell .section-note { font-size:13px; line-height:1.6; }
+.mf-management-shell button,.mf-management-shell .primary,.mf-management-shell .secondary { font-size:14px; line-height:1.5; }
+.mf-management-shell :is(input,select,textarea) { font:inherit; font-size:14px; max-width:100%; }
+.mf-management-shell :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea) { border:1px solid var(--hairline-strong); border-radius:7px; padding:9px 11px; background:var(--surface-2); color:var(--ink); }
+.mf-management-shell :is(button,a,input,select,textarea,summary):focus-visible { outline:2px solid var(--primary); outline-offset:3px; }
+.mf-management-shell :is(.field > span,.field small,.policy-card small,.action-group small,.subheading small,.model-key-box small) { font-size:13px; line-height:1.6; }
+.mf-management-shell :is(.panel,.dialog,.drawer) { min-width:0; }
+.mf-management-shell :is(.panel p,.panel small,.panel strong,.panel em) { overflow-wrap:anywhere; }
+.mf-management-shell .tag { color:var(--primary); border-color:color-mix(in srgb,var(--primary) 25%,var(--hairline)); background:var(--accent-soft); }
+.mf-management-shell .tag.quiet { color:var(--ink-muted); background:var(--surface-2); border-color:var(--hairline); }
+.mf-management-shell .empty,.mf-management-shell .run-empty { color:var(--ink-muted); line-height:1.7; }
+.mf-management-shell .workspace-page-notice { min-height:20px; }
+.device-template-settings { margin:0 0 16px; border:1px solid var(--hairline); border-radius:10px; background:var(--surface-1); }
+.device-template-settings > summary { padding:15px 20px; cursor:pointer; color:var(--ink); font-size:14px; }
+.device-template-settings > summary span { color:var(--ink-muted); margin-left:16px; font-size:13px; }
+.local-template-panel { padding:20px; border:0; border-top:1px solid var(--hairline); border-radius:0 0 10px 10px; }
+.local-template-panel h2 { font-size:18px; font-weight:600; margin:0 0 12px; }
+.local-template-panel p { line-height:1.7; font-size:14px; margin:10px 0; }
+.local-template-panel > button { margin:0 8px 12px 0; }
+.local-template-panel details { padding:12px 0; border-top:1px solid var(--hairline); }
+.local-template-panel details summary { cursor:pointer; margin-bottom:8px; }
+.local-template-panel details label { display:block; margin:12px 0 8px; font-size:14px; }
+.local-template-panel details input { width:100%; }
+.standard-pool-panel { padding:20px; gap:24px; }
+.standard-pool-panel h2 { font-size:18px; font-weight:600; line-height:1.5; margin-bottom:8px; }
+.standard-pool-panel p { font-size:14px; line-height:1.6; }
+.standard-pool-controls { min-width:0; gap:12px; }
+.standard-pool-controls label { min-width:0; }
+.device-type-tabs { margin-bottom:16px; }
+.device-issue-summary { padding:20px; }
+.device-issue-summary h2 { font-size:18px; line-height:1.5; }
+.device-issue-summary > div:first-child > small { font-size:14px; }
+.interaction-device-overview > div { grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr)); }
+.mf-management-shell footer { margin-top:28px; flex-wrap:wrap; gap:12px; font-size:13px; }
+@media(max-width:1100px){
+  .mf-management-shell .page-intro { grid-template-columns:1fr; }
+  .mf-management-shell .records-hero { align-items:flex-start; }
+  .mf-management-shell .hero-actions { max-width:420px; }
+  .standard-pool-panel { grid-template-columns:1fr; }
+}
+@media(max-width:700px){
+  .prompt-guide-page .workbench-callout { align-items:flex-start; flex-direction:column; gap:8px; }
+  .prompt-guide-page .workbench-callout > strong { flex:none; }
+  .interaction-device-overview > header { align-items:flex-start; flex-direction:column; gap:8px; }
+  .mf-management-shell .page-shell { width:calc(100% - 28px); }
+  .mf-management-shell .records-hero,.mf-management-shell .page-intro { padding:24px 0 20px; display:flex; flex-direction:column; align-items:stretch; gap:16px; }
+  .mf-management-shell h1 { font-size:26px; }
+  .mf-management-shell .hero-actions { justify-content:flex-start; max-width:none; }
+  .mf-management-shell .panel-heading { flex-wrap:wrap; }
+  .standard-pool-panel,.local-template-panel { padding:16px; }
+  .standard-pool-controls { display:grid; grid-template-columns:1fr; }
+  .device-template-settings > summary { padding:14px; }
+  .device-template-settings > summary span { display:block; margin:6px 0 0; }
+}

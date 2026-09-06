@@ -3,7 +3,7 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; background: var(--canvas); }
-body { margin: 0; overflow-x: hidden; color: var(--ink); background: var(--canvas); font-family: Inter, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; font-size: 14px; letter-spacing: -.01em; }
+body { margin: 0; color: var(--ink); background: var(--canvas); font-family: Inter, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; font-size: 16px; letter-spacing: -.01em; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .42; }
@@ -298,8 +298,8 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .switch-row input[type="checkbox"]::after { content: ""; width: 16px; height: 16px; position: absolute; top: 2px; left: 2px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.24); transition: transform .18s ease; }
 .switch-row input[type="checkbox"]:checked { border-color: var(--primary); background: var(--primary); }
 .switch-row input[type="checkbox"]:checked::after { transform: translateX(16px); }
-.warning, .modal-warning { border: 1px solid rgba(215,155,59,.28); border-radius: 6px; color: #e1b66d; background: rgba(215,155,59,.08); font-size: 12px; line-height: 1.5; }
-.warning { margin-top: 10px; padding: 9px 10px; }
+.warning:not(.dot), .modal-warning { border: 1px solid rgba(215,155,59,.28); border-radius: 6px; color: var(--warning); background: rgba(215,155,59,.08); font-size: 14px; line-height: 1.5; }
+.warning:not(.dot) { margin-top: 10px; padding: 9px 10px; }
 .task-control-grid { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pause-all, .resume-all, .safe-stop, .cancel-pending { width: 100%; padding: 10px; border-radius: 6px; font-size: 12px; font-weight: 500; }
 .pause-all { border: 1px solid rgba(215,155,59,.35); color: #e1b66d; background: rgba(215,155,59,.08); }
@@ -993,9 +993,8 @@ footer { padding: 24px 0 34px; display: flex; justify-content: space-between; co
 .interaction-evidence-gallery figcaption span, .interaction-evidence-gallery figcaption time { color: var(--muted); font-size: 12px; }
 
 /* Desktop readability baseline: product content stays legible across the seven workbench pages. */
-.workspace-main :where(small, time, .eyebrow, .section-index, .section-note, .text-button, .inline-error, .preset-notice, .interaction-reason),
-.workspace-main :where([class*="metrics"] span, [class*="metrics"] button, [class*="summary"] span, [class*="chip"], [class*="status"]) {
-  font-size: 12px !important;
+.workspace-main :where(small, time, .eyebrow, .section-index, .section-note) {
+  font-size: 13px;
   line-height: 1.45;
 }
 .workspace-main :where(button, input:not([type="checkbox"]):not([type="radio"]), textarea, select) { min-height: 36px; }

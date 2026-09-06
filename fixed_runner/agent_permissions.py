@@ -1,39 +1,21 @@
-"""Host-owned conversation grants and user-origin operation receipts.
+"""Host-owned user requests and operation receipts, without prose permission gates.
 
-Only HTTP user input enters record/set. MCP can consume a grant, never create
-one. This is application authorization, not an operating-system sandbox.
+The platform Skill interprets conversation intent. Legacy grants and request
+history remain readable without enforcing tiers.
 """
 from contextlib import contextmanager
+import hashlib
 import json
 from pathlib import Path
-import re
 import sqlite3
 import time
 
-LEVELS = {'operate': '操作模式', 'maintain': '维护模式', 'develop': '开发模式'}
-WRITE_FIELDS = {'点赞': ('like_probability', 'matched_like_probability'),
-                '收藏': ('favorite_probability', 'matched_favorite_probability'),
-                '评论': ('comment_probability', 'matched_comment_probability')}
+WRITE_FIELDS = ('like_probability', 'favorite_probability', 'comment_probability',
+                'matched_like_probability', 'matched_favorite_probability', 'matched_comment_probability')
 
 
-def user_intent(text):
-    # Quoted instructions and questions about execution are not commands.
-    plain = re.sub(r'```[\s\S]*?```|“[^”]*”|「[^」]*」|"[^"]*"', '', text).strip()
-    # Excluding other devices/history is a scope restriction, not cancellation
-    # of the separately requested task. An exclusion alone never authorizes it.
-    action_text = re.sub(r'(?:不要|不|别)(?:启动|执行|运行|开跑)\s*(?:[0-9一二三四五六七八九十]+号|其他|旧|历史|另外)[^，,。；;!?\n]*', '', plain)
-    preview = bool(re.search(r'只.{0,5}(计划|方案|预览)|先.{0,5}(方案|计划)|(?:不要|别|不必|不需要|暂不|先不|不)(?:直接)?(?:启动|执行|运行|开跑)|^(?:请)?(?:暂停|停止|取消)|如何|怎么|示例|举例', action_text))
-    execute = not preview and bool(re.search(r'启动|执行|运行|开跑|开始|帮我跑|跑一|跑两|跑[0-9]|恢复.{0,12}(任务|批次)|^(?:继续|确认|可以|开始吧|按这个来)[。！!\s]*$', action_text))
-    resume = execute and bool(re.search(r'(恢复|解除).{0,16}(任务|批次|停止)', plain))
-    writes = {}
-    for label, fields in WRITE_FIELDS.items():
-        match = re.search(label + r'(?:概率|比例)?\s*(?:为|是|[:：])?\s*(\d+(?:\.\d+)?)\s*[%％]', plain)
-        value = float(match[1]) / 100 if match else 0
-        if re.search(r'(?:不|零|禁止|不要)' + label, plain):
-            value = 0
-        for field in fields:
-            writes[field] = value
-    return {'execute': execute, 'resume': resume, 'writes': writes, 'statement': plain[:12000]}
+def content_hash(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
 
 
 class AgentPermissions:
@@ -51,6 +33,7 @@ class AgentPermissions:
             CREATE TABLE IF NOT EXISTS current_requests(session TEXT PRIMARY KEY, request_id TEXT);
             CREATE TABLE IF NOT EXISTS bindings(request_id TEXT, target TEXT, fingerprint TEXT, receipt TEXT, PRIMARY KEY(request_id,target));
             CREATE TABLE IF NOT EXISTS answers(id TEXT PRIMARY KEY, session TEXT);
+            CREATE TABLE IF NOT EXISTS receipt_history(hash TEXT PRIMARY KEY, request_id TEXT, target TEXT, receipt TEXT, created REAL);
         """)
         try:
             with db:
@@ -61,59 +44,45 @@ class AgentPermissions:
     def get(self, session):
         with self.database() as db:
             row = db.execute('SELECT * FROM grants WHERE session=?', (session,)).fetchone()
-        result = dict(row) if row else {'session': session, 'level': 'operate', 'revision': 0, 'source': 'default', 'updated': None}
-        return {**result, 'label': LEVELS[result['level']], 'scope': 'MediaFlow project', 'persistent': 'session'}
+        result = dict(row) if row else {'session': session, 'revision': 0, 'source': 'default', 'updated': None}
+        return {**result, 'level': 'full', 'label': '平台操作', 'scope': 'MediaFlow project', 'persistent': 'session'}
 
     def set(self, session, level, *, source):
-        if level not in LEVELS or source not in {'user_settings', 'user_chat'}:
-            raise ValueError('请由用户选择有效权限等级')
-        with self.database() as db:
-            db.execute("INSERT INTO grants VALUES(?,?,1,?,?) ON CONFLICT(session) DO UPDATE SET level=excluded.level,revision=grants.revision+1,source=excluded.source,updated=excluded.updated",
-                       (session, level, source, time.time()))
+        # Accept obsolete client selections without overwriting historical grants.
+        if level not in {'full', 'operate', 'maintain', 'develop'} or source not in {'user_settings', 'user_chat'}:
+            raise ValueError('无效的平台操作设置')
         return self.get(session)
 
     def require(self, session, tool):
-        required = 'develop' if tool.startswith('repair_') else 'maintain' if tool in {'plan_virtual_operation', 'execute_virtual_operation'} else 'operate'
-        if list(LEVELS).index(self.get(session)['level']) < list(LEVELS).index(required):
-            raise ValueError('此操作需要' + LEVELS[required] + '。请在当前会话说“开启' + LEVELS[required] + '”或在助手设置中选择；原任务不受影响')
+        # Tool/session admission is checked by the host, independently of tiers.
+        if not session:
+            raise ValueError('工具需要有效会话')
 
     def record(self, session, request_id, text):
         """Called once after a validated user message is admitted, before dispatch."""
+        if not session or not request_id:
+            raise ValueError('需要真实用户会话与请求编号')
         with self.database() as db:
             existing = db.execute('SELECT session FROM requests WHERE id=?', (request_id,)).fetchone()
             if existing:
                 if existing['session'] != session:
                     raise ValueError('请求不属于当前会话')
                 return
-            intent = user_intent(text)
-            # Preserve the user-origin consent statement, not model/tool output.
-            db.execute('INSERT INTO requests VALUES(?,?,?,?)', (request_id, session, json.dumps(intent), time.time()))
+            db.execute('INSERT INTO requests VALUES(?,?,?,?)', (request_id, session, json.dumps({'statement': text[:12000]}), time.time()))
             db.execute('INSERT INTO current_requests VALUES(?,?) ON CONFLICT(session) DO UPDATE SET request_id=excluded.request_id', (session, request_id))
-        # Accept a complete leading user directive followed by task details,
-        # never a quoted/example sentence or a question about permissions.
-        directive = re.split(r'[。！!\n]', text, maxsplit=1)[0].strip()
-        match = re.fullmatch(r'(?:请)?(?:确认)?(?:开启|切换到|启用)(操作模式|维护模式|开发模式)', directive)
-        if match:
-            self.set(session, next(key for key, value in LEVELS.items() if value == match[1]), source='user_chat')
-        elif re.fullmatch(r'(?:请)?(?:确认)?(?:撤销|关闭)(?:高权限|开发模式|维护模式)', directive):
-            self.set(session, 'operate', source='user_chat')
 
     def record_answer(self, session, question_id, answers, questions):
-        # A genuine user's answer may supply missing probabilities. Question text
-        # is model generated and never grants execution or elevates permission.
+        # Question labels cannot manufacture a user request or a receipt.
         with self.database() as db:
-            if db.execute('SELECT 1 FROM answers WHERE id=?', (question_id,)).fetchone():
+            existing = db.execute('SELECT session FROM answers WHERE id=?', (question_id,)).fetchone()
+            if existing:
+                if existing['session'] != session:
+                    raise ValueError('问题不属于当前会话')
                 return
             row = db.execute('SELECT r.* FROM requests r JOIN current_requests c ON c.request_id=r.id WHERE c.session=?', (session,)).fetchone()
             if row:
                 intent = json.loads(row['intent'])
-                answer_text = '；'.join(' '.join(answer) for answer in answers)
-                parsed = user_intent(answer_text)
-                for label, fields in WRITE_FIELDS.items():
-                    if label in answer_text:
-                        for field in fields:
-                            intent['writes'][field] = parsed['writes'][field]
-                # Never infer write authority from a model-supplied option label.
+                intent.setdefault('answers', []).append({'question_id': question_id, 'answers': answers})
                 db.execute('UPDATE requests SET intent=? WHERE id=?', (json.dumps(intent), row['id']))
             db.execute('INSERT INTO answers VALUES(?,?)', (question_id, session))
 
@@ -131,50 +100,57 @@ class AgentPermissions:
             row = db.execute('SELECT b.receipt FROM bindings b JOIN requests r ON r.id=b.request_id WHERE r.session=? AND b.target=? ORDER BY r.created DESC LIMIT 1', (session, target)).fetchone()
         return json.loads(row['receipt']) if row else None
 
-    def authorize_operation(self, session, command):
-        row = self.current(session)
-        text = row['intent']['statement'] if row else ''
-        payload = command['request']
-        aliases = {'start': '启动|打开', 'stop': '停止|关闭', 'restart': '重启',
-                   'clone': '复制|克隆', 'backup': '备份', 'settings': '设置|配置|修改',
-                   'repair_standard': '修复|标准|分辨率', 'delete': '删除'}
-        verb = aliases.get(payload['action'])
-        if not verb or not re.search(verb, text) or re.search(r'不要|别|仅预览|只做计划|只读|如何|怎么', text):
-            raise ValueError('请在聊天明确这次虚拟机操作；尚未操作设备')
-        if payload['action'] == 'delete' and (payload['name'] not in text or not re.search('不可恢复|不备份|删除数据|确认删除', text)):
-            raise ValueError('删除需要明确完整名称及数据后果，请回复“确认删除' + payload['name'] + '，数据不可恢复”')
-        return {'request_id': row['id'], 'source': 'user_chat', 'session_id': session,
-                'target': command['command_id'], 'fingerprint': command['fingerprint']}
+    def authorize_operation(self, session, command, *, tool_call_id=''):
+        return self._bind(session, command['command_id'], command['fingerprint'],
+                          {'operation': command['request'], 'config_hash': content_hash(command['request'])},
+                          tool_call_id=tool_call_id, single_target=False)
 
-    def authorize(self, session, target, fingerprint, config, *, stopped=False):
-        row = self.current(session)
-        if not row or not row['intent']['execute']:
-            raise ValueError('当前用户未要求执行。请说明要启动的计划；仅策划不会运行任务')
-        intent = row['intent']
-        if stopped and not intent['resume']:
-            raise ValueError('这是任务安全停止，不是虚拟机关机。请说“恢复这批任务”后继续')
-        approved_writes = intent['writes']
-        if not any(label in intent['statement'] for label in WRITE_FIELDS) and (intent['resume'] or re.fullmatch(r'(?:继续|确认)[。！!\s]*', intent['statement'])):
-            with self.database() as db:
-                old = db.execute('SELECT b.receipt FROM bindings b JOIN requests r ON r.id=b.request_id WHERE r.session=? AND b.target=? AND b.fingerprint=? LIMIT 1',
-                                 (session, target, fingerprint)).fetchone()
-            if old:
-                approved_writes = json.loads(old['receipt']).get('writes', approved_writes)
-        for fields in WRITE_FIELDS.values():
-            for field in fields:
-                value = float(config.get(field) or 0)
-                if value > approved_writes.get(field, 0):
-                    raise ValueError('真实互动比例超出本次聊天授权，请明确点赞、收藏和评论的百分比；未指定则为零')
+    def authorize(self, session, target, fingerprint, config, *, stopped=False, resume_stopped_devices=None, tool_call_id=''):
+        # execute_plan consumes current conversation context. Explicit false
+        # keeps a scoped stop in place; recovery does not require a magic phrase.
+        resume = bool(stopped) if resume_stopped_devices is None else bool(resume_stopped_devices)
+        if stopped and not resume:
+            raise ValueError('本批次仍处于任务安全停止，请通过本批次恢复操作继续')
+        return self._bind(session, target, fingerprint,
+                          {'config_hash': content_hash(config),
+                           'writes': {field: float(config.get(field) or 0) for field in WRITE_FIELDS},
+                           'resume_stopped_devices': resume}, tool_call_id=tool_call_id)
+
+    def _bind(self, session, target, plan_hash, details, *, tool_call_id='', single_target=True):
+        if not target or not plan_hash:
+            raise ValueError('操作缺少目标或配置指纹')
         with self.database() as db:
             db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT r.* FROM requests r JOIN current_requests c ON c.request_id=r.id WHERE c.session=?', (session,)).fetchone()
+            if not row:
+                raise ValueError('操作需要当前已登记的真实用户请求')
             prior = db.execute('SELECT * FROM bindings WHERE request_id=?', (row['id'],)).fetchall()
-            if prior:
-                if len(prior) != 1 or prior[0]['target'] != target or prior[0]['fingerprint'] != fingerprint:
-                    raise ValueError('本次请求已绑定另一份计划，不能重复生成任务；请查看原批次或明确新要求')
-                return json.loads(prior[0]['receipt'])
+            if single_target and any(item['target'] != target and 'writes' in json.loads(item['receipt']) for item in prior):
+                raise ValueError('本次请求已绑定另一份计划，不能重复生成任务；请查看原批次或明确新要求')
+            for item in prior:
+                if item['target'] != target:
+                    continue
+                old = json.loads(item['receipt'])
+                if item['fingerprint'] != plan_hash or (old.get('config_hash') and old['config_hash'] != details.get('config_hash')):
+                    raise ValueError('本次请求已绑定另一份配置，不能重复生成任务')
+                if details.get('resume_stopped_devices') and not old.get('resume_stopped_devices'):
+                    previous = old.get('receipt_hash') or content_hash(old)
+                    db.execute('INSERT OR IGNORE INTO receipt_history VALUES(?,?,?,?,?)',
+                               (previous, row['id'], target, json.dumps(old), time.time()))
+                    receipt = {**old, 'resume_stopped_devices': True, 'previous_receipt_hash': previous,
+                               'tool_call_id': tool_call_id or old.get('tool_call_id', '')}
+                    receipt.pop('receipt_hash', None)
+                    receipt['receipt_hash'] = content_hash(receipt)
+                    db.execute('UPDATE bindings SET receipt=? WHERE request_id=? AND target=?',
+                               (json.dumps(receipt), row['id'], target))
+                    db.execute('INSERT INTO receipt_history VALUES(?,?,?,?,?)',
+                               (receipt['receipt_hash'], row['id'], target, json.dumps(receipt), time.time()))
+                    return receipt
+                return old
             receipt = {'request_id': row['id'], 'source': 'user_chat', 'session_id': session,
-                       'target': target, 'fingerprint': fingerprint, 'permission_revision': self.get(session)['revision'],
-                       'writes': approved_writes,
-                       'resume_stopped_devices': bool(intent['resume'])}
-            db.execute('INSERT INTO bindings VALUES(?,?,?,?)', (row['id'], target, fingerprint, json.dumps(receipt)))
+                       'target': target, 'fingerprint': plan_hash, 'tool_call_id': tool_call_id, **details}
+            receipt['receipt_hash'] = content_hash(receipt)
+            db.execute('INSERT INTO bindings VALUES(?,?,?,?)', (row['id'], target, plan_hash, json.dumps(receipt)))
+            db.execute('INSERT INTO receipt_history VALUES(?,?,?,?,?)',
+                       (receipt['receipt_hash'], row['id'], target, json.dumps(receipt), time.time()))
         return receipt

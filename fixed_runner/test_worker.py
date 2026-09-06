@@ -1791,12 +1791,18 @@ class WorkerSupportTest(unittest.TestCase):
             failed_id = store.submit("healthcheck", "device-1")
             completed_id = store.submit("healthcheck", "device-1")
             healthy = FakeDevice()
+            def outcome_for_task(_device, task, *_args, **_kwargs):
+                # Millisecond timestamps can tie; this test covers recovery,
+                # not ordering of two equally eligible queue entries.
+                if task.id == failed_id:
+                    raise RuntimeError("page changed")
+                return {"status": "passed"}
             with (
                 patch("worker.DeviceLock", return_value=nullcontext()),
                 patch("worker.connect_with_retry", return_value=healthy) as connect,
                 patch(
                     "worker.execute_task",
-                    side_effect=[RuntimeError("page changed"), {"status": "passed"}],
+                    side_effect=outcome_for_task,
                 ),
             ):
                 run_worker(

@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target":"ES2020", "lib":["esnext"], "types":[], "module":"esnext",
+    "moduleResolution":"bundler", "strict":true, "skipLibCheck":true,
+    "noEmit":true, "esModuleInterop":true
+  },
+  "include":["worker/**/*.ts", "db/**/*.ts", "examples/d1/**/*.ts", "worker-runtime.d.ts"]
+}

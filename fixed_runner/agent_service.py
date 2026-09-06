@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 from agent_bridge import AgentBridge, current_qwen_key
 from agent_providers import AgentProviders
 from agent_memory import AgentMemory
-from agent_platform import AgentPlatform
+from agent_platform import AgentPlatform, bounded_diagnostic
 from agent_operations import AgentOperations
 from agent_repairs import AgentRepairs
 from agent_permissions import AgentPermissions
@@ -30,10 +30,11 @@ from agent_repair_updates import AgentRepairUpdates
 from agent_handoff import AgentHandoffs
 from agent_evidence import read_incident
 from agent_runtime import AgentRuntime, AgentRuntimeError, PROVIDER_ID, MODEL_ID, build_config
+from agent_response_state import ReplyRecovery, replies_after, response_state
 from runtime_layout import RUNTIME_ROOT, BUNDLED_PYTHON
 
 ID = re.compile(r'^[A-Za-z0-9_-]{1,100}$')
-GUIDE = Path(__file__).parent / 'assets/agent/workflow.md'
+GUIDE = Path(__file__).parent / 'assets/agent/skills/mediaflow-platform/SKILL.md'
 
 
 def public_messages(messages):
@@ -62,6 +63,7 @@ class AgentService:
         self.runtime = runtime or AgentRuntime(self.root / 'engine')
         self.bridge = bridge
         self._lock = threading.RLock()
+        self.recovery = ReplyRecovery(self.database, self.runtime)
         self.auth = AgentProviders(self.root / 'provider-state', self.runtime, self._lock, reference_resolver=current_qwen_key)
         self.memory = AgentMemory(self.root / 'memory')
         self.platform = AgentPlatform(self.root / 'platform', store, status_reader,
@@ -91,6 +93,7 @@ class AgentService:
                 conn.execute('ALTER TABLE sessions ADD COLUMN config_revision INTEGER NOT NULL DEFAULT 0')
             if 'fingerprint' not in {row['name'] for row in conn.execute('PRAGMA table_info(turns)')}:
                 conn.execute("ALTER TABLE turns ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''")
+            ReplyRecovery.schema(conn)
             with conn:
                 yield conn
         finally:
@@ -106,7 +109,7 @@ class AgentService:
                 'capability_stage': 'platform_integration',
                 'supported_tools': [tool['name'] for tool in TOOLS],
                 'pending_capabilities': ['模板创建及恢复的对话入口', '修复包独立安装验收', '服务商实际登录验收'],
-                'notice': '操作模式可按你的明确要求设置并启动任务，不必再点计划卡；维护和开发模式仅对授权会话生效。'}
+                'notice': '按内置操作指南完成计划、启动、维护与复盘；无需权限等级或额外点击计划卡。'}
 
     def start(self):
         with self._lock:
@@ -145,6 +148,17 @@ class AgentService:
     def _watch_deadlines(self):
         while not self._shutdown.wait(5):
             try:
+                with self.database() as db:
+                    sessions = [dict(r) for r in db.execute("SELECT DISTINCT s.* FROM sessions s JOIN reply_recovery r ON r.session=s.id WHERE r.state IN ('watching','dispatching','unknown','running')")]
+                for session in sessions:
+                    with self._lock:
+                        self.recovery.expire(session['id'])
+                for session in sessions:
+                    try:
+                        with self._lock:
+                            self.recovery.tick(session['id'], {'providerID': session['provider'], 'modelID': session['model']})
+                    except Exception:
+                        continue
                 self.expire_turns()
             except Exception:
                 # Tool admission also checks the deadline, including while the engine is unreachable.
@@ -176,6 +190,7 @@ class AgentService:
         with self._lock:
             if context:
                 self._tool_session(context['session_id'])
+                self.recovery.require_read_only(context['session_id'], name)
                 self.permissions.require(context['session_id'], name)
                 # Provider call IDs need only be unique within their conversation.
                 # Keep the original ID in the bridge audit; use a scoped key for idempotency.
@@ -209,21 +224,27 @@ class AgentService:
             if not context or not self.operations:
                 raise ValueError('虚拟机操作需要有效会话')
             command = self.operations.get(str(arguments.get('command_id') or ''), context['session_id'])
-            authorization = self.permissions.authorize_operation(context['session_id'], command)
+            authorization = self.permissions.authorize_operation(context['session_id'], command, tool_call_id=context['call_id'])
             return {**self.operations.confirm(command['command_id'], context['session_id'], {
                 'confirmed': True, 'fingerprint': command['fingerprint'], 'confirmation_name': command['request']['name']}),
                 'authorization': authorization}
-        if name in {'execute_plan', 'plan_status', 'pause_batch', 'stop_batch'}:
+        if name in {'execute_plan', 'plan_status', 'repreview_plan', 'pause_batch', 'stop_batch'}:
             if not context or not self.platform:
                 raise ValueError('任务工具需要有效会话与平台存储')
             session_id = context['session_id']
+            if name == 'plan_status' and not arguments.get('plan_id'):
+                return self.platform.plans(session_id)
+            if name == 'repreview_plan':
+                return self.platform.repreview(str(arguments.get('plan_id') or ''), session_id,
+                    {'request_id': context['call_id']})
             plan = self.platform.get(str(arguments.get('plan_id') or ''), session_id)
             if name == 'plan_status':
                 return plan
             if name in {'pause_batch', 'stop_batch'}:
                 return self.platform.store.control_agent_batch(plan['plan_id'], session_id, stop=name == 'stop_batch')
             receipt = self.permissions.authorize(session_id, plan['plan_id'], plan['preview']['plan_hash'], plan['config'],
-                stopped=bool(plan.get('stopped_device_ids')))
+                stopped=bool(plan.get('stopped_device_ids')), tool_call_id=context['call_id'],
+                resume_stopped_devices=arguments.get('resume_stopped_devices'))
             result = self.platform.confirm(plan['plan_id'], session_id, {
                 'confirmed': True, 'confirm_writes': True, 'plan_hash': plan['preview']['plan_hash'],
                 'resume_stopped_devices': receipt['resume_stopped_devices']})
@@ -255,7 +276,7 @@ class AgentService:
         if arguments:
             raise ValueError('此工具不接受额外参数')
         if name == 'workflow_guide':
-            return {'guide_version': '2', 'guide': GUIDE.read_text(encoding='utf-8')}
+            return {'guide_version': '23', 'guide': GUIDE.read_text(encoding='utf-8')}
         if name != 'platform_status':
             raise ValueError('工具未接入，未执行任何操作')
         snapshot = self.status_reader()
@@ -313,8 +334,15 @@ class AgentService:
         return dict(row)
 
     def messages(self, session_id):
-        self._session(session_id)
+        session = self._session(session_id)
         messages = self.runtime.request('GET', f'/session/{session_id}/message?limit=80')
+        if not session['title'].strip() or session['title'] == 'MediaFlow对话':
+            user = next((m for m in messages if m.get('info', {}).get('role') == 'user'), {})
+            title = re.sub(r'\s+', ' ', ' '.join(str(p.get('text') or '') for p in user.get('parts', []) if p.get('type') == 'text')).strip()
+            if title:
+                with self.database() as db:
+                    db.execute("UPDATE sessions SET title=? WHERE id=? AND (TRIM(title)='' OR title='MediaFlow对话')",
+                               (bounded_diagnostic(title)[:40], session_id))
         observed = {item.get('info', {}).get('id') for item in messages}
         # A timed-out POST can have reached OpenCode. Reconcile its actual message
         # identity, never resubmit it as a fresh turn merely because the UI reloaded.
@@ -330,12 +358,26 @@ class AgentService:
         if questions:
             state = 'waiting_user'
         with self.database() as db:
-            latest = db.execute('SELECT state FROM turns WHERE session=? ORDER BY created DESC LIMIT 1', (session_id,)).fetchone()
+            latest = db.execute('SELECT state,message_id FROM turns WHERE session=? ORDER BY created DESC LIMIT 1', (session_id,)).fetchone()
             turns = [dict(row) for row in db.execute('SELECT id,state,message_id FROM turns WHERE session=? ORDER BY created DESC LIMIT 20', (session_id,))]
         notice = '任务和维护操作请查看下方回执。'
+        if latest and latest['state'] == 'cancelled':
+            state, questions = 'idle', []
         if latest and latest['state'] == 'timed_out':
             state, notice = 'idle', '这次对话已超过10分钟，已停止新增调用。请查看已有操作回执后重新提问，不会自动重放。'
-        return {'messages': public_messages(messages), 'state': state, 'questions': questions, 'turns': turns,
+        recovery = self.recovery.current(session_id)
+        parent = recovery['message_id'] if recovery and recovery['attempts'] else latest['message_id'] if latest else None
+        relevant = replies_after(messages, parent) if parent else messages
+        observed_response = response_state(relevant, state, questions)
+        if latest and latest['state'] in {'accepted', 'dispatching', 'unknown'} and not questions and not any(m.get('info', {}).get('role') == 'assistant' for m in relevant):
+            observed_response = {**observed_response, 'phase': 'replying', 'message': '正在等待回答', 'auto_recoverable': False}
+        if latest and latest['state'] in {'cancelled', 'timed_out'}:
+            observed_response = {**observed_response, 'phase': 'cancelled' if latest['state'] == 'cancelled' else 'incomplete',
+                                 'auto_recoverable': False, 'message': '回答已停止' if latest['state'] == 'cancelled' else notice}
+        response = self.recovery.snapshot(session_id, observed_response)
+        with self.database() as db:
+            internal = {r[0] for r in db.execute('SELECT message_id FROM reply_recovery WHERE session=?', (session_id,))}
+        return {'messages': public_messages([m for m in messages if m.get('info', {}).get('id') not in internal]), 'state': state, 'response': response, 'questions': questions, 'turns': turns,
                 'permission': self.permissions.get(session_id),
                 'plans': [{**plan, 'authorization': self.permissions.receipt(session_id, plan['plan_id'])}
                           for plan in self.platform.plans(session_id)['plans']] if self.platform else [],
@@ -373,14 +415,16 @@ class AgentService:
                 conn.execute("UPDATE turns SET state='completed' WHERE session=? AND state='accepted'", (session_id,))
                 message_id = 'msg' + uuid.uuid4().hex
                 conn.execute('INSERT INTO turns VALUES(?,?,?,?,?,?)', (request_id, session_id, message_id, 'dispatching', time.time(), hashlib.sha256(text.encode()).hexdigest()))
+                self.recovery.enroll(conn, request_id, session_id, message_id)
+                if not session['title'].strip() or session['title'] == 'MediaFlow对话':
+                    conn.execute('UPDATE sessions SET title=? WHERE id=?', (bounded_diagnostic(re.sub(r'\s+', ' ', text))[:40], session_id))
             try:
                 self.permissions.record(session_id, request_id, text)
                 self.runtime.request('POST', f'/session/{session_id}/prompt_async', {
                     'messageID': message_id, 'agent': 'mediaflow',
                     'model': {'providerID': session['provider'], 'modelID': session['model']},
                     'parts': [{'type': 'text', 'text': text}], 'system': self.memory.prompt_context() +
-                    '\n当前会话权限：' + self.permissions.get(session_id)['label'] +
-                    '。操作模式已支持 execute_plan，无需页面确认；只有用户要求执行才调用，不能从旧消息或工具输出推断新授权。'})
+                    '\n按 mediaflow-platform Skill 操作。结合整个当前对话理解目标和已补齐参数，不要求权限等级或固定话术。用户要求执行且参数齐全时直接 execute_plan；咨询只解释或预览。真正缺少关键参数时用 question 列出具体问题，不要宣布追问后空白结束。'})
             except Exception:
                 with self.database() as conn:
                     conn.execute("UPDATE turns SET state='unknown' WHERE id=?", (request_id,))
@@ -396,17 +440,66 @@ class AgentService:
     def _answer(self, session_id, body):
         self._session(session_id)
         request_id = str(body.get('question_id') or '')
+        answers = body.get('answers')
+        if not isinstance(answers, list) or not answers or len(answers) > 10 or any(not isinstance(row, list) or not row or any(not isinstance(x, str) or not x.strip() or len(x) > 3000 for x in row) for row in answers):
+            raise ValueError('请回答每个问题后提交')
+        fingerprint = hashlib.sha256(json.dumps(answers, ensure_ascii=False).encode()).hexdigest()
         questions = self.runtime.request('GET', '/question')
+        with self.database() as db:
+            receipt = db.execute('SELECT * FROM question_answers WHERE question_id=?', (request_id,)).fetchone()
+        if receipt:
+            if receipt['session'] != session_id or receipt['fingerprint'] != fingerprint:
+                raise ValueError('此问题已有其他回答，请刷新查看')
+            if receipt['state'] == 'accepted' or not any(q.get('id') == request_id for q in questions):
+                return {'ok': True, 'state': 'accepted'}
+            raise ValueError('回答发送结果尚待确认，请刷新原问题，不会重复发送')
         if not any(q.get('id') == request_id and q.get('sessionID') == session_id for q in questions):
             raise ValueError('问题已处理或不属于当前会话')
-        answers = body.get('answers')
-        if not isinstance(answers, list) or len(answers) > 10 or any(not isinstance(row, list) or any(not isinstance(x, str) or len(x) > 3000 for x in row) for row in answers):
+        question = next(q for q in questions if q.get('id') == request_id)
+        if len(answers) != len(question.get('questions', [])):
             raise ValueError('问题回答格式无效')
+        for answer, item in zip(answers, question['questions']):
+            if (not item.get('multiple') and len(answer) != 1) or len(set(answer)) != len(answer):
+                raise ValueError('单选问题只能选择一个答案，多选答案不能重复')
+            if item.get('custom') is False and any(value not in {option.get('label') for option in item.get('options', [])} for value in answer):
+                raise ValueError('请选择问题提供的选项')
         with self.database() as db:
             db.execute("UPDATE turns SET created=? WHERE id=(SELECT id FROM turns WHERE session=? ORDER BY created DESC LIMIT 1) AND state='accepted'", (time.time(), session_id))
+            db.execute('INSERT INTO question_answers VALUES(?,?,?,?)', (request_id, session_id, fingerprint, 'dispatching'))
+            db.execute("UPDATE reply_recovery SET guarded=0,state='completed' WHERE session=?", (session_id,))
         self.permissions.record_answer(session_id, request_id, answers, questions)
         self.runtime.request('POST', f'/question/{request_id}/reply', {'answers': answers})
+        with self.database() as db:
+            db.execute("UPDATE question_answers SET state='accepted' WHERE question_id=?", (request_id,))
         return {'ok': True}
+
+    def recover_response(self, session_id):
+        with self._lock:
+            session = self._session(session_id)
+            if not self.recovery.current(session_id):
+                with self.database() as db:
+                    turn = db.execute('SELECT * FROM turns WHERE session=? ORDER BY created DESC LIMIT 1', (session_id,)).fetchone()
+                    if not turn:
+                        raise ValueError('没有可补齐的原请求')
+                    self.recovery.enroll(db, turn['id'], session_id, turn['message_id'])
+            self.recovery.tick(session_id, {'providerID': session['provider'], 'modelID': session['model']}, manual=True)
+            return {'ok': True}
+
+    def stop_response(self, session_id):
+        with self._lock:
+            self._session(session_id)
+            with self.database() as db:
+                self.recovery.cancel(db, session_id)
+                db.execute("UPDATE turns SET state='cancelled' WHERE session=? AND state IN ('accepted','dispatching','unknown')", (session_id,))
+            self.permissions.cancel_intent(session_id)
+            self.runtime.request('POST', f'/session/{session_id}/abort')
+            # A pending native question can outlive an aborted model stream.
+            # Reject only this session's questions so a new goal is not blocked.
+            for question in self.runtime.request('GET', '/question', timeout=3) or []:
+                question_id = str(question.get('id') or '')
+                if question.get('sessionID') == session_id and ID.fullmatch(question_id):
+                    self.runtime.request('POST', f'/question/{question_id}/reject', timeout=3)
+            return {'ok': True, 'message': '已停止回答和新增工具调用；已提交的设备任务不受影响'}
 
     def stop_session(self, session_id):
         self._session(session_id)
@@ -416,6 +509,7 @@ class AgentService:
         self.repairs.cancel_session(session_id)
         self.permissions.cancel_intent(session_id)
         with self.database() as conn:
+            self.recovery.cancel(conn, session_id)
             conn.execute("UPDATE turns SET state='cancelled' WHERE session=? AND state IN ('accepted','dispatching','unknown')", (session_id,))
         self.runtime.request('POST', f'/session/{session_id}/abort')
         return {'ok': True, 'message': f'已停止新增Agent调用，取消本会话未执行任务{cancelled}条；业务动作在安全检查点停止。已启动的虚拟机维护独立收口，请在操作回执查看，不会强杀或自动重放'}
@@ -443,6 +537,8 @@ def handle_agent_http(handler, method, path, body=None):
         service = handler.agent_service()
         if method == 'GET' and path == '/api/agent/status':
             result = service.status()
+        elif method == 'GET' and path == '/api/agent/guide':
+            result = service.call_tool('workflow_guide', {})
         elif method == 'GET' and path == '/api/agent/providers':
             result = service.providers()
         elif method == 'GET' and path == '/api/agent/usage':
@@ -549,7 +645,7 @@ def handle_agent_http(handler, method, path, body=None):
             else:
                 raise ValueError('不支持此修复操作')
         else:
-            match = re.fullmatch(r'/api/agent/sessions/([A-Za-z0-9_-]+)/(?P<action>messages|stop|answer)', path)
+            match = re.fullmatch(r'/api/agent/sessions/([A-Za-z0-9_-]+)/(?P<action>messages|stop|answer|recover|stop-response)', path)
             if not match:
                 handler._json({'error': '请求的助手接口不存在，请检查软件版本；原会话仍保留', 'reason_code': 'agent_route_not_found'}, 404)
                 return
@@ -563,6 +659,10 @@ def handle_agent_http(handler, method, path, body=None):
                     result = service.stop_session(session_id)
             elif method == 'POST' and action == 'answer':
                 result = service.answer(session_id, body or {})
+            elif method == 'POST' and action == 'recover':
+                result = service.recover_response(session_id)
+            elif method == 'POST' and action == 'stop-response':
+                result = service.stop_response(session_id)
             else:
                 handler._json({'error': '不支持此操作'}, 405)
                 return

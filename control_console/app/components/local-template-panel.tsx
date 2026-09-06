@@ -67,7 +67,7 @@ export function LocalTemplatePanel() {
       setNotice("已请求安全取消，当前命令完成后停止；保留已创建的实例，请勿重复创建。");
     } catch (error) { setNotice(error instanceof Error ? error.message : "取消请求失败"); }
   };
-  return <section className="panel"><h2>本机标准模板</h2>
+  return <section className="panel local-template-panel"><h2>本机标准模板</h2>
     <p>{state.message || "首次添加时自动建立模板：只复制抖音安装文件，不复制账号和应用数据。"}</p>
     {state.app_version && <p>抖音 {state.app_version} · 模板 {state.template_version?.slice(0, 8)}</p>}
     {state.source === "private_snapshot" && <p role="note">私人快照 · 可能包含缓存及账号标识，不是公共干净模板。版本 {state.template_version} · SHA-256 {state.sha256?.slice(0, 12)}…</p>}

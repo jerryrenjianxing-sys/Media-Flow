@@ -1,6 +1,9 @@
 // Only local interface state. Messages and execution receipts remain server-owned.
 const recentKey = "mediaflow-agent-recent-session";
 const valid = value => typeof value === "string" && /^[A-Za-z0-9_-]{1,160}$/.test(value);
+export function shouldSendKey(event) {
+  return event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229 && !event.repeat;
+}
 export function resizeComposer(input) {
   if (!input) return;
   input.style.height = "36px";
@@ -17,7 +20,7 @@ export function loadSessionUi(storage,id) {
   const blank={text:"",requestId:null,notice:"",answers:{}};
   try { const saved=JSON.parse(storage.getItem("mediaflow-agent-ui:"+id) || "null");
     if (!saved || typeof saved!=="object") return blank;
-    return {text:typeof saved.text==="string"?saved.text.slice(0,12000):"",requestId:valid(saved.requestId)?saved.requestId:null,
+    return {text:typeof saved.text==="string"?saved.text.slice(0,12000):"",requestId:valid(saved.requestId)?saved.requestId:null,sentText:typeof saved.sentText==="string"?saved.sentText:"",
       notice:typeof saved.notice==="string"?saved.notice.slice(0,2000):"",answers:saved.answers && typeof saved.answers==="object"?saved.answers:{}};
   } catch { return blank; }
 }

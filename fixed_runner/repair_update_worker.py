@@ -1,4 +1,5 @@
 """Detached development updater. Never runs model-provided command strings."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -96,8 +97,8 @@ class DevelopmentDriver:
         self.u.permissions.require(self.job['session'], 'repair_apply')
         with self.u.database() as db:
             row = db.execute('SELECT * FROM approvals WHERE request_id=?', (self.job['request_id'],)).fetchone()
-        if not row or row['revision'] != self.u.permissions.get(self.job['session'])['revision']:
-            raise ValueError('更新授权已撤销或改变')
+        if not row or (row['session'], row['repair'], row['hash']) != (self.job['session'], self.job['repair'], self.job['hash']):
+            raise ValueError('更新请求与补丁回执不匹配')
         if self.u.repairs.diff(self.job['repair'], self.job['session'])['source_hash'] != self.job['hash']:
             raise ValueError('已确认补丁发生变化，未应用')
 
@@ -127,10 +128,13 @@ class DevelopmentDriver:
             raise ValueError('主项目不是已确认的干净基准，不能覆盖其他修改')
         if self.stage_root.exists():
             raise ValueError('已有更新工作区，结果需要核对；不会重复创建或应用')
-        self.command(['git', 'worktree', 'add', '--detach', str(self.stage_root), self.job['base']])
-        frozen = json.loads((self.u.root / 'approved' / (self.job['hash'] + '.json')).read_text(encoding='utf-8'))
+        snapshot = (self.u.root / 'approved' / (self.job['hash'] + '.json')).read_bytes()
+        if not self.job.get('snapshot_hash') or hashlib.sha256(snapshot).hexdigest() != self.job['snapshot_hash']:
+            raise ValueError('已验证补丁快照内容不匹配或缺少内容回执，未应用')
+        frozen = json.loads(snapshot)
         if frozen['source_hash'] != self.job['hash']:
             raise ValueError('已确认补丁快照不匹配，未应用')
+        self.command(['git', 'worktree', 'add', '--detach', str(self.stage_root), self.job['base']])
         for name, content in frozen['files'].items():
             target = self.u.repairs.file(self.stage_root, name)
             if content is not None:

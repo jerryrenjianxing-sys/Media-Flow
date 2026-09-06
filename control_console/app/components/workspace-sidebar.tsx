@@ -12,7 +12,7 @@ export const workspaceGroups: readonly {label:string;links:readonly WorkspaceRou
   {
     label: "任务生命周期",
     links: [
-      { href: "/", label: "MediaFlow 助手", icon: "create" as const, description: "对话、计划与执行" },
+      { href: "/", label: "MediaFlow · 一站式媒体自动化Agent", icon: "create" as const, description: "对话、计划与执行" },
       { href: "/manage", label: "管理中心", icon: "assets" as const, description: "任务、设备与完整设置" },
       { href: "/workbench", label: "任务台", icon: "create" as const, description: "创建、预览并启动任务" },
       { href: "/run", label: "运行", icon: "run" as const, description: "队列监控与安全控制" },

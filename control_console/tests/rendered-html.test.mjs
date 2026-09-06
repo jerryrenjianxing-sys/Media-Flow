@@ -17,11 +17,34 @@ async function source(path) {
   return readFile(new URL(path, import.meta.url), "utf8");
 }
 
+test("chat viewport height reaches the page wrapper so the composer remains visible", async () => {
+  const css = await source('../app/agent-studio.css');
+  assert.match(cssRule(css,'.mf-chat-shell .agent-home'), /height:100%/);
+  assert.match(cssRule(css,'.mf-chat-shell .mf-content'), /min-height:0/);
+});
+
+test("interaction device summaries wrap instead of squeezing five columns on phones", async () => {
+  const css=await source('../app/workspace-pages.css');
+  assert.match(cssRule(css,'.interaction-device-overview > div'), /auto-fit/);
+  assert.match(cssRule(css,'.interaction-device-overview > header'), /flex-direction:column/);
+});
+
+function cssRule(css, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`));
+  assert.ok(match, `Missing CSS rule for ${selector}`);
+  return match[1];
+}
+
 test("homepage is Agent-only and preserves the traditional workbench under management", async () => {
   const response = await render();
   const html = await response.text();
   assert.equal(response.status, 200);
-  assert.match(html, /告诉助手你要做什么/);
+  assert.match(html, /开始一个新目标/);
+  assert.match(html, /aria-label="会话历史"/);
+  assert.match(html, /id="agent-input"/);
+  assert.match(html, /Enter 发送 · Shift \+ Enter 换行/);
+  assert.doesNotMatch(html, /class="mf-management-nav"|class="workspace-sidebar"/);
   assert.doesNotMatch(html, /正在准备任务台/);
   assert.match(html, /管理中心/);
   const page = await source("../app/components/agent-workbench.tsx");
@@ -47,7 +70,11 @@ test('legacy task links lead to workbench and emergency access remains visible',
     assert.doesNotMatch(page, /href="\/"/);
     assert.match(page, /href="\/workbench"/);
   }
-  assert.match(await source('../app/agent-studio.css'), /safety-control.*display:inline-flex/);
+  const shell = await source('../app/components/console-shell.tsx');
+  assert.match(shell, /className="mf-stop"\s+href="\/run"/);
+  const studioCss = await source('../app/agent-studio.css');
+  assert.match(studioCss, /\.mf-status,\s*\.mf-issues,\s*\.mf-stop\s*\{[^}]*display:\s*inline-flex/);
+  assert.doesNotMatch(studioCss, /[^{}]*\.mf-stop\b[^{}]*\{[^}]*display:\s*none/);
   const plans = await source('../app/components/agent-plans.tsx');
   assert.doesNotMatch(plans, /href="\/results"/);
   assert.match(plans, /records\?task_id=/);
@@ -70,42 +97,87 @@ test("model settings expose isolated experimental Token Plan save test and enabl
   assert.match(page, /finally \{ setModelAction\(""\); setBusy\(false\); \}/);
 });
 
-test("renders management navigation and persisted presentation controls", async () => {
+test("renders one branded application header with persisted theme and recoverable status", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /MediaFlow 媒体自动化平台/);
-  for (const label of ["MediaFlow 助手", "管理中心", "安全停止"]) assert.match(html, new RegExp(label));
-  assert.match(html, /workspace-sidebar-toggle/);
-  assert.match(html, /workspace-sidebar-scrim/);
-  assert.match(html, /workspace-sidebar-head/);
-  assert.match(html, /workspace-menu-icon/);
-  assert.match(html, /workspace-nav-copy/);
-  assert.match(html, /切换到浅色主题/);
+  assert.match(html, /MediaFlow · 一站式媒体自动化Agent/);
+  assert.equal([...html.matchAll(/<header\b[^>]*class="mf-topbar"/g)].length, 1);
+  for (const label of ["管理中心", "停止入口", "设置"]) assert.ok(html.includes(label));
+  assert.match(html, /aria-label="切换到(?:浅|深)色主题"/);
+  assert.match(html, /href="#main-content"/);
+  assert.match(html, /id="main-content"/);
   assert.match(html, /mediaflow-asset-recovery/);
   assert.match(html, /asset_reload/);
   assert.doesNotMatch(html, /正在准备任务台/);
   assert.doesNotMatch(html, /Building your site|Your site is taking shape/);
 
   const shell = await source("../app/components/console-shell.tsx");
-  assert.match(shell, /mediaflow-sidebar-collapsed/);
-  assert.match(shell, /gsap\.fromTo/);
-  assert.doesNotMatch(shell, /gsap\/Flip|Flip\.getState|Flip\.from/);
-  assert.match(shell, /sidebarFromWidthRef/);
-  assert.doesNotMatch(shell, /scale: 0\.9/);
-  assert.match(shell, /stagger: 0\.015/);
-  assert.match(shell, /max-width: 1180px/);
-  assert.match(shell, /power3\.inOut/);
-  assert.match(shell, /clipPath/);
-  assert.match(shell, /function collapseSidebarFromWorkspace/);
-  assert.match(shell, /document\.addEventListener\("click", collapseSidebarFromWorkspace\)/);
-  assert.match(shell, /sidebarRef\.current\?\.contains\(target\)/);
-  assert.match(shell, /sidebarScrimRef\.current\?\.contains\(target\)/);
-  assert.match(shell, /pathname === "\/interactions"/);
-  assert.match(shell, /pathname === "\/governance"/);
+  assert.match(shell, /mediaflow-theme/);
+  assert.match(shell, /prefers-color-scheme: dark/);
+  assert.match(shell, /mediaflow-theme-change/);
+  assert.match(shell, /fetchLocalApi/);
+  assert.match(shell, /\/api\/status/);
   assert.match(shell, /问题待处理/);
-  assert.match(shell, /本机服务未连接 · 点击重试/);
+  assert.match(shell, /服务未连接 · 重试/);
   assert.match(shell, /\/devices#device-issues/);
+  assert.match(shell, /className="mf-issues"[^>]*>[\s\S]*?<svg[^>]*aria-hidden="true"/);
+  assert.match(shell, /<InteractionAlertBanner\s*\/>/);
+});
+
+test("management pages retain all business destinations and return to Agent settings", async () => {
+  const response = await render('/manage');
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.equal([...html.matchAll(/<header\b[^>]*class="mf-topbar"/g)].length, 1);
+  const navigation = html.match(/<nav class="mf-management-nav"[^>]*>[\s\S]*?<\/nav>/)?.[0];
+  assert.ok(navigation, 'Management routes must expose shared navigation');
+  for (const path of ['/', '/manage', '/devices', '/workbench', '/run', '/records', '/interactions', '/content', '/governance', '/?settings=models']) {
+    assert.ok(navigation.includes(`href="${path}"`), `Missing management destination: ${path}`);
+  }
+  assert.match(navigation, /href="\/manage"[^>]*aria-current="page"/);
+});
+
+test("settings group model access, operation guide, preferences, data and collapsed About details", async () => {
+  const page = await source('../app/components/agent-workbench.tsx');
+  for (const label of ['模型与连接', '操作指南', '偏好', '数据', '关于']) assert.ok(page.includes(label));
+  assert.match(page, /settingsTab\s*===\s*"guide"/);
+  assert.match(page, /agentRequest(?:<[^>]+>)?\(\s*["']guide["']/);
+  assert.doesNotMatch(page, /href="http:\/\/127\.0\.0\.1:48138\/api\/agent\/guide"/);
+  assert.doesNotMatch(page, /id="agent-permission"|撤销高权限|会话权限/);
+  assert.match(page, /settingsTab\s*===\s*"models"/);
+  assert.match(page, /<AgentProviderSettings\b/);
+  assert.match(page, /<AgentUsage\s*\/>/);
+  assert.match(page, /settingsTab\s*===\s*"preferences"\s*&&\s*<PreferenceSettings\s*\/>/);
+  assert.match(page, /settingsTab\s*===\s*"about"\s*&&\s*<>\s*<AboutSettings\s*\/>/);
+  assert.match(page, /href="\/governance"/);
+  const about = await source('../app/components/settings-about.tsx');
+  for (const label of ['关于与开源许可', '使用说明与免责声明']) {
+    assert.ok(about.includes(`<details><summary>${label}</summary>`));
+  }
+  assert.doesNotMatch(about, /<details\b[^>]*\bopen(?:\s|=|>)/);
+  assert.match(about, /product_version\?\.display_version/);
+  assert.match(about, /value="system"/);
+  assert.match(about, /localStorage\.removeItem\("mediaflow-theme"\)/);
+  assert.match(about, /mediaflow-theme-change/);
+  const html = await (await render()).text();
+  assert.doesNotMatch(html, /关于与开源许可|使用说明与免责声明|OpenCode（MIT）/);
+});
+
+test("composer wires the shared send and resize guards into accessible input", async () => {
+  const page = await source('../app/components/agent-workbench.tsx');
+  assert.match(page, /resizeComposer\(inputRef\.current\)/);
+  assert.match(page, /shouldSendKey\(/);
+  assert.match(page, /onCompositionStart=/);
+  assert.match(page, /onCompositionEnd=/);
+  assert.match(page, /e\.nativeEvent\.isComposing/);
+  assert.match(page, /if\s*\(!ui\.requestId\)\s*void send\(\)/);
+  assert.match(page, /<label[^>]*htmlFor="agent-input"/);
+  assert.match(page, /<textarea[^>]*id="agent-input"[^>]*rows=\{1\}/);
+  const inputCss = cssRule(await source('../app/agent-studio.css'), '.agent-composer textarea');
+  assert.match(inputCss, /min-height:\s*36px/);
+  assert.match(inputCss, /max-height:\s*200px/);
+  assert.match(inputCss, /overflow:\s*auto/);
 });
 
 test("task workbench follows the four decisions and server-owned planning contract", async () => {
@@ -154,47 +226,42 @@ test("visual system uses real capsule switches, responsive layout and reduced mo
   assert.match(css, /border-radius: 999px/);
   assert.match(css, /\.capsule-switch input:checked \+ i::after/);
   assert.match(css, /prefers-reduced-motion: reduce/);
-  assert.match(css, /grid-template-columns: var\(--sidebar-rail\) minmax\(0, 1fr\)/);
-  assert.doesNotMatch(css, /--sidebar-width/);
-  assert.match(css, /\.workspace-sidebar-scrim/);
-  assert.match(css, /position: fixed/);
-  assert.match(css, /--sidebar-expanded: 280px/);
-  assert.match(css, /--sidebar-inset: 16px/);
-  assert.match(css, /--sidebar-rail: 64px;[^}]*--sidebar-inset: 12px/);
-  assert.match(css, /padding: 12px var\(--sidebar-inset\) 14px/);
-  assert.match(css, /\.sidebar-collapsed \.workspace-sidebar-status \{ width: 40px/);
-  assert.match(css, /grid-template-columns: 40px minmax\(0, 1fr\)/);
-  assert.match(css, /\.sidebar-collapsed \.workspace-nav a \{ grid-template-columns: 40px 0/);
-  assert.match(css, /\.sidebar-collapsed \.workspace-nav a\.active \{ background: transparent/);
-  assert.match(css, /\.sidebar-collapsed \.workspace-nav a\.active > \.workspace-nav-mark \{ background:/);
-  assert.doesNotMatch(css, /\.sidebar-collapsed \.workspace-sidebar-head \{[^}]*justify-content: center/s);
-  assert.doesNotMatch(css, /\.sidebar-collapsed \.workspace-sidebar \{[^}]*padding-(?:right|left): 10px/s);
-  assert.doesNotMatch(css, /\.workspace-sidebar-scrim \{[^}]*backdrop-filter/s);
-  assert.doesNotMatch(css, /\.workspace-shell \{[^}]*transition: grid-template-columns/s);
   assert.match(css, /@media \(max-width: 520px\)/);
   assert.match(css, /device-selection-count \{ white-space: nowrap/);
 
   const tokens = await source("../app/design-tokens.css");
   const design = await source("../DESIGN.md");
   assert.match(css, /@import "\.\/design-tokens\.css"/);
-  assert.match(tokens, /--primary: #5e6ad2/);
+  for (const token of ['--canvas', '--surface-1', '--hairline', '--ink', '--primary', '--danger']) {
+    assert.ok(tokens.includes(`${token}:`), `Missing shared design token: ${token}`);
+  }
+  assert.match(tokens, /:root\[data-theme="light"\]/);
+  assert.match(tokens, /color-scheme:\s*dark/);
+  assert.match(tokens, /color-scheme:\s*light/);
   assert.match(design, /status: active/);
-  assert.match(design, /GSAP/);
-  assert.match(design, /主工作区宽度不变/);
-  assert.match(css, /\.workspace-nav h2 \{ height: 16px;[^}]*white-space: nowrap/);
-  assert.doesNotMatch(css, /\.sidebar-collapsed \.workspace-nav \{[^}]*gap:/s);
-  assert.match(design, /并在展开前、动画中和展开后保持完全一致/);
   assert.match(css, /container-name: workbench/);
   assert.match(css, /@container workbench \(max-width: 1100px\)/);
   assert.match(css, /container-name: segment-flow/);
   assert.match(css, /@container segment-flow \(max-width: 720px\)/);
   assert.match(css, /\.segment-config > div > span \{[^}]*white-space: nowrap/s);
 
-  const sidebar = await source("../app/components/workspace-sidebar.tsx");
-  assert.match(sidebar, /workspaceGroups/);
-  assert.match(sidebar, /WorkspaceIcon/);
-  assert.match(sidebar, /viewBox="0 0 24 24"/);
-  assert.doesNotMatch(sidebar, /mark: "(?:录|机|文)"/);
+  const studioCss = await source('../app/agent-studio.css');
+  assert.match(studioCss, /@media\s*\(max-width:\s*700px\)/);
+  assert.match(studioCss, /prefers-reduced-motion:\s*reduce/);
+  assert.match(cssRule(studioCss, '.agent-studio'), /grid-template-columns:\s*240px minmax\(0,\s*1fr\)/);
+  assert.match(cssRule(studioCss, '.agent-session-list'), /overflow:\s*auto/);
+  const titleCss = cssRule(studioCss, '.agent-session-list .session-title');
+  assert.match(titleCss, /visibility:\s*visible/);
+  assert.match(titleCss, /opacity:\s*1/);
+  assert.match(titleCss, /text-overflow:\s*ellipsis/);
+  const issueIconCss = cssRule(studioCss, '.mf-issues svg');
+  assert.match(issueIconCss, /width:\s*16px/);
+  assert.match(issueIconCss, /height:\s*16px/);
+  assert.match(issueIconCss, /flex:\s*none/);
+  assert.match(cssRule(studioCss, '.agent-chat .agent-messages'), /overflow:\s*auto/);
+  assert.match(cssRule(studioCss, '.agent-details'), /position:\s*fixed/);
+  assert.match(cssRule(studioCss, '.history-open .agent-history'), /position:\s*fixed/);
+  assert.doesNotMatch(css + studioCss, /(?:^|})\s*\.(?:selected|online|busy|ready)\s*\{/);
 });
 
 test("run workspace only monitors and safely controls existing work", async () => {
@@ -368,6 +435,9 @@ test("governance and legacy evidence routes remain available", async () => {
   }
   const governance = await source("../app/governance/page.tsx");
   assert.match(governance, /创建数据库备份/);
+  assert.match(governance, /重新读取/);
+  assert.match(governance, /finally \{ setLoading\(false\); \}/);
+  assert.doesNotMatch(governance, /本机控制服务未启动/);
   assert.match(governance, /\/api\/topic-reviews\/confirm/);
   assert.doesNotMatch(governance, /api\/evidence\/delete|api\/evidence\/cleanup/);
   const interactions = await source("../app/interactions/page.tsx");

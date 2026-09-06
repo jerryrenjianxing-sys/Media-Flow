@@ -1,4 +1,5 @@
 """Real git/file activation in disposable projects; no running service/device."""
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -51,7 +52,8 @@ class IsolatedUpdateIntegration(unittest.TestCase):
         updates.repairs.diff.return_value = {'changed_files':['fixed_runner/rule.py']}
         updates.repairs.workspace.return_value = self.candidate
         updates.repairs.file = AgentRepairs.file
-        job = {'id':'fixture', 'base':self.base, 'repair':'repair', 'session':'session', 'hash':'hash'}
+        job = {'id':'fixture', 'base':self.base, 'repair':'repair', 'session':'session', 'hash':'hash',
+               'snapshot_hash': hashlib.sha256((updates.root / 'approved/hash.json').read_bytes()).hexdigest()}
         class FixtureDriver(DevelopmentDriver):
             def command(inner, args, **kwargs):
                 if any(str(x).endswith('repair_validation.py') for x in args):

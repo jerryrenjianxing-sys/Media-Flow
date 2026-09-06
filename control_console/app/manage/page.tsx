@@ -1,10 +1,14 @@
 /* eslint-disable @next/next/no-html-link-for-pages */
-const entries=[
-  ["/workbench","任务台","完整任务参数、草稿和预览"],
-  ["/devices","设备管理","虚拟机、实时画面与设备问题"],
-  ["/run","运行与停止","查看队列、暂停和安全停止任务"],
-  ["/records","结果与证据","历史任务、纠错记录和互动凭证"],
-  ["/content","资产与设置","模型、内容计划和数据存储"],
-  ["/governance","数据治理","证据保留、备份与检查"],
-];
-export default function ManagementPage(){return <main className="page-shell management-page"><header><p className="eyebrow">MEDIAFLOW</p><h1>管理中心</h1><p>完整功能保留在这里。日常操作可以回到助手对话。</p><a className="secondary" href="/">返回助手</a></header><div className="management-grid">{entries.map(([href,title,description])=><a className="panel" key={href} href={href}><h2>{title} ↗</h2><p>{description}</p></a>)}</div><section className="panel" id="licenses"><h2>关于与开源许可</h2><p>MediaFlow · 本机媒体自动化平台</p><p>对话引擎：OpenCode（MIT）。界面：React（MIT）、Vinext（MIT）。第三方组件保留各自版权与许可；安装版附带完整第三方声明。</p></section></main>;}
+import {WorkspaceIcon,type WorkspaceIconName} from "../components/workspace-sidebar";
+const groups=[{title:"执行工作区",description:"从准备设备到查看结果，所有操作都有回执。",entries:[
+  ["/devices","设备管理","画面、连接、虚拟机与当前待办","devices"],
+  ["/workbench","任务台","编辑完整参数，预览并提交任务","create"],
+  ["/run","运行与停止","查看真实进度、暂停及安全停止","run"],
+  ["/records","结果与证据","追踪结果、异常现场和纠错记录","results"],
+]},{title:"配置与知识",description:"低频管理集中在这里，日常操作交给 Agent。",entries:[
+  ["/interactions","互动记录","巡检回执、聚合通知与现场证据","results"],
+  ["/content","资产配置","模型、内容计划和任务预设","assets"],
+  ["/governance","数据治理","证据保留、备份与数据检查","assets"],
+  ["/?settings=models","设置","模型连接、操作指南、偏好与关于","assets"],
+]}];
+export default function ManagementPage(){return <main className="page-shell management-page"><header className="management-heading"><div><p className="eyebrow">WORKSPACE</p><h1>管理中心</h1><p>掌握运行全貌，随时回到对话。</p></div><a className="primary" href="/">回到 Agent →</a></header>{groups.map(group=><section className="management-section" key={group.title}><header><h2>{group.title}</h2><p>{group.description}</p></header><div className="management-grid">{group.entries.map(([href,title,description,icon])=><a key={href} href={href}><span className="management-icon"><WorkspaceIcon name={icon as WorkspaceIconName}/></span><div><h3>{title}</h3><p>{description}</p></div><span className="management-arrow">↗</span></a>)}</div></section>)}<footer className="management-help"><span>需要操作指引？</span><a href="/devices/guide">设备指南 ↗</a><a href="/content/guide">内容与任务指南 ↗</a></footer></main>;}
