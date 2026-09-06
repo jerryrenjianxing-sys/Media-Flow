@@ -48,6 +48,11 @@ test('legacy task links lead to workbench and emergency access remains visible',
     assert.match(page, /href="\/workbench"/);
   }
   assert.match(await source('../app/agent-studio.css'), /safety-control.*display:inline-flex/);
+  const plans = await source('../app/components/agent-plans.tsx');
+  assert.doesNotMatch(plans, /href="\/results"/);
+  assert.match(plans, /records\?task_id=/);
+  assert.match(plans, /resume_stopped_devices/);
+  assert.match(await source('../app/records/page.tsx'), /setSelectedGroup\(groups.items\[0\]\)/);
 });
 
 test("model settings expose isolated experimental Token Plan save test and enable", async () => {

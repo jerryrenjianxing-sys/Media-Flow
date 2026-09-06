@@ -1,6 +1,6 @@
 "use client";
 /* Vinext client navigation can fail after hot updates; local page links use hard navigation. */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TaskGroupDetail, TaskGroupList, type TaskGroup } from "../components/task-groups";
 import { fetchLocalApi } from "../lib/local-api";
 
@@ -27,16 +27,20 @@ export default function RecordsPage() {
   const [now, setNow] = useState(0);
   const [notice, setNotice] = useState("正在读取本机记录…");
   const [retrying, setRetrying] = useState(false);
-  const closeTaskDetail = useCallback(() => setSelectedGroup(null), []);
+  const openedFromLink = useRef("");
+  const closeTaskDetail = useCallback(() => {setSelectedGroup(null);const url=new URL(window.location.href);url.searchParams.delete('task_id');window.history.replaceState(null,'',url);}, []);
 
   const refresh = useCallback(async () => {
     try {
+      const requestedTask = new URLSearchParams(window.location.search).get('task_id') || '';
       const [taskResponse, incidentResponse] = await Promise.all([
-        fetchLocalApi(`${API}/api/records/task-groups?limit=${tasksExpanded ? PAGE_SIZE : SUMMARY_SIZE}&offset=${tasksExpanded ? taskPage * PAGE_SIZE : 0}`, { cache: "no-store" }),
+        fetchLocalApi(`${API}/api/records/task-groups?limit=${tasksExpanded ? PAGE_SIZE : SUMMARY_SIZE}&offset=${requestedTask ? 0 : tasksExpanded ? taskPage * PAGE_SIZE : 0}${requestedTask ? `&task_id=${encodeURIComponent(requestedTask)}` : ''}`, { cache: "no-store" }),
         fetchLocalApi(`${API}/api/records/incidents?limit=${incidentsExpanded ? PAGE_SIZE : SUMMARY_SIZE}&offset=${incidentsExpanded ? incidentPage * PAGE_SIZE : 0}`, { cache: "no-store" }),
       ]);
       if (!taskResponse.ok || !incidentResponse.ok) throw new Error("记录读取失败");
-      setTaskGroups(await taskResponse.json() as Page<TaskGroup>);
+      const groups = await taskResponse.json() as Page<TaskGroup>;
+      setTaskGroups(groups);
+      if(requestedTask && openedFromLink.current !== requestedTask && groups.items.length){openedFromLink.current=requestedTask;setSelectedGroup(groups.items[0]);}
       setIncidents(await incidentResponse.json() as Page<Incident>);
       setNow(Date.now());
       setNotice("记录已同步");

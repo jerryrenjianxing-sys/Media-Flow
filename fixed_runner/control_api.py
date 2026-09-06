@@ -2415,11 +2415,11 @@ def group_tasks_for_display(tasks: list) -> list[dict[str, Any]]:
 
 
 def paged_task_groups_payload(
-    store: TaskStore, limit: int, offset: int
+    store: TaskStore, limit: int, offset: int, task_id: str | None = None
 ) -> dict[str, Any]:
     if not 1 <= limit <= 100 or offset < 0:
         raise ValueError("limit must be 1-100 and offset must be non-negative")
-    groups = group_tasks_for_display(store.list_all())
+    groups = group_tasks_for_display([store.get(task_id)] if task_id else store.list_all())
     return {
         "items": groups[offset : offset + limit],
         "total": len(groups),
@@ -3100,8 +3100,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 limit = int(query.get("limit", ["50"])[0])
                 offset = int(query.get("offset", ["0"])[0])
-                self._json(paged_task_groups_payload(self.store, limit, offset))
-            except (TypeError, ValueError) as exc:
+                self._json(paged_task_groups_payload(self.store, limit, offset, query.get('task_id', [None])[0]))
+            except (KeyError, TypeError, ValueError) as exc:
                 self._json({"error": str(exc)}, 400)
             return
         if path == "/api/interaction-alerts":

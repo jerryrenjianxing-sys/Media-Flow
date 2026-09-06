@@ -975,6 +975,11 @@ class ControlApiTest(unittest.TestCase):
                 sorted(group["rounds_total"] for group in groups["items"]),
                 [2, 2],
             )
+            selected = paged_task_groups_payload(store, 5, 0, task_ids[0])
+            self.assertEqual(selected['total'], 1)
+            self.assertEqual([task['id'] for task in selected['items'][0]['tasks']], [task_ids[0]])
+            with self.assertRaises(KeyError):
+                paged_task_groups_payload(store, 5, 0, 'missing-task')
 
     def test_task_group_reports_partial_failure_without_changing_rounds(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
