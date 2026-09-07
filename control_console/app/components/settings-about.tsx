@@ -6,7 +6,7 @@ import {BRAND} from "../brand";
 export function AboutSettings(){
   const [version,setVersion]=useState("正在读取本机版本…");
   useEffect(()=>{let active=true;void fetchLocalApi("http://127.0.0.1:48138/api/status",{},5000).then(r=>r.json()).then(s=>{if(active)setVersion(s.product_version?.display_version||"版本信息暂不可用");}).catch(()=>{if(active)setVersion("本机服务未连接，版本信息暂不可用");});return()=>{active=false;};},[]);
-  return <section className="settings-section"><p className="eyebrow">ABOUT</p><h3>{BRAND.name}</h3><p>{BRAND.tagline}</p><code>{version}</code><p>本机开发测试版本。执行情况以任务回执和证据为准。</p><details><summary>关于与开源许可</summary><p>对话引擎：OpenCode（MIT）。界面：React（MIT）、Vinext（MIT）。第三方组件保留各自版权与许可；安装版附带完整第三方声明。</p></details><details><summary>使用说明与免责声明</summary><p>请仅操作你有权管理的设备、账号与内容。模型建议可能有误，实际动作仍由固定执行器与设备独占机制约束。实验功能不代表已完成稳定性验收。</p></details></section>;
+  return <section className="settings-section"><p className="eyebrow">ABOUT</p><h3>{BRAND.name}</h3><p>{BRAND.tagline}</p><code>{version}</code><p>本机开发测试版本。执行情况以任务回执和证据为准。</p><details><summary>关于与开源许可</summary><p>试用对话引擎：Pi（MIT）；社区聊天界面：pi-web-ui（MIT），不是Pi官方WebUI。管理界面：React（MIT）、Vinext（MIT）。历史OpenCode组件及其MIT许可继续保留。第三方组件保留各自版权与许可。</p></details><details><summary>使用说明与免责声明</summary><p>请仅操作你有权管理的设备、账号与内容。模型建议可能有误，实际动作仍由固定执行器与设备独占机制约束。实验功能不代表已完成稳定性验收。</p></details></section>;
 }
 export function PreferenceSettings(){
   const [theme,setTheme]=useState("system");

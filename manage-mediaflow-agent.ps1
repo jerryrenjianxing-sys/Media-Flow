@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $taskName = 'MediaFlow Agent'
-$hostScript = Join-Path $projectRoot 'fixed_runner\independent_agent.py'
+$hostScript = Join-Path $projectRoot 'fixed_runner\pi_host.py'
 $python = Join-Path $projectRoot 'runtime\python\python.exe'
 if (-not (Test-Path -LiteralPath $python)) {
     $python = Join-Path $projectRoot 'work\agent-runtime\python\python.exe'
@@ -34,7 +34,7 @@ if ($Action -eq 'Register') {
     $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
-    Register-ScheduledTask -TaskName $taskName -Action $taskAction -Principal $principal -Settings $settings -Trigger $trigger -Description 'Official OpenCode Web UI, independent of MediaFlow platform.' -Force | Out-Null
+    Register-ScheduledTask -TaskName $taskName -Action $taskAction -Principal $principal -Settings $settings -Trigger $trigger -Description 'MediaFlow Pi Agent (community pi-web-ui), independent of the business platform.' -Force | Out-Null
     return
 }
 if ($Action -eq 'Run') {
@@ -65,8 +65,8 @@ do {
     $state = & $python $hostScript status | ConvertFrom-Json
     if ($state.running) {
         try {
-            $health = Invoke-RestMethod 'http://127.0.0.1:3000/global/health' -TimeoutSec 2
-            if ($health.healthy -and $health.version -eq '1.18.29') {
+            $health = Invoke-RestMethod 'http://127.0.0.1:3000/api/health' -TimeoutSec 2
+            if ($health.ok -and $health.engine -eq 'pi' -and $health.piVersion -eq '0.84.4') {
                 if (-not $NoBrowser) { Start-Process 'http://127.0.0.1:3000' }
                 return
             }

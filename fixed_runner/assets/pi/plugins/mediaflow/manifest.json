@@ -1,0 +1,1 @@
+{"id":"mediaflow","name":"管理中心","version":"0.4.1-dev.30","description":"独立MediaFlow平台管理入口；不改变当前对话","icon":"M","permissions":["http"],"view":true}

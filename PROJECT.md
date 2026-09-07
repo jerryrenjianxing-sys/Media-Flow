@@ -8,6 +8,8 @@ MediaFlow 是运行在本机的 Android 自动化控制与验证系统，用于�
 
 ## 当前正式架构
 
+dev.30候选改用 **Pi内核 + 社区pi-web-ui + 通用MediaFlow Skill**。原生会话、设置和消息由Pi负责；平台管理3001、业务API48138独立运行。不再修补OpenCode。候选和本机实际入口必须区分，当前待验收项见STATUS与`docs/dev30-acceptance.md`；Pi核心体验不通过才转外部Skill路线，不寻找第三套内置框架。以下dev.29/dev.23内容保留为历史架构记录，不覆盖此决定。
+
 dev.29候选将入口拆分为两个独立运行单元：官方OpenCode Web UI（3000，独立Windows任务）与MediaFlow平台（管理3001/API48138，原后台任务）。两边仅由原生`mediaflow-platform` Skill调用automation接口连接。不使用自建聊天前端/网关，不由平台迁移或归档原生会话；旧实现保留为历史兼容材料，不参与新入口。实际切换状态以STATUS为准。
 
 开发中的dev.23以首页OpenCode Agent为统一操作入口，平台使用方法随软件以原生`mediaflow-platform` Skill发布。Agent负责理解需求、按需询问和调用平台工具，设备动作仍由下方固定执行器执行。管理表单保留为辅助入口；没有产品权限分级或固定授权口令。计划、操作及修复继续保留可追踪的用户请求、幂等回执与真实结果，咨询不会被当作运行指令。运行版本及未完成验收以`STATUS.md`为准。

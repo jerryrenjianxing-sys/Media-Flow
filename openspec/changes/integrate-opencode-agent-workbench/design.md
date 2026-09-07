@@ -1,5 +1,7 @@
 ## Context
 
+dev.30当前决定：Pi SDK与社区pi-web-ui独立运行，Skill调用独立平台API；不改聊天核心。详情及未完成验收见 `docs/dev30-acceptance.md`。下方早期版本的上下文和决定为历史记录；与dev.30冲突时以本文dev.30段落和相应规格为准，不把旧版本通过视作新版本通过。
+
 参见 proposal.md 的已核对事实。当前服务仍为 dev.18，本次不把历史验收通过当作新 Agent 验收通过。MediaFlow 已有本地 HTTP API、规划模块、SQLite 队列、MuMu 生命周期与固定 Worker；OpenCode 提供 headless 服务和 MCP 接口，适合嵌入自有首页，而非启动另一个独立网页让用户切换。
 
 官方参考（2026-09-06 核对）：
