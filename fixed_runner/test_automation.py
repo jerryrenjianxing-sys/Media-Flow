@@ -122,7 +122,7 @@ class AutomationTests(unittest.TestCase):
         from control_api import Handler
         host = self.host
         class TestHandler(Handler):
-            def agent_service(self):
+            def automation_context(self):
                 return host
             def log_message(self, *args):
                 pass

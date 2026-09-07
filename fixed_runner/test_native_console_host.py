@@ -15,7 +15,7 @@ class NativeHostTests(unittest.TestCase):
         self.assertEqual(specs[0][0][-1],'3001')
         self.assertEqual(specs[1][1]['MEDIAFLOW_LEGACY_UI_URL'],'http://127.0.0.1:3001')
 
-    def test_native_ui_uses_one_owned_process_wrapper(self):
+    def test_native_assets_do_not_change_platform_process_ownership(self):
         import runtime_control
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -23,7 +23,8 @@ class NativeHostTests(unittest.TestCase):
             (root/'native_console/dist/index.html').write_text('native')
             with patch.object(runtime_control, 'PROJECT_ROOT', root):
                 spec = runtime_control.ui_spec()
-            self.assertIn('native_console_host.py', ' '.join(spec.command))
+            self.assertNotIn('native_console_host.py', ' '.join(spec.command))
+            self.assertTrue('3001' in spec.command or spec.env.get('PORT') == '3001')
             self.assertEqual(spec.role, 'control-ui')
             self.assertEqual(spec.env['NODE_ENV'], 'production')
 

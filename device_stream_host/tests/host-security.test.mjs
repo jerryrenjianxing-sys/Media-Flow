@@ -56,6 +56,7 @@ test("host binds loopback and rejects unsafe upgrades and generic routes", async
     const token = "b".repeat(36);
     await rejectedUpgrade(`ws://127.0.0.1:${port}/v1/sessions/${session}?token=${token}`, "http://evil.example", 403);
     await rejectedUpgrade(`ws://127.0.0.1:${port}/v1/sessions/${session}?token=short`, "http://127.0.0.1:3000", 401);
+    await rejectedUpgrade(`ws://127.0.0.1:${port}/v1/sessions/${session}?token=short`, "http://127.0.0.1:3001", 401);
   } finally {
     child.kill();
     await Promise.race([once(child, "exit"), new Promise((resolvePromise) => setTimeout(resolvePromise, 2000))]);

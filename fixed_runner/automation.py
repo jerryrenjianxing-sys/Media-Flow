@@ -247,6 +247,29 @@ class AutomationService:
         return repairs.tool(action, args, context)
 
 
+class PlatformContext:
+    """Business services only; no engine, chat database or conversation hooks."""
+    def __init__(self, status_reader, *, root=None, store=None,
+                 model_status_reader=None, worker_launcher=None,
+                 virtual_dispatch=None, evidence_root=None):
+        from runtime_layout import RUNTIME_ROOT
+        from agent_platform import AgentPlatform
+        from agent_operations import AgentOperations
+        from agent_memory import AgentMemory
+        from agent_repairs import AgentRepairs
+        from agent_repair_updates import AgentRepairUpdates
+        self.root = Path(root or RUNTIME_ROOT/'agent')
+        self.status_reader, self.evidence_root = status_reader, evidence_root
+        self.platform = AgentPlatform(self.root/'platform', store, status_reader,
+            model_status_reader=model_status_reader or (lambda: {}),
+            worker_launcher=worker_launcher) if store else None
+        self.operations = AgentOperations(self.root/'commands', store, virtual_dispatch) if store else None
+        self.memory = AgentMemory(self.root/'memory')
+        self.repairs = AgentRepairs(self.root/'repairs')
+        # The request-scoped adapter is installed by AutomationService.repair.
+        self.repair_updates = AgentRepairUpdates(self.root/'updates', self.repairs, None)
+
+
 def handle_automation_http(handler, method, path, body=None):
     """Same loopback/JSON boundary as the existing control surface."""
     origin = handler.headers.get('Origin')
@@ -263,7 +286,7 @@ def handle_automation_http(handler, method, path, body=None):
     if method == 'POST' and not handler.headers.get('Content-Type', '').startswith('application/json'):
         handler._json(failure('json_required', '需要JSON请求'), 415)
         return
-    service = AutomationService(handler.agent_service())
+    service = AutomationService(handler.automation_context())
     if method == 'GET':
         handler._json(service.catalog())
     else:

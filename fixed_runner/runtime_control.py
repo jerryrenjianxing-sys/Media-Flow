@@ -551,22 +551,17 @@ def ui_spec(*, native=True) -> ProcessSpec:
     # subcommand. Without this flag it serves Vite HMR modules, whose console
     # forwarding transport can fail before its websocket is connected.
     environment["NODE_ENV"] = "production"
-    if native and (PROJECT_ROOT / 'native_console/dist/index.html').is_file():
-        return ProcessSpec(role='control-ui',
-            command=(str(PROJECT_PYTHON), str(FIXED_RUNNER_ROOT/'native_console_host.py')),
-            cwd=str(PROJECT_ROOT), log_path=str(RUNTIME_ROOT/'control-ui.log'),
-            expected_executable=str(project_python_executable()),
-            required_markers=('native_console_host.py',), env=environment)
+    # Platform owns management only. OpenCode is an independently started app.
     if UI_STANDALONE_SERVER.is_file():
         command = (str(node), str(UI_STANDALONE_SERVER))
         cwd = UI_STANDALONE_ROOT
         markers = ("server.js",)
-        environment.update({"HOST": "127.0.0.1", "PORT": "3000"})
+        environment.update({"HOST": "127.0.0.1", "PORT": "3001"})
     else:
         cli = PROJECT_ROOT / "control_console" / "node_modules" / "vinext" / "dist" / "cli.js"
-        command = (str(node), str(cli), "start", "--host", "127.0.0.1", "--port", "3000")
+        command = (str(node), str(cli), "start", "--host", "127.0.0.1", "--port", "3001")
         cwd = PROJECT_ROOT / "control_console"
-        markers = ("vinext", "3000")
+        markers = ("vinext", "3001")
     return ProcessSpec(
         role="control-ui",
         command=command,

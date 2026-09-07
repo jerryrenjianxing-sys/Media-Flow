@@ -240,7 +240,7 @@ class RuntimeSupervisorTests(unittest.TestCase):
         with patch('background_host.urllib.request.urlopen',
                    side_effect=[FakeHttpResponse(body), FakeHttpResponse('native code')]) as request:
             self.assertTrue(default_role_health_probe('control-ui'))
-            self.assertEqual(request.call_args_list[1].args[0], 'http://127.0.0.1:3000/_native/assets/index-native.js')
+            self.assertEqual(request.call_args_list[1].args[0], 'http://127.0.0.1:3001/_native/assets/index-native.js')
 
     def test_ui_health_probe_rejects_missing_native_asset(self) -> None:
         body = '<script type="module" src="/_native/assets/index-missing.js"></script>'

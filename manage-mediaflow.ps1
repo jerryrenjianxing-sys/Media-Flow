@@ -51,6 +51,13 @@ if ($Action -eq 'Status') {
 }
 
 $registered = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if (-not $registered) {
+    $legacyTask = Get-ScheduledTask -TaskName 'RiskFlow Background' -ErrorAction SilentlyContinue
+    if ($legacyTask -and ([string]$legacyTask.Actions.Arguments).Contains($backgroundHost)) {
+        $taskName = 'RiskFlow Background'
+        $registered = $legacyTask
+    }
+}
 $backgroundState = 'stopped'
 $backgroundStatusText = & $python $backgroundHost status
 try { $backgroundState = ($backgroundStatusText | ConvertFrom-Json).state } catch { $backgroundState = 'unknown' }
@@ -82,10 +89,10 @@ if ($Action -in @('Stop', 'Restart')) {
 if ($Action -in @('Start', 'Restart')) {
     & $python $backgroundHost request-start
     if ($LASTEXITCODE -ne 0) { throw "MediaFlow $Action failed." }
-    if ($registered) { Start-ScheduledTask -TaskName $taskName }
-    else { Start-Process -WindowStyle Hidden -FilePath $pythonw -ArgumentList @($backgroundHost, 'run') -WorkingDirectory $projectRoot }
+    if (-not $registered) { throw 'MediaFlow background task is missing. Repair its registration; no editor-owned fallback will start.' }
+    Start-ScheduledTask -TaskName $taskName
     $apiUrl = 'http://127.0.0.1:48138/api/config'
-    $pageUrl = 'http://127.0.0.1:3000/'
+    $pageUrl = 'http://127.0.0.1:3001/'
     $deadline = (Get-Date).AddSeconds(45)
     $apiReady = $false
     $pageReady = $false

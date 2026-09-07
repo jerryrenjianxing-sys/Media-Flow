@@ -4,6 +4,21 @@
 
 ## ADDED Requirements
 
+### Requirement: Agent与平台独立运行
+系统 SHALL 将官方OpenCode Web UI与MediaFlow业务后台作为两个独立运行单元；唯一业务连接为原生Skill调用本地automation接口。平台不得启动、关闭、代理或迁移原生会话。Agent不得依赖平台启动才可打开设置或聊天历史。
+
+#### Scenario: 平台停止
+- **WHEN** 平台业务后台停止或重启
+- **THEN** 官方Agent页面、设置和会话保持由独立进程提供，Skill平台查询说明服务不可达而不清空聊天
+
+#### Scenario: Agent停止
+- **WHEN** 用户停止独立Agent
+- **THEN** 平台管理页面、API及已有任务状态保持不变，不停止或恢复任何业务任务
+
+#### Scenario: 旧聊天入口
+- **WHEN** 旧客户端请求平台的api/agent入口
+- **THEN** 平台返回独立Agent地址及迁移说明，不重新创建旧聊天引擎或修改会话
+
 ### Requirement: 回答完整性与受限补齐
 系统 SHALL 复用原生OpenCode回答、工具、追问、停止及故障状态，不再由MediaFlow派发自动补齐或维护第二套回合状态。缺参由原生question处理，不因回答结束而自动执行任务。
 

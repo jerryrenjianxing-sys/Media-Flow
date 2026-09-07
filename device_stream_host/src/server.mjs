@@ -27,6 +27,8 @@ const SCRCPY_SERVER = process.env.MEDIAFLOW_SCRCPY_SERVER || process.env.RISKFLO
 const ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:3000",
   "http://localhost:3000",
+  "http://127.0.0.1:3001",
+  "http://localhost:3001",
 ]);
 const MAX_BUFFERED_BYTES = 8 * 1024 * 1024;
 const VERSION = 1;

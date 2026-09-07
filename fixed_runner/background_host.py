@@ -104,7 +104,7 @@ def default_role_health_probe(role: str) -> bool:
         if role == "control-api"
         else "http://127.0.0.1:48139/health"
         if role == "device-stream-host"
-        else "http://127.0.0.1:3000/"
+        else "http://127.0.0.1:3001/"
     )
     try:
         with urllib.request.urlopen(url, timeout=2.0) as response:

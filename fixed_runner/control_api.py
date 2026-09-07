@@ -2864,6 +2864,23 @@ def comment_screenshot_path(
 
 
 class Handler(BaseHTTPRequestHandler):
+    def automation_context(self):
+        from automation import PlatformContext
+        with _AGENT_SERVICE_LOCK:
+            service = getattr(self.server, '_mediaflow_automation', None)
+            if service is None:
+                store = self.store
+                service = PlatformContext(lambda: build_status_payload(store, normalized_config(store.get_profile(PROFILE_NAME) or {})),
+                    store=store, model_status_reader=openrouter_key_status, worker_launcher=ensure_workers,
+                    virtual_dispatch=lambda device_id, body: submit_vm_command(store, device_id, body), evidence_root=DEFAULT_ARTIFACTS)
+                self.server._mediaflow_automation = service
+            return service
+
+    def retired_chat(self):
+        self._json({'reason_code': 'agent_runs_independently',
+            'user_message': 'Agent已独立运行，请打开原生OpenCode页面；平台不会代启或关闭聊天引擎。',
+            'agent_url': 'http://127.0.0.1:3000'}, 410)
+
     def agent_service(self):
         # Lazy: an unused Agent must not add processes or block the legacy UI.
         from agent_service import AgentService
@@ -2936,8 +2953,7 @@ class Handler(BaseHTTPRequestHandler):
             handle_automation_http(self, 'GET', path)
             return
         if path.startswith('/api/agent/'):
-            from agent_service import handle_agent_http
-            handle_agent_http(self, 'GET', path)
+            self.retired_chat()
             return
         initialization_match = re.fullmatch(
             r"/api/devices/([^/]+)/initialization(?:/(report))?", path
@@ -3443,8 +3459,7 @@ class Handler(BaseHTTPRequestHandler):
                 handle_automation_http(self, 'POST', path, body)
                 return
             if path.startswith('/api/agent/'):
-                from agent_service import handle_agent_http
-                handle_agent_http(self, 'POST', path, body)
+                self.retired_chat()
                 return
             if path == "/api/virtual-device-template/cancel":
                 operation = self.store.request_template_cancellation(str(body.get("operation_id") or ""))

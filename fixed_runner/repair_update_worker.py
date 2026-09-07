@@ -181,7 +181,7 @@ class DevelopmentDriver:
             try:
                 status = self.snapshot()
                 product = status['product_version']
-                with urllib.request.urlopen('http://127.0.0.1:3000/', timeout=3) as response:
+                with urllib.request.urlopen('http://127.0.0.1:3001/', timeout=3) as response:
                     if response.status == 200 and revision.startswith(product['source_revision']) and not product['source_dirty'] and status['paused']:
                         return
             except (OSError, ValueError, KeyError):
