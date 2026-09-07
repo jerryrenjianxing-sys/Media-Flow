@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -42,6 +42,20 @@ test('independent Node processes cannot reserve more than ten requests',async()=
     child.stdout.on('data',chunk=>output+=chunk);child.on('error',reject);child.on('exit',code=>code===0?resolve(Number(output)):reject(Error('worker failed')));
   })));
   assert.equal(counts.reduce((a,b)=>a+b,0),10);
+});
+test('independent Node processes preserve ten claims and add contiguous unlimited claims',async()=>{
+  const directory=mkdtempSync(join(tmpdir(),'mediaflow-process-unlimited-budget-'));
+  const preserved=Array.from({length:10},(_,index)=>`preserved-${index+1}`);
+  preserved.forEach((content,index)=>writeFileSync(join(directory,`${index+1}.claim`),content));
+  const worker=`import {createBudgetFetch} from ${JSON.stringify(new URL('./pi-request-budget.mjs',import.meta.url).href)};let count=0;const f=createBudgetFetch({directory:${JSON.stringify(directory)},endpoint:${JSON.stringify(endpoint)},limit:'unlimited',fetch:async()=>{count++;return new Response('ok');}});for(let i=0;i<3;i++)await f(${JSON.stringify(endpoint)},{method:'POST'});process.stdout.write(String(count));`;
+  const counts=await Promise.all(Array.from({length:2},()=>new Promise((resolve,reject)=>{
+    const child=spawn(process.execPath,['--input-type=module','-e',worker],{windowsHide:true});let output='';
+    child.stdout.on('data',chunk=>output+=chunk);child.on('error',reject);child.on('exit',code=>code===0?resolve(Number(output)):reject(Error('worker failed')));
+  })));
+  assert.deepEqual(counts,[3,3]);
+  assert.deepEqual(readdirSync(directory).sort((a,b)=>Number.parseInt(a)-Number.parseInt(b)),
+                   Array.from({length:16},(_,index)=>`${index+1}.claim`));
+  assert.deepEqual(preserved.map((_,index)=>readFileSync(join(directory,`${index+1}.claim`),'utf8')),preserved);
 });
 test('unlimited requests preserve the first ten claims and continue monotonically across concurrency and restart',async()=>{
   const directory=mkdtempSync(join(tmpdir(),'mediaflow-unlimited-budget-'));
