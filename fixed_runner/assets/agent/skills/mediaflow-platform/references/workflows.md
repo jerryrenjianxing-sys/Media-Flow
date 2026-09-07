@@ -1,6 +1,6 @@
 # 工作流
 
-先读取真实设备与任务；默认一轮20条、首页content_mode=general、显式传dwell_min=8与dwell_max=25、无巡检、六种互动概率全0、preview_only=true。用户明确参数覆盖默认，不继承管理表单草稿。device_ids使用真实永久UUID，平台冻结当前端点和身份。缺项只通过原生question询问；同一目标已有比例、轮次和答案继续保留。
+先读取真实设备与任务；默认一轮20条、首页content_mode=general、显式传dwell_min=8与dwell_max=25、无巡检、六种互动概率全0、preview_only=true。用户明确参数覆盖默认，不继承管理表单草稿。device_ids使用真实永久UUID，平台冻结当前端点和身份。缺项在宿主支持时用结构化提问工具询问，否则直接在聊天中提出同样具体的问题并等待；同一目标已有比例、轮次和答案继续保留。
 
 plan_tasks的config必需device_ids、video_count、round_count、content_mode、engagement_inspection_enabled。search/hybrid需要search_query，mixed需要topic_prompt，启用巡检需要inspection_every_rounds。主页like/favorite/comment_probability与matched_like/favorite/comment_probability两套互不覆盖；30%写0.3。真实评论根据用户目标设置preview_only=false。
 
@@ -10,6 +10,6 @@ plan_tasks的config必需device_ids、video_count、round_count、content_mode�
 
 视频和巡检遵守SKILL.md现行固定流程：固定识别、视觉兜底、动作后复核；搜索有界恢复保留词/计数；巡检仅互动聚合列表，最多12次有效上滑、列表45秒/全程120秒。不能以终端ADB点击循环、普通私信扫描或另一个Agent执行器替代Worker。
 
-修复：task_evidence/incident_evidence→repair_create→原生文件工具在返回workspace_path读取修改→repair_test/repair_validate→repair_diff→repair_prepare_apply→repair_apply。先失败回归再最小修复；完整测试通过且匹配补丁哈希才准备应用。用户只要求诊断则不修改，只要求改代码则留候选，目标包含生效才调用可回退更新。候选不能覆盖正式目录。更新等待空闲，检查基准提交、补丁哈希、测试回执、设备锁，保留旧版本与数据。
+修复：task_evidence/incident_evidence→repair_create→宿主文件工具在返回workspace_path读取修改→repair_test/repair_validate→repair_diff→repair_prepare_apply→repair_apply。先失败回归再最小修复；完整测试通过且匹配补丁哈希才准备应用。用户只要求诊断则不修改，只要求改代码则留候选，目标包含生效才调用可回退更新。候选不能覆盖正式目录。更新等待空闲，检查基准提交、补丁哈希、测试回执、设备锁，保留旧版本与数据。
 
-repair_apply返回operation_id后用repair_update_status跟踪。需要回退时repair_prepare_rollback生成候选，再验证、准备、应用；不回滚用户数据。安装版独立更新链尚未验收时如实报告阻断。原生文件和终端能力不代表OS沙箱，不能访问其他项目、运行凭据或生产数据库。
+repair_apply返回operation_id后用repair_update_status跟踪。需要回退时repair_prepare_rollback生成候选，再验证、准备、应用；不回滚用户数据。安装版独立更新链尚未验收时如实报告阻断。宿主文件和终端能力不代表OS沙箱，不能访问其他项目、运行凭据或生产数据库。

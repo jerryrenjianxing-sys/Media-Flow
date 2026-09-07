@@ -28,21 +28,21 @@
 | repair_test | repair_id,mode(unit/syntax/python/frontend/lint/build/openspec/all),path（unit/syntax时） | 是 |
 | repair_validate | repair_id，运行完整验证 | 是 |
 | repair_test_status | test_id | 否 |
-| repair_export | repair_id；返回已验证候选的artifact_path与patch_sha256，原生文件工具可读取，不依赖旧会话下载链接 | 是 |
+| repair_export | repair_id；返回已验证候选的artifact_path与patch_sha256，宿主文件工具可读取，不依赖旧会话下载链接 | 是 |
 | repair_close / repair_cancel | repair_id | 是 |
 | repair_prepare_apply / repair_apply | repair_id | 是 |
 | repair_update_status | operation_id | 否 |
 | repair_cancel_update / repair_prepare_rollback | operation_id | 是 |
 
-源文件编辑由原生文件工具在workspace_path完成；repair_edit/revert/delete不作为automation动作公开。不支持的动作返回unsupported_action，不返回模拟成功。原生终端不要直接ADB控制设备或替换Worker。
+源文件编辑由宿主文件工具在workspace_path完成；repair_edit/revert/delete不作为automation动作公开。不支持的动作返回unsupported_action，不返回模拟成功。宿主终端不要直接ADB控制设备或替换Worker。
 
-PowerShell调用示例（先使用安装环境提供的真实Python路径）：
+PowerShell调用示例（启动器先取 `MEDIAFLOW_PYTHON`，再取本地配置的 `python`）：
 
 ```powershell
-& $env:MEDIAFLOW_PYTHON <Skill目录>/scripts/mediaflow.py list_devices
-& $env:MEDIAFLOW_PYTHON <Skill目录>/scripts/mediaflow.py plan_tasks --arguments-file task-arguments.json --request-id plan-unique-001 --session-id ses_current
+./scripts/mediaflow.ps1 list_devices
+./scripts/mediaflow.ps1 plan_tasks --arguments-file task-arguments.json --request-id plan-unique-001 --session-id ses_current
 ```
 
-`--arguments`可直接传JSON对象；Windows转义复杂或大参数使用`--arguments-file`。`--timeout`默认为30秒，上限120秒。写入返回超时不自动重试。`MEDIAFLOW_SKILL_CONFIG`或`--config`指定配置文件，配置支持api_url与receipt_db；环境MEDIAFLOW_API_URL/MEDIAFLOW_RECEIPT_DB优先。回执默认位于当前用户LOCALAPPDATA/MediaFlow/skill/receipts.db，不能放进源码或发行包。
+`--arguments`可直接传JSON对象；Windows转义复杂或大参数使用`--arguments-file`。`--timeout`默认为30秒，上限120秒。写入返回超时不自动重试。`MEDIAFLOW_SKILL_CONFIG`或`--config`指定配置文件，客户端配置支持api_url与receipt_db，启动器还读取python；环境MEDIAFLOW_API_URL/MEDIAFLOW_RECEIPT_DB优先。回执默认位于当前用户LOCALAPPDATA/MediaFlow/skill/receipts.db，不能放进源码或发行包。
 
 同一request_id同参数返回原接入响应（不刷新成后来业务状态）；同编号不同参数返回request_id_conflict。用查询动作获取实时状态。接入中断会永久保留未知回执，不能删除回执或换ID来试成功。
