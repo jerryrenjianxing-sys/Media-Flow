@@ -37,7 +37,9 @@ export default function PlatformHome({legacySession=false}:{legacySession?:boole
       <p>下载通用 Skill 包，在你选择的本机 Agent 中加载。平台不再内置聊天；模型和会话由外部 Agent 管理。</p>
       <button type="button" className="primary" disabled={download==="loading"} onClick={()=>void downloadSkill()}>{download==="loading"?"正在准备下载…":download==="error"?"重试下载 MediaFlow Skill":"下载 MediaFlow Skill"}</button>
       {download==="error"?<p role="alert">Skill 下载失败。请确认平台服务可用后重试；管理中心仍可打开。</p>:download==="done"?<p role="status">已发起下载。请在浏览器下载列表查看 MediaFlow-Skill.zip。</p>:null}
-      <ol><li>解压下载包，让外部 Agent 读取 <code>SKILL.md</code>。</li><li>按包内说明配置本机 <code>config.json</code>，脚本通过配置连接 MediaFlow。不要把密钥粘贴到聊天。</li><li>先让 Agent 查询平台状态，再描述需要的操作；执行结果以平台回执为准。</li></ol>
+      <p>1. 解压下载包，让外部 Agent 读取 SKILL.md。</p>
+      <p>2. 按包内说明使用脚本连接本机 MediaFlow。config.json 为可选配置，使用默认地址或已有环境变量配置时无需填写。不要把密钥粘贴到聊天。</p>
+      <p>3. 先让 Agent 查询平台状态，再描述需要的操作；执行结果以平台回执为准。</p>
       <p>设备操作仍需明确范围。普通咨询不会提交任务；未知结果先查询，不要重复执行。</p>
       <p><a href="/manage">管理中心</a> · <a href="/devices/guide">设备指南</a> · <a href="/content/guide">内容与任务指南</a> · <a href="/settings">设置与关于</a></p>
     </section>

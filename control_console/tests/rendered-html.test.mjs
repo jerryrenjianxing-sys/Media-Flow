@@ -60,6 +60,18 @@ test("platform home offers Skill download and management without an embedded cha
   assert.equal(legacy.headers.get('location'),'/settings');
 });
 
+test("Skill instructions keep explicit numbering and optional configuration in continuous paragraphs", async () => {
+  const html = await (await render()).text();
+  const section = html.match(/<section[^>]*aria-labelledby="platform-skill-heading"[^>]*>[\s\S]*?<\/section>/)?.[0];
+  assert.ok(section, "Skill instructions must be present in rendered HTML");
+  const steps = [...section.matchAll(/<p>([123]\. [^<]+)<\/p>/g)].map(match => match[1]);
+  assert.equal(steps.length, 3, "Each step needs a visible number and uninterrupted paragraph text");
+  assert.match(steps[0], /SKILL\.md。$/);
+  assert.match(steps[1], /config\.json.*可选/);
+  assert.match(steps[1], /无需/);
+  assert.doesNotMatch(section, /<code\b|<ol\b/);
+});
+
 test("legacy session bookmarks stay on platform home and explain preserved data", async () => {
   const response = await render('/?session=ses_previous');
   assert.equal(response.status, 200);
