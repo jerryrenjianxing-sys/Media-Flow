@@ -36,7 +36,14 @@
 
 源文件编辑由宿主文件工具在workspace_path完成；repair_edit/revert/delete不作为automation动作公开。不支持的动作返回unsupported_action，不返回模拟成功。宿主终端不要直接ADB控制设备或替换Worker。
 
-PowerShell调用示例（启动器先取 `MEDIAFLOW_PYTHON`，再取本地配置的 `python`）：
+Bash命令工具（Windows同样适用）在Skill目录调用：
+
+```bash
+"$MEDIAFLOW_PYTHON" scripts/mediaflow.py list_devices
+"$MEDIAFLOW_PYTHON" scripts/mediaflow.py task_evidence --arguments '{"task_id":"已有任务编号"}'
+```
+
+直接读取脚本JSON和退出码，不用`| tail`吞掉失败退出码。仅当命令工具确实是PowerShell时用以下启动器（先取 `MEDIAFLOW_PYTHON`，再取本地配置的 `python`）：
 
 ```powershell
 ./scripts/mediaflow.ps1 list_devices
