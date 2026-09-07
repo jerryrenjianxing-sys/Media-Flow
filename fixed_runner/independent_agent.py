@@ -16,15 +16,25 @@ from runtime_control import ProcessSpec, RuntimeControl
 from runtime_layout import APP_ROOT, RUNTIME_ROOT
 
 
+def host_event(root, event, **fields):
+    root.mkdir(parents=True, exist_ok=True)
+    with (root/'independent-host.log').open('a', encoding='utf-8') as stream:
+        stream.write(json.dumps({'time': time.time(), 'event': event, **fields})+'\n')
+
+
 def launch_spec(root, binary, *, python=None, port=3000):
     root, binary = Path(root), Path(binary)
+    client_python = Path(python or sys.executable)
+    if client_python.name.lower() == 'pythonw.exe':
+        client_python = client_python.with_name('python.exe')
     env = isolated_environment(root)
     for name in list(env):
         if name.startswith('MEDIAFLOW_AGENT_') or name in {
             'OPENCODE_DISABLE_PROJECT_CONFIG', 'OPENCODE_DISABLE_MODELS_FETCH'}:
             env.pop(name, None)
     env.update(OPENCODE_CONFIG_CONTENT=json.dumps(native_config(), ensure_ascii=False),
-        MEDIAFLOW_API_URL='http://127.0.0.1:48138', MEDIAFLOW_PYTHON=str(python or sys.executable))
+        MEDIAFLOW_API_URL='http://127.0.0.1:48138', MEDIAFLOW_PYTHON=str(client_python),
+        PYTHONUTF8='1', PYTHONIOENCODING='utf-8')
     workspace = root/'workspace'
     workspace.mkdir(parents=True, exist_ok=True)
     return ProcessSpec(role='opencode-engine',
@@ -40,6 +50,8 @@ def main():
     parser.add_argument('--binary', type=Path)
     parser.add_argument('--port', type=int, default=3000)
     args = parser.parse_args()
+    if args.action == 'run':
+        host_event(args.root, 'host_started', pid=os.getpid(), port=args.port)
     # Never put the Agent into the platform's process registry.
     control = RuntimeControl(registry_root=args.root/'independent-processes')
     stop_intent = args.root/'independent-stop'
@@ -87,13 +99,20 @@ def main():
         result = control.start(spec)
         if not result.get('running'):
             raise RuntimeError('官方OpenCode未启动，请检查独立Agent日志。')
+        host_event(args.root, 'engine_started', pid=children[0].pid if children else None)
         while children and children[0].poll() is None:
             if stop_intent.exists():
                 control.stop('opencode-engine')
                 break
             time.sleep(.5)
         # Explicit stop is not an automatic restart request.
-        return 0
+        code = children[0].poll() if children else 1
+        host_event(args.root, 'engine_exited', code=code, requested_stop=stop_intent.exists())
+        return 0 if stop_intent.exists() else (code or 0)
+    except Exception:
+        # Fixed diagnostic classification, never serialize upstream responses or credentials.
+        host_event(args.root, 'host_failed')
+        raise
     finally:
         job.close()
         for child in children:

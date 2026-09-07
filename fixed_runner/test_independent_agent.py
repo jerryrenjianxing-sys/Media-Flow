@@ -10,6 +10,28 @@ import runtime_control
 
 
 class IndependentAgentTests(unittest.TestCase):
+    def test_windows_task_has_no_console_wrapper(self):
+        script = (Path(__file__).resolve().parents[1]/'manage-mediaflow-agent.ps1').read_text(encoding='utf-8')
+        self.assertIn("'pythonw.exe'", script)
+        self.assertIn("'-X utf8", script)
+        self.assertNotIn("-File '\"' + $PSCommandPath", script)
+        self.assertNotIn("System32\\WindowsPowerShell", script)
+
+    def test_windowless_host_still_gives_skill_a_console_client(self):
+        from independent_agent import launch_spec
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('independent_agent.sys.executable', 'C:/runtime/pythonw.exe'):
+                spec = launch_spec(Path(directory), Path('C:/opencode.exe'))
+            self.assertEqual(Path(spec.env['MEDIAFLOW_PYTHON']), Path('C:/runtime/python.exe'))
+
+    def test_windowless_children_receive_utf8_without_shell_environment(self):
+        from independent_agent import launch_spec
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('independent_agent.isolated_environment', return_value={}):
+                spec = launch_spec(Path(directory), Path('C:/opencode.exe'))
+            self.assertEqual(spec.env.get('PYTHONUTF8'), '1')
+            self.assertEqual(spec.env.get('PYTHONIOENCODING'), 'utf-8')
+
     def test_stop_before_child_registration_prevents_late_start(self):
         from independent_agent import main
         with tempfile.TemporaryDirectory() as directory:

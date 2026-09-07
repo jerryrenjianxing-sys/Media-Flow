@@ -25,8 +25,11 @@ if ($Action -eq 'Register') {
         Export-ScheduledTask -TaskName $taskName | Set-Content -LiteralPath $backup -Encoding UTF8
     }
     $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $runner = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $PSCommandPath + '" -Action Run -NoBrowser'
+    # Use the GUI-subsystem interpreter directly: no console window or shell
+    # control event may own the lifetime of this background service.
+    $runner = Join-Path (Split-Path $python) 'pythonw.exe'
+    if (-not (Test-Path -LiteralPath $runner)) { throw 'Dedicated pythonw.exe is missing; the Agent was not registered.' }
+    $arguments = '-X utf8 "' + $hostScript + '" run'
     $taskAction = New-ScheduledTaskAction -Execute $runner -Argument $arguments -WorkingDirectory $projectRoot
     $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
