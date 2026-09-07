@@ -36,12 +36,17 @@ function cssRule(css, selector) {
   return match[1];
 }
 
-test("management root does not mount the retired chat and links to native Agent", async () => {
+test("platform home offers Skill download and management without an embedded chat", async () => {
   const response = await render();
   const html = await response.text();
   assert.equal(response.status, 200);
   assert.doesNotMatch(html, /id="agent-input"|aria-label="会话历史"/);
-  assert.match(html, /href="http:\/\/127\.0\.0\.1:3000\/"/);
+  assert.doesNotMatch(html, /127\.0\.0\.1:3000|打开 Agent|返回 Agent/);
+  assert.match(html, /下载 MediaFlow Skill/);
+  assert.match(html, /正在读取平台状态/);
+  assert.match(html, /SKILL\.md/);
+  assert.match(html, /config\.json/);
+  assert.match(html, /href="\/manage"/);
   assert.match(html, /class="mf-management-nav"/);
   assert.doesNotMatch(html, /正在准备任务台/);
   assert.match(html, /管理中心/);
@@ -53,6 +58,16 @@ test("management root does not mount the retired chat and links to native Agent"
   const legacy=await render('/?settings=models');
   assert.equal(legacy.status,307);
   assert.equal(legacy.headers.get('location'),'/settings');
+});
+
+test("legacy session bookmarks stay on platform home and explain preserved data", async () => {
+  const response = await render('/?session=ses_previous');
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('location'), null);
+  const html = await response.text();
+  assert.match(html, /旧会话数据仍保留/);
+  assert.match(html, /下载 MediaFlow Skill/);
+  assert.doesNotMatch(html, /127\.0\.0\.1:3000|id="agent-input"/);
 });
 
 test('Agent settings keep native authentication and expose recoverable OAuth progress', async () => {
@@ -124,17 +139,22 @@ test("renders one branded application header with persisted theme and recoverabl
   assert.match(shell, /<InteractionAlertBanner\s*\/>/);
 });
 
-test("management pages retain all business destinations and return to Agent settings", async () => {
+test("management pages retain all business destinations and return to platform home", async () => {
   const response = await render('/manage');
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.equal([...html.matchAll(/<header\b[^>]*class="mf-topbar"/g)].length, 1);
   const navigation = html.match(/<nav class="mf-management-nav"[^>]*>[\s\S]*?<\/nav>/)?.[0];
   assert.ok(navigation, 'Management routes must expose shared navigation');
-  for (const path of ['http://127.0.0.1:3000/', '/manage', '/devices', '/workbench', '/run', '/records', '/interactions', '/content', '/governance', '/settings']) {
+  for (const path of ['/', '/manage', '/devices', '/workbench', '/run', '/records', '/interactions', '/content', '/governance', '/settings']) {
     assert.ok(navigation.includes(`href="${path}"`), `Missing management destination: ${path}`);
   }
   assert.match(navigation, /href="\/manage"[^>]*aria-current="page"/);
+  assert.doesNotMatch(html, /127\.0\.0\.1:3000|回到 Agent|返回 Agent/);
+  const settingsHtml = await (await render('/settings')).text();
+  assert.match(settingsHtml, /外部 Agent/);
+  assert.match(settingsHtml, /平台首页/);
+  assert.doesNotMatch(settingsHtml, /127\.0\.0\.1:3000|打开 Agent|试用对话引擎/);
 });
 
 test("settings group model access, operation guide, preferences, data and collapsed About details", async () => {
