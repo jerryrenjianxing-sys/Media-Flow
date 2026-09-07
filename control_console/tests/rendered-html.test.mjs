@@ -36,24 +36,23 @@ function cssRule(css, selector) {
   return match[1];
 }
 
-test("homepage is Agent-only and preserves the traditional workbench under management", async () => {
+test("management root does not mount the retired chat and links to native Agent", async () => {
   const response = await render();
   const html = await response.text();
   assert.equal(response.status, 200);
-  assert.match(html, /开始一个新目标/);
-  assert.match(html, /aria-label="会话历史"/);
-  assert.match(html, /id="agent-input"/);
-  assert.match(html, /Enter 发送 · Shift \+ Enter 换行/);
-  assert.doesNotMatch(html, /class="mf-management-nav"|class="workspace-sidebar"/);
+  assert.doesNotMatch(html, /id="agent-input"|aria-label="会话历史"/);
+  assert.match(html, /href="http:\/\/127\.0\.0\.1:3000\/"/);
+  assert.match(html, /class="mf-management-nav"/);
   assert.doesNotMatch(html, /正在准备任务台/);
   assert.match(html, /管理中心/);
-  const page = await source("../app/components/agent-workbench.tsx");
-  assert.match(page, /request_id:id/);
-  assert.match(page, /failures.current>=3/);
-  const api = await source('../app/lib/agent-api.ts');
-  assert.match(api, /result.user_message \|\| result.error/);
-  assert.match(api, /无法连接本机对话服务/);
-  assert.match(page, /尚未完成的接入/);
+  const settings=await render('/settings');
+  assert.equal(settings.status,200);
+  const settingsHtml=await settings.text();
+  assert.match(settingsHtml,/设置与关于/);
+  assert.doesNotMatch(settingsHtml,/id="agent-input"/);
+  const legacy=await render('/?settings=models');
+  assert.equal(legacy.status,307);
+  assert.equal(legacy.headers.get('location'),'/settings');
 });
 
 test('Agent settings keep native authentication and expose recoverable OAuth progress', async () => {
@@ -132,7 +131,7 @@ test("management pages retain all business destinations and return to Agent sett
   assert.equal([...html.matchAll(/<header\b[^>]*class="mf-topbar"/g)].length, 1);
   const navigation = html.match(/<nav class="mf-management-nav"[^>]*>[\s\S]*?<\/nav>/)?.[0];
   assert.ok(navigation, 'Management routes must expose shared navigation');
-  for (const path of ['/', '/manage', '/devices', '/workbench', '/run', '/records', '/interactions', '/content', '/governance', '/?settings=models']) {
+  for (const path of ['http://127.0.0.1:3000/', '/manage', '/devices', '/workbench', '/run', '/records', '/interactions', '/content', '/governance', '/settings']) {
     assert.ok(navigation.includes(`href="${path}"`), `Missing management destination: ${path}`);
   }
   assert.match(navigation, /href="\/manage"[^>]*aria-current="page"/);

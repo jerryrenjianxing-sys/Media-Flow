@@ -1,5 +1,15 @@
 # MediaFlow native console build
 
+## dev.28 local navigation correction
+
+Management anchors explicitly open externally so the native router cannot treat
+`/manage` as a project directory. The gateway redirects management paths to the
+owned console on port3001, with a matching exact API CORS origin. The management
+root no longer mounts the retired React chat; its settings and native return
+links are independent. This narrow correction does not restore or change the
+native conversation core. See `docs/dev28-navigation-repair.md` for scope,
+red/green browser tests, and remaining acceptance limits.
+
 The application is the native OpenCode Solid frontend, not an iframe or a
 replacement chat renderer. Upstream sessions, projects, tools, providers, models,
 terminal, and both native settings variants remain upstream implementations.

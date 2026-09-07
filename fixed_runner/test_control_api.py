@@ -57,6 +57,28 @@ from virtual_devices import STANDARD_RECIPE
 
 
 class ControlApiTest(unittest.TestCase):
+    def test_management_and_chat_origins_can_read_api_and_preflight(self) -> None:
+        class ProbeHandler(Handler):
+            def do_GET(self):
+                self._json({'reachable': True})
+            def log_message(self, *args):
+                pass
+        server = ThreadingHTTPServer(('127.0.0.1', 0), ProbeHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            for origin in ('http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'https://unrelated.test', 'http://127.0.0.1:30010'):
+                for method in ('GET', 'OPTIONS'):
+                    request = urllib.request.Request(f'http://127.0.0.1:{server.server_port}/api/probe', method=method, headers={'Origin': origin})
+                    with urllib.request.urlopen(request) as response:
+                        self.assertEqual(response.status, 200 if method == 'GET' else 204)
+                        expected = origin if origin in ('http://127.0.0.1:3000', 'http://127.0.0.1:3001') else None
+                        self.assertEqual(response.headers.get('Access-Control-Allow-Origin'), expected)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_public_v3_inspection_result_keeps_unified_contract(self) -> None:
         payload = _public_inspection_result(
             {

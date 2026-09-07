@@ -5,7 +5,7 @@ import { createReadStream } from 'node:fs'
 import path from 'node:path'
 
 const loopback = new Set(['127.0.0.1','::1','::ffff:127.0.0.1'])
-const management = /^\/(manage|workbench|devices|run|records|interactions|content|governance)(\/|$)/
+const management = /^\/(manage|workbench|devices|run|records|interactions|content|governance|settings|guide|guides)(\/|$)/
 const mime = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2','.wasm':'application/wasm','.json':'application/json'}
 const error = (res,status,message) => {res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify({error:message}))}
 
@@ -51,6 +51,12 @@ export function createGateway({connectionFile,nativeRoot,apiUrl='http://127.0.0.
     if(!localRequest(req))return error(res,403,'仅支持本机页面连接')
     try {
       const pathname=new URL(req.url,'http://localhost').pathname
+      // Management has its own router/assets. External anchors bypass the
+      // native client router; this compatibility redirect reaches that origin.
+      if(management.test(pathname)) {
+        res.writeHead(307,{location:new URL(req.url,legacyUrl).href,'cache-control':'no-store'})
+        return res.end()
+      }
       if(pathname==='/mediaflow/bootstrap') {
         let config
         try {

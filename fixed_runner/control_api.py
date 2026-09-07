@@ -2891,7 +2891,10 @@ class Handler(BaseHTTPRequestHandler):
     def _headers(self, status: int = 200, content_type: str = "application/json; charset=utf-8") -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:3000")
+        origin = self.headers.get("Origin", "")
+        if origin in {"http://127.0.0.1:3000", "http://127.0.0.1:3001"}:
+            self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Cache-Control", "no-store")

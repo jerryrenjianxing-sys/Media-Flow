@@ -27,7 +27,7 @@ export function MediaFlowBar() {
     </div>
     <div class="mediaflow-actions">
       <Show when={state.status}><span role="status" class="mediaflow-status">{state.status}</span></Show>
-      <a href="/manage">{language.t("mediaflow.manage")}</a>
+      <a href="/manage" target="_blank" rel="external noopener noreferrer">{language.t("mediaflow.manage")}</a>
       <button type="button" class="mediaflow-stop" disabled={state.busy} onClick={stop}>{language.t("mediaflow.stop")}</button>
     </div>
   </div>

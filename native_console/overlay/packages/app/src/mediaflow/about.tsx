@@ -27,7 +27,7 @@ export function MediaFlowAbout() {
   return <section class="mediaflow-about">
     <img src="/_native/mediaflow-icon.svg" alt="" width="48" height="48" />
     <h2>{language.t("mediaflow.brand")} · {language.t("mediaflow.tagline")}</h2>
-    <p>MediaFlow dev24 · OpenCode 1.18.29</p>
+    <p>OpenCode 1.18.29 · MediaFlow 版本见管理中心</p>
     <p>{language.t("mediaflow.disclaimer")}</p>
     <h3>{language.t("mediaflow.migration")}</h3>
     <p role="status">{state.failed ? language.t("mediaflow.statusFailed") : state.busy ? language.t("mediaflow.statusLoading") : state.receipt?.message}</p>
@@ -45,6 +45,6 @@ export function MediaFlowAbout() {
       <summary>{language.t("mediaflow.license")}</summary>
       <pre>{license}</pre>
     </details>
-    <a href="/manage">{language.t("mediaflow.manage")}</a>
+    <a href="/manage" target="_blank" rel="external noopener noreferrer">{language.t("mediaflow.manage")}</a>
   </section>
 }

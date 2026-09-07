@@ -80,7 +80,7 @@
     },
     {
       "old": "<span class=\"text-11-regular\">v{platform.version}</span>",
-      "new": "<span class=\"text-11-regular\">dev24 · OpenCode 1.18.29</span>"
+      "new": "<span class=\"text-11-regular\">OpenCode 1.18.29</span>"
     },
     {
       "old": "import { usePlatform } from \"@/context/platform\"\n",
@@ -106,7 +106,7 @@
     },
     {
       "old": "<span>v{platform.version}</span>",
-      "new": "<span>dev24 · OpenCode 1.18.29</span>"
+      "new": "<span>OpenCode 1.18.29</span>"
     },
     {
       "old": "import { usePlatform } from \"@/context/platform\"\n",

@@ -19,7 +19,7 @@ function startupNotice(failed=false) {
   const message=document.createElement('p');message.textContent=failed?'助手尚未连接。会话和任务仍保留，请重试或进入管理中心。':'正在连接原生助手…'
   panel.append(title,message)
   if(failed){const retry=document.createElement('button');retry.textContent='重试连接';retry.onclick=()=>location.reload();panel.append(retry)}
-  const manage=document.createElement('a');manage.href='/manage';manage.textContent='打开管理中心';manage.style.marginLeft='16px';panel.append(manage)
+  const manage=document.createElement('a');manage.href='/manage';manage.target='_blank';manage.rel='external noopener noreferrer';manage.textContent='打开管理中心';manage.style.marginLeft='16px';panel.append(manage)
   root.append(panel)
 }
 

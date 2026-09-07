@@ -5,6 +5,16 @@ from unittest.mock import Mock, patch
 
 
 class NativeHostTests(unittest.TestCase):
+    def test_owned_management_port_matches_links_and_api_origin(self):
+        import native_console_host
+        legacy=Mock(env={}, command=('node.exe','vinext','start','--port','3000'), cwd='fixture')
+        with patch('runtime_control.ui_spec',return_value=legacy), patch.object(native_console_host,'ChildJob'), patch.object(native_console_host,'require_available_ports',create=True), patch.object(native_console_host,'supervise',return_value=0) as run:
+            native_console_host.main()
+        specs=run.call_args.args[0]
+        self.assertEqual(specs[0][1]['PORT'],'3001')
+        self.assertEqual(specs[0][0][-1],'3001')
+        self.assertEqual(specs[1][1]['MEDIAFLOW_LEGACY_UI_URL'],'http://127.0.0.1:3001')
+
     def test_native_ui_uses_one_owned_process_wrapper(self):
         import runtime_control
         with tempfile.TemporaryDirectory() as tmp:

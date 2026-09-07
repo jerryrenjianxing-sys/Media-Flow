@@ -94,7 +94,12 @@ test('one origin routes management separately and never serves private connectio
   const gateway=createGateway({nativeRoot:path.join(root,'dist'), connectionFile:path.join(root,'connection.json'),apiUrl:url,legacyUrl:url})
   try {
     const base=await listen(gateway)
-    assert.equal(await (await fetch(base+'/manage')).text(),'legacy:/manage')
+    for(const route of ['/manage','/devices?device=test','/settings?tab=about','/guide']) {
+      const redirect=await fetch(base+route,{redirect:'manual'})
+      assert.equal(redirect.status,307)
+      assert.equal(redirect.headers.get('location'),url+route)
+      assert.equal(await (await fetch(base+route)).text(),'legacy:'+route)
+    }
     assert.equal(await (await fetch(base+'/api/status')).text(),'legacy:/api/status')
     assert.match(await (await fetch(base+'/',{headers:{accept:'text/html'}})).text(), /native/)
     assert.equal((await fetch(base+'/_native/connection.json')).status,404)

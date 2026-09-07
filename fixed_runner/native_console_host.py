@@ -35,13 +35,23 @@ def supervise(specs, job):
                 child.wait(timeout=5)
 
 
+def require_available_ports(ports):
+    for number in ports:
+        try:
+            with socket.socket() as probe:
+                if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                probe.bind(('127.0.0.1', number))
+        except OSError:
+            raise RuntimeError(f'本机端口 {number} 已被占用，无法启动界面；请检查占用程序，不会结束其他进程') from None
+
+
 def main():
     from runtime_control import ui_spec
     from runtime_layout import APP_ROOT, RUNTIME_ROOT
     legacy = ui_spec(native=False)
-    with socket.socket() as port:
-        port.bind(('127.0.0.1', 0))
-        legacy_port = port.getsockname()[1]
+    legacy_port = 3001
+    require_available_ports([int(os.environ.get('MEDIAFLOW_UI_PORT', '3000')), legacy_port])
     env = dict(os.environ, **(legacy.env or {}))
     env.update(PORT=str(legacy_port), HOST='127.0.0.1')
     command = [str(legacy_port) if part == '3000' else part for part in legacy.command]

@@ -61,3 +61,8 @@
   .device-template-settings > summary { padding:14px; }
   .device-template-settings > summary span { display:block; margin:6px 0 0; }
 }
+.management-settings .settings-section + .settings-section { margin-top:24px; padding-top:24px; border-top:1px solid var(--hairline); }
+.management-settings .settings-section h2, .management-settings .settings-section h3 { margin-bottom:12px; font-size:1.125rem; font-weight:600; }
+.management-settings .settings-section p { margin:10px 0; line-height:1.6; }
+.management-settings .settings-section label { display:grid; gap:8px; }
+.management-settings .settings-section select { max-width:360px; }
