@@ -12,7 +12,8 @@ dev.30是源码候选，不是安装包。真实验收仍未完成，本机默�
 2. 先验收原版。仅在原版通过后执行 `fixed_runner/pi_brand.py` 的品牌装配；不修改会话、路由、消息、滚动或流式实现。上游工程不提交到本项目。
 3. 调用 `scripts/prepare-pi-runtime.py`，参数为 `--source`（已构建上游目录）、`--node`、`--python`（专用运行时）、`--root`（Pi独立数据目录）、`--output work/pi-runtime/runtime.json`。隔离测试额外指定 `--port 13032`，正式切换才使用3000。可选 `--old-auth` 只读复制已有千问凭证；不覆盖已有Pi凭证，不迁移OpenCode消息。
 4. Pi数据目录应置于项目目录之外，避免原生Agent自动读取项目祖先目录的开发指导。装配器在其中准备工作目录、原生配置、全局Skill及只读管理插件；用户无需选择项目或填写本机服务器地址。不要将该目录、凭证或请求计数提交Git。
-5. `pi_host.py` 从配置启动已构建资源。找不到资源时返回错误并写 `last-error.json`，不退回其他Agent或Codex子进程。Node入口通过文件URL预加载请求保护，Windows路径不能当作URL协议。
+5. `pi_host.py` 从配置启动已构建资源。找不到资源时返回错误并写 `last-error.json`，不退回其他Agent或Codex子进程。端口占用、源码版本不符、专用运行时缺失和Bash组件缺失分别返回原因码；不记录任意原始异常。Node入口通过文件URL预加载请求保护，Windows路径不能当作URL协议。
+6. 保留原生Git Bash发现所需的Windows安装目录变量。启动前检查已安装Git Bash或已准备的原生fallback；两者都缺失时先报错，不允许上游在日常启动中静默下载可执行文件。本轮不打包shell、不修改上游检测代码。
 
 ```powershell
 # 用明确的专用Python路径调用；下列运行入口不启动业务任务。

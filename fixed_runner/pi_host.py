@@ -1,13 +1,40 @@
 """Windows-task-owned Pi host. It never starts or stops the business platform."""
 import argparse
 import json
+import os
+import re
 from pathlib import Path
 import subprocess
 import time
 
 from agent_process import ChildJob, DirectoryLease
-from pi_runtime import launch_spec, validate_source
+from pi_runtime import launch_spec, validate_source, validate_windows_shell
 from runtime_control import RuntimeControl
+
+
+def startup_diagnostic(error):
+    """Map known local failures; never persist arbitrary exceptions or credentials."""
+    code='pi_host_failed'
+    message='Pi独立后台未启动；检查运行资源配置及端口后重试。平台后台未被停止。'
+    detail=str(error)
+    port=re.match(r'本机端口 (\d{1,5}) 已被占用',detail)
+    if port:
+        code='pi_port_in_use'
+        message=f'Pi端口{port.group(1)}已被占用；请检查占用程序后重试，不会结束其他程序。'
+    elif detail.startswith('Pi运行资源缺失或版本不符'):
+        code='pi_source_mismatch'
+        message='Pi运行资源缺失或版本不符；请重新准备锁定版本后启动。'
+    elif detail.startswith('Pi所需Bash运行组件缺失'):
+        code='pi_shell_missing'
+        message='Pi所需Bash组件缺失；请准备Git Bash后重试，未自动下载工具。'
+    elif isinstance(error,FileNotFoundError) or detail.startswith('Pi专用运行资源缺失'):
+        code='pi_runtime_missing'
+        message='Pi专用运行时或配置文件缺失；请先完成运行环境准备。'
+    elif detail.startswith('Pi已运行'):
+        code='pi_already_running'
+        message='Pi已有运行实例；请检查现有后台状态，未重复启动。'
+    return {'reason_code':code,'user_message':message,
+            'error_type':type(error).__name__,'updated_at':time.time()}
 
 
 def _run(args):
@@ -25,9 +52,7 @@ def main():
     try:
         return _run(args)
     except Exception as error:
-        record={'reason_code':'pi_runtime_missing' if isinstance(error,FileNotFoundError) else 'pi_host_failed',
-                'user_message':'Pi独立后台未启动；检查运行资源配置及端口后重试。平台后台未被停止。',
-                'error_type':type(error).__name__,'updated_at':time.time()}
+        record=startup_diagnostic(error)
         args.config.parent.mkdir(parents=True,exist_ok=True)
         args.config.with_name('last-error.json').write_text(json.dumps(record,ensure_ascii=False),encoding='utf-8')
         print(json.dumps(record,ensure_ascii=False))
@@ -48,6 +73,9 @@ def _operate(args,config,root):
     validate_source(config['source'])
     for field in ('node','guard','python'):
         if not Path(config[field]).is_file(): raise ValueError(f'Pi专用运行资源缺失：{field}')
+    spec=launch_spec(root,config['node'],config['source'],config['guard'],
+                     python=config['python'],port=config.get('port',3000))
+    if os.name=='nt': validate_windows_shell(spec.env)
     from native_console_host import require_available_ports
     require_available_ports([config.get('port',3000)])
     lease=DirectoryLease(root/'engine.lock')
@@ -64,8 +92,7 @@ def _operate(args,config,root):
     try:
         control=RuntimeControl(registry_root=root/'independent-processes',launcher=launch)
         if stop.exists(): return 0
-        result=control.start(launch_spec(root,config['node'],config['source'],config['guard'],
-                                        python=config['python'],port=config.get('port',3000)))
+        result=control.start(spec)
         if not result.get('running'): raise RuntimeError('Pi启动失败，请检查独立Agent日志。')
         while children and children[0].poll() is None:
             if stop.exists():

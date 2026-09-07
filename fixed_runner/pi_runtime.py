@@ -74,11 +74,25 @@ def validate_source(source):
         raise ValueError('Pi运行资源缺失或版本不符；请重新准备锁定的运行资源，未启动其他Agent。')
 
 
+def validate_windows_shell(env):
+    """Preflight upstream shell discovery so daily startup never downloads a shell."""
+    values={key.upper():value for key,value in env.items()}
+    candidates=[Path(values[key])/'Git/bin/bash.exe'
+                for key in ('PROGRAMFILES','PROGRAMFILES(X86)') if values.get(key)]
+    if values.get('USERPROFILE'):
+        candidates.append(Path(values['USERPROFILE'])/'.pi-web/bin/bash.exe')
+    if not any(path.is_file() for path in candidates):
+        raise ValueError('Pi所需Bash运行组件缺失；请先准备Git Bash后重试，未自动下载工具。')
+
+
 def launch_spec(root, node, source, guard, *, python=None, port=3000):
     root,node,source,guard=map(Path,(root,node,source,guard))
     client_python=Path(python or sys.executable).with_name('python.exe')
     env={k:v for k,v in os.environ.items() if k.upper() in {
         'SYSTEMROOT','WINDIR','COMSPEC','USERPROFILE','APPDATA','LOCALAPPDATA','TEMP','TMP','PATHEXT'}}
+    # Upstream's Windows shell discovery uses these native installation roots.
+    for key in ('ProgramFiles','ProgramFiles(x86)'):
+        if os.environ.get(key): env[key]=os.environ[key]
     env.update({
         'PATH':os.pathsep.join([str(node.parent),str(client_python.parent),
                                os.path.join(env.get('SYSTEMROOT','C:/Windows'),'System32'),
