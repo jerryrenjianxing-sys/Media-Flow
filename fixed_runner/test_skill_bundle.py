@@ -75,19 +75,31 @@ class SkillBundleTests(unittest.TestCase):
 
             readme = source/'README.md'
             original = readme.read_text(encoding='utf-8')
-            readme.write_text(original + '\nC:\\Users\\someone\\private\\python.exe\n', encoding='utf-8')
-            with self.assertRaisesRegex(ValueError, 'machine-specific absolute path'):
-                build_skill_bundle(root/'unsafe-path.zip', source=source)
+            readme.write_text(original + '\nhttp://127.0.0.1:48138/api/automation\n'
+                'references/api.md\n./state/receipts.db\n', encoding='utf-8')
+            build_skill_bundle(root/'safe-paths.zip', source=source)
+            for index, machine_path in enumerate((
+                    r'D:\private\device.json',
+                    r'\\fileserver\share\auth.json',
+                    '/home/alice/private/device.json',
+                    '/Users/alice/private/device.json')):
+                with self.subTest(machine_path=machine_path):
+                    readme.write_text(original + '\n' + machine_path + '\n', encoding='utf-8')
+                    with self.assertRaisesRegex(ValueError, 'machine-specific absolute path'):
+                        build_skill_bundle(root/('unsafe-path-%s.zip' % index), source=source)
             readme.write_text(original, encoding='utf-8')
 
             secret = root/'secret.txt'
             secret.write_text('not distributable', encoding='utf-8')
             notice = source/'NOTICE.md'
+            notice_text = notice.read_text(encoding='utf-8')
             notice.unlink()
             try:
                 notice.symlink_to(secret)
             except OSError:
-                with patch.object(Path, 'is_symlink', return_value=True):
+                notice.write_text(notice_text, encoding='utf-8')
+                with patch.object(Path, 'is_symlink', autospec=True,
+                                  side_effect=lambda candidate: candidate == notice):
                     with self.assertRaisesRegex(ValueError, 'symbolic link'):
                         build_skill_bundle(root/'unsafe-link.zip', source=source)
                 return

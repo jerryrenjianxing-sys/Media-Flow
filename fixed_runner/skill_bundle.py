@@ -20,7 +20,9 @@ SKILL_FILES = (
     'scripts/mediaflow.py',
     'scripts/mediaflow.ps1',
 )
-_WINDOWS_USER_PATH = re.compile(rb'(?i)[a-z]:[\\/](?:users|documents and settings)[\\/]')
+_MACHINE_PATH = re.compile(
+    r'(?i)(?<![a-z0-9])(?:[a-z]:[\\/]|\\\\[^\\/\s]+[\\/][^\\/\s]+'
+    r'|/(?:home|users)/[^/\s]+(?:/|$)|/root(?:/|$))')
 
 
 def build_skill_bundle(destination, *, source=None):
@@ -37,7 +39,11 @@ def build_skill_bundle(destination, *, source=None):
     contents = []
     for name, path in files:
         data = path.read_bytes()
-        if _WINDOWS_USER_PATH.search(data) or str(source.resolve()).encode() in data:
+        try:
+            text = data.decode('utf-8-sig')
+        except UnicodeDecodeError as exc:
+            raise ValueError('%s is not UTF-8 text' % name) from exc
+        if _MACHINE_PATH.search(text) or str(source.resolve()) in text:
             raise ValueError('%s contains a machine-specific absolute path' % name)
         contents.append((name, data))
     destination.parent.mkdir(parents=True, exist_ok=True)
