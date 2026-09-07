@@ -2879,9 +2879,9 @@ class Handler(BaseHTTPRequestHandler):
             return service
 
     def retired_chat(self):
-        self._json({'reason_code': 'agent_runs_independently',
-            'user_message': 'Agent已独立运行，请打开原生OpenCode页面；平台不会代启或关闭聊天引擎。',
-            'agent_url': 'http://127.0.0.1:3000'}, 410)
+        self._json({'reason_code': 'external_skill_home',
+            'user_message': '内置聊天已停用，请到平台首页下载MediaFlow Skill，由外部Agent调用平台。历史数据仍保留。',
+            'agent_url': 'http://127.0.0.1:3001/'}, 410)
 
     def agent_service(self):
         # Lazy: an unused Agent must not add processes or block the legacy UI.

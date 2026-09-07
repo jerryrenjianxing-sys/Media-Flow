@@ -4,6 +4,9 @@ param(
     [switch]$NoBrowser
 )
 $ErrorActionPreference = 'Stop'
+if ($Action -in @('Start', 'Restart', 'Register', 'Run')) {
+    throw 'MediaFlow now uses an external Skill. Open http://127.0.0.1:3001/ to download it. Embedded Agent startup is retired; existing data is retained.'
+}
 $projectRoot = $PSScriptRoot
 $taskName = 'MediaFlow Agent'
 $hostScript = Join-Path $projectRoot 'fixed_runner\pi_host.py'

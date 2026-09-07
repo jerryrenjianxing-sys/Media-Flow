@@ -148,6 +148,17 @@ class PlatformSkillDownloadTests(unittest.TestCase):
                 self.assertNotIn("private fixture detail", payload)
                 self.assertEqual(list(temporary_root.iterdir()), [])
 
+    def test_retired_chat_points_to_platform_not_a_stopped_agent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.isolated_server(Path(directory)) as (base_url, _):
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(base_url + '/api/agent/sessions', timeout=10)
+                self.assertEqual(raised.exception.code, 410)
+                payload = json.loads(raised.exception.read())
+                self.assertEqual(payload['reason_code'], 'external_skill_home')
+                self.assertEqual(payload['agent_url'], 'http://127.0.0.1:3001/')
+                self.assertIn('Skill', payload['user_message'])
+
 
 if __name__ == "__main__":
     unittest.main()

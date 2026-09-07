@@ -1,6 +1,14 @@
 # MediaFlow 运行手册
 
-## dev.30 Pi开发入口
+## dev.30 当前入口：外部Agent与平台Skill
+
+打开 `http://127.0.0.1:3001/` 查看状态、下载Skill或进入管理中心。解压Skill后交给支持技能、文件读取和本地命令的外部Agent，按包内说明连接本机API；不需要OpenCode、Hermes或内置Pi。下载只包含说明、接口参考和客户端脚本，不含凭证及设备数据。默认业务接口为回环48138，可通过运行配置指定；客户端使用本机可用Python，环境缺失时按说明设置明确路径。
+
+日常仍使用 `run-mediaflow-console.ps1` 或现有平台启动入口；`manage-mediaflow.ps1` 管理业务后台。`MediaFlow Agent`任务已停用，Agent脚本的Start/Restart/Register/Run会明确返回退役说明，不重新启动聊天服务。3000不再是产品入口；旧聊天数据库及独立Pi数据保留，不自动迁移或删除。紧急停止在管理中心。外部Agent的停止不影响平台，业务停止与聊天停止不是同一动作。
+
+Pi淘汰依据及最终验收见 [dev.30验收记录](docs/dev30-acceptance.md)。下方Pi/OpenCode步骤仅是历史与回退资料，不是当前启动要求。
+
+## dev.30 Pi开发入口（历史，已退役）
 
 Pi的准备、独立启动、切换与回退见 [Pi试用运行说明](docs/dev30-pi-runtime.md)，实际验证范围见 [验收记录](docs/dev30-acceptance.md)。用户已明确允许本轮不限次数，配置unlimited，保留原请求计数。切换回执通过后，聊天3000使用Pi社区WebUI，管理中心3001保持独立；无需新建项目或填写服务地址。旧OpenCode数据保留但不再默认启动。Pi有独立专用运行时；既有业务后台仍沿用原开发环境（本机.venv基底仍引用旧Hermes运行时），本轮没有宣称完成全平台运行时迁移或安装包交付。
 

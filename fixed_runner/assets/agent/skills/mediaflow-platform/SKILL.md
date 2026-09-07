@@ -28,7 +28,7 @@ metadata:
 | 修代码 | repair_create → 返回的workspace_path用宿主文件工具编辑 → repair_test/validate → repair_diff → repair_prepare_apply/apply |
 | 查看异步修复 | repair_test_status、repair_update_status |
 
-首页负责对话；设备在 `/devices`，批次运行在 `/run`，任务与异常证据在 `/records`，互动回执在 `/interactions`，完整表单在 `/workbench`，模型和内容在 `/content`，管理入口 `/manage`。不要把用户赶去页面点确认来替代可以调用的工具。
+对话由加载本Skill的外部Agent负责；平台首页提供状态与Skill下载，不内置聊天。管理前端默认 `http://127.0.0.1:3001`：设备在 `/devices`，批次运行在 `/run`，任务与异常证据在 `/records`，互动回执在 `/interactions`，完整表单在 `/workbench`，模型和内容在 `/content`，管理入口 `/manage`。不要把用户赶去页面点确认来替代可以调用的工具。
 
 ## 从目标到运行
 
