@@ -5,7 +5,7 @@
 ## ADDED Requirements
 
 ### Requirement: Agent与平台独立运行
-系统 SHALL 将官方OpenCode Web UI与MediaFlow业务后台作为两个独立运行单元；唯一业务连接为原生Skill调用本地automation接口。平台不得启动、关闭、代理或迁移原生会话。Agent不得依赖平台启动才可打开设置或聊天历史。
+系统 SHALL 将选定Agent与MediaFlow业务后台作为独立运行单元；唯一业务连接为原生Skill调用本地automation接口。dev.30 SHALL 先隔离验证Pi与社区pi-web-ui，不修改会话核心；不合适时 MUST 提供外部Skill首页而不回退OpenCode。平台不得迁移原生会话。Agent不得依赖平台启动才可打开设置或聊天历史。
 
 #### Scenario: 平台停止
 - **WHEN** 平台业务后台停止或重启
@@ -181,7 +181,7 @@ Agent SHALL 能在独立修复工作区读取版本化代码与故障材料、�
 - **THEN** Skill指导Agent仅说明和预览，不产生新的任务；后台不自动派发补齐
 
 ### Requirement: 原生前端和唯一会话源
-系统 SHALL 使用锁定版本OpenCode原生前端，复用会话、消息、流式、追问、模型、文件、差异、终端及项目切换，仅进行品牌及平台入口定制。新首页 MUST 不依赖自建会话索引或Key状态创建空会话；旧管理页继续可用。
+系统 SHALL 先验证锁定Pi内核和现成社区前端，复用其会话、消息、流式、模型和工具，仅进行品牌及平台入口定制；若核心故障或复杂项目门槛不能通过部署适配解决，MUST 停止内置路线并提供Skill下载。新首页 MUST 不依赖自建会话索引或Key状态创建空会话；旧管理页继续可用。OpenCode历史数据保持不变。
 
 #### Scenario: 从聊天打开独立管理中心
 - **WHEN** 用户点击首页或关于页的管理入口
