@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -42,6 +42,51 @@ test('independent Node processes cannot reserve more than ten requests',async()=
     child.stdout.on('data',chunk=>output+=chunk);child.on('error',reject);child.on('exit',code=>code===0?resolve(Number(output)):reject(Error('worker failed')));
   })));
   assert.equal(counts.reduce((a,b)=>a+b,0),10);
+});
+test('unlimited requests preserve the first ten claims and continue monotonically across concurrency and restart',async()=>{
+  const directory=mkdtempSync(join(tmpdir(),'mediaflow-unlimited-budget-'));
+  for(let slot=1;slot<=10;slot++) writeFileSync(join(directory,`${slot}.claim`),'preserved');
+  let sent=0;
+  const upstream=async()=>{sent++;return new Response('ok');};
+  const guarded=createBudgetFetch({directory,endpoint,limit:'unlimited',fetch:upstream});
+  await Promise.all(Array.from({length:4},()=>guarded(endpoint,{method:'POST'})));
+  const restarted=createBudgetFetch({directory,endpoint,limit:'unlimited',fetch:upstream});
+  await restarted(endpoint,{method:'POST'});
+  assert.equal(sent,5);
+  assert.deepEqual(readdirSync(directory).sort((a,b)=>Number.parseInt(a)-Number.parseInt(b)),
+                   Array.from({length:15},(_,index)=>`${index+1}.claim`));
+});
+test('invalid request limits fail closed before a wire request',async()=>{
+  for(const limit of [0,-1,'0','10.5','forever',null]) {
+    let sent=0;
+    assert.throws(()=>createBudgetFetch({directory:mkdtempSync(join(tmpdir(),'mediaflow-invalid-budget-')),
+                                        endpoint,limit,fetch:async()=>{sent++;return new Response('ok');}}),
+                  /request limit/i);
+    assert.equal(sent,0);
+  }
+});
+test('guard import reads unlimited mode from the launch environment',async()=>{
+  const directory=mkdtempSync(join(tmpdir(),'mediaflow-env-budget-'));
+  for(let slot=1;slot<=10;slot++) writeFileSync(join(directory,`${slot}.claim`),'preserved');
+  const originalFetch=globalThis.fetch;
+  const originalDirectory=process.env.MEDIAFLOW_PI_TRIAL_BUDGET_DIR;
+  const originalLimit=process.env.MEDIAFLOW_PI_REQUEST_LIMIT;
+  let sent=0;
+  globalThis.fetch=async()=>{sent++;return new Response('ok');};
+  process.env.MEDIAFLOW_PI_TRIAL_BUDGET_DIR=directory;
+  process.env.MEDIAFLOW_PI_REQUEST_LIMIT='unlimited';
+  try {
+    await import(`./pi-request-budget.mjs?environment-test=${Date.now()}`);
+    await globalThis.fetch(endpoint,{method:'POST'});
+    assert.equal(sent,1);
+    assert.equal(readdirSync(directory).includes('11.claim'),true);
+  } finally {
+    globalThis.fetch=originalFetch;
+    if(originalDirectory===undefined) delete process.env.MEDIAFLOW_PI_TRIAL_BUDGET_DIR;
+    else process.env.MEDIAFLOW_PI_TRIAL_BUDGET_DIR=originalDirectory;
+    if(originalLimit===undefined) delete process.env.MEDIAFLOW_PI_REQUEST_LIMIT;
+    else process.env.MEDIAFLOW_PI_REQUEST_LIMIT=originalLimit;
+  }
 });
 test('locked Pi SDK uses guarded fetch before each real wire request', {skip:!process.env.MEDIAFLOW_PI_SOURCE}, async () => {
   const directory=mkdtempSync(join(tmpdir(),'mediaflow-sdk-budget-'));

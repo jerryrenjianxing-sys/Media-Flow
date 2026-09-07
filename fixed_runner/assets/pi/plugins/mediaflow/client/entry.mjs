@@ -1,3 +1,8 @@
+export function formatTrialBudget(value) {
+  if(value.limit==='unlimited') return `已用 ${value.used} 次（不限次数）。${value.message}`;
+  return `已用 ${value.used}/${value.limit} 次。${value.message}`;
+}
+
 export default {
   mount(container) {
     const root=document.createElement('section');
@@ -10,7 +15,7 @@ export default {
     const download=document.createElement('a');download.href='/plugins-api/mediaflow/skill';download.textContent='下载 MediaFlow Skill（外部Agent可用）';download.style.cssText='display:block;margin-top:18px;color:inherit';
     const budget=document.createElement('p');budget.textContent='正在读取试用额度…';
     const controller=new AbortController();
-    fetch('/plugins-api/mediaflow/trial',{signal:controller.signal}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(value=>{budget.textContent=`已用 ${value.used}/${value.limit} 次。${value.message}`;}).catch(()=>{if(!controller.signal.aborted)budget.textContent='额度记录暂不可读，请检查独立Agent服务。';});
+    fetch('/plugins-api/mediaflow/trial',{signal:controller.signal}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(value=>{budget.textContent=formatTrialBudget(value);}).catch(()=>{if(!controller.signal.aborted)budget.textContent='额度记录暂不可读，请检查独立Agent服务。';});
     root.append(title,note,link,download,budget,info);container.append(root);
     return ()=>{controller.abort();root.remove();};
   }

@@ -1,7 +1,9 @@
 import json
+import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 
 from pi_runtime import prepare_config, launch_spec, validate_source
 
@@ -40,6 +42,63 @@ class PiRuntimeTests(unittest.TestCase):
             self.assertEqual(spec.env['PI_WEB_ENGINE'],'pi')
             self.assertNotIn('OPENCODE_CONFIG_CONTENT',spec.env)
             self.assertEqual(spec.env['MEDIAFLOW_PI_TRIAL_BUDGET_DIR'],str(root/'trial-request-budget'))
+            self.assertEqual(spec.env['MEDIAFLOW_PI_REQUEST_LIMIT'],'10')
+
+    def test_launch_accepts_explicit_unlimited_request_accounting(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            spec=launch_spec(root,root/'node.exe',root/'ui',root/'guard.mjs',request_limit='unlimited')
+            self.assertEqual(spec.env['MEDIAFLOW_PI_REQUEST_LIMIT'],'unlimited')
+
+    def test_launch_rejects_invalid_request_limit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            with self.assertRaisesRegex(ValueError,'request limit'):
+                launch_spec(root,root/'node.exe',root/'ui',root/'guard.mjs',request_limit='invalid')
+
+    def test_prepare_runtime_persists_unlimited_request_limit(self):
+        from unittest.mock import patch
+        script=Path(__file__).resolve().parents[1]/'scripts/prepare-pi-runtime.py'
+        spec=importlib.util.spec_from_file_location('prepare_pi_runtime_test',script)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder)
+            source=base/'source';source.mkdir()
+            node=base/'node.exe';node.write_bytes(b'node')
+            python=base/'python.exe';python.write_bytes(b'python')
+            output=base/'runtime.json'
+            archive=base/'bundle.zip'
+            with zipfile.ZipFile(archive,'w') as stream: stream.writestr('SKILL.md','fixture')
+            with patch.object(module,'validate_source'), \
+                 patch.object(module,'prepare_config',return_value={'credential_present':False}), \
+                 patch.object(module,'build_skill_bundle',return_value=archive):
+                module.prepare(source,node,base/'root',output,python,request_limit='unlimited')
+            self.assertEqual(json.loads(output.read_text())['request_limit'],'unlimited')
+
+    def test_host_forwards_persisted_request_limit_to_launch_environment(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from pi_host import _operate
+        captured=[]
+        class FakeRuntimeControl:
+            def __init__(self, *args, **kwargs): pass
+            def start(self, spec):
+                captured.append(spec)
+                (root/'independent-stop').touch()
+                return {'running':True}
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'root';root.mkdir()
+            config={'source':str(Path(folder)/'source'),'node':str(Path(folder)/'node.exe'),
+                    'guard':str(Path(folder)/'guard.mjs'),'python':str(Path(folder)/'python.exe'),
+                    'request_limit':'unlimited','port':13030}
+            for field in ('node','guard','python'): Path(config[field]).touch()
+            args=SimpleNamespace(action='run')
+            with patch('pi_host.RuntimeControl',FakeRuntimeControl), \
+                 patch('pi_host.validate_source'), patch('pi_host.validate_windows_shell'), \
+                 patch('native_console_host.require_available_ports'):
+                self.assertEqual(_operate(args,config,root),0)
+            self.assertEqual(captured[0].env['MEDIAFLOW_PI_REQUEST_LIMIT'],'unlimited')
 
     def test_missing_or_wrong_source_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
