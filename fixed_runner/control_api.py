@@ -8,6 +8,7 @@ import re
 import secrets
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -65,6 +66,7 @@ from virtual_devices import MuMuProvider, resolve_mumu_manager
 from virtual_device_inventory import VirtualDeviceInventory, manager_identity
 from storage_setup import schedule_data_root, storage_status, validate_data_root
 from product_version import product_version
+from skill_bundle import build_skill_bundle
 
 
 HOST = "127.0.0.1"
@@ -2948,6 +2950,32 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == "/api/platform-skill":
+            try:
+                with tempfile.TemporaryDirectory(prefix="mediaflow-skill-") as directory:
+                    archive = build_skill_bundle(Path(directory) / "MediaFlow-Skill.zip")
+                    payload = archive.read_bytes()
+            except Exception:
+                self._json(
+                    {"error": "MediaFlow Skill 下载包暂不可用，请检查安装文件后重试。"},
+                    503,
+                )
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header(
+                "Content-Disposition",
+                'attachment; filename="MediaFlow-Skill.zip"',
+            )
+            self.send_header("Content-Length", str(len(payload)))
+            origin = self.headers.get("Origin", "")
+            if origin in {"http://127.0.0.1:3000", "http://127.0.0.1:3001"}:
+                self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            write_response_bytes(self.wfile, payload)
+            return
         if path == '/api/automation':
             from automation import handle_automation_http
             handle_automation_http(self, 'GET', path)
