@@ -5,6 +5,17 @@ TBD - created by archiving change modularize-execution-core. Update Purpose afte
 
 ## Requirements
 
+### Requirement: 外部Skill贯通业务引导与既有服务
+系统 SHALL 通过同一可复制和下载的 Skill 指导主题定制、按需准备、内容计划/预设复用、计划运行和证据复盘。内容 SHALL 按用户目标加载，不增加权限分级、强制问卷或第二套队列。纯主题文案不依赖设备或业务模型，咨询和保存不隐含运行。
+
+#### Scenario: 从自然语言到主题
+- **WHEN** 用户提出一个行业或生产场景主题
+- **THEN** Agent使用随包规范分别生成搜索词与命中/必须证据/排除，按需选择模式或保存，已有参数不重复追问
+
+#### Scenario: 代办入口重试
+- **WHEN** 内容计划、预设、模型测试/启用或提醒确认通过automation执行
+- **THEN** 复用原业务服务与持久化请求回执，保留版本、额度、上传同意和忙碌约束；重复或结果未知不重放，不返回凭据
+
 ### Requirement: Skill 首次接入是独立只读路径
 系统 SHALL 提供无需 Python 的首次连接检查，并从已有数据库只读返回平台及登记设备摘要。该路径 SHALL NOT 创建业务上下文、收口任务、连接 ADB、扫描或操作虚拟机；历史设备状态 SHALL 带检测时间且不得解释为当前在线。
 
