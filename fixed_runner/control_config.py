@@ -22,6 +22,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "video_count": 20,
     "round_count": 1,
     "round_interval_minutes": 0,
+    "round_interval_basis": "completion",
+    "hybrid_probability_mode": "topic",
+    "batch_stop_policy": "deadline",
     "engagement_inspection_enabled": False,
     "inspection_every_rounds": 5,
     "inspection_mode": "home_badge",
@@ -65,6 +68,9 @@ PRESET_FIELDS = (
     "video_count",
     "round_count",
     "round_interval_minutes",
+    "round_interval_basis",
+    "hybrid_probability_mode",
+    "batch_stop_policy",
     "dwell_min",
     "dwell_max",
     "like_probability",
@@ -312,6 +318,11 @@ class SubmissionResult(list[str]):
 
 def normalized_config(raw: dict[str, Any]) -> dict[str, Any]:
     config = {**DEFAULT_CONFIG, **raw}
+    for key, current, legacy in (("round_interval_basis", "completion", "scheduled"),
+                                 ("hybrid_probability_mode", "topic", "legacy")):
+        config[key] = raw.get(key, legacy if raw else current)
+        if config[key] not in {current, legacy}:
+            raise ValueError(f"未知任务执行方式：{key}")
     # Missing mode on an existing saved configuration means the original flow.
     config["inspection_mode"] = raw.get("inspection_mode", "legacy" if raw else "home_badge")
     if config["inspection_mode"] not in {"home_badge", "legacy"}:
@@ -614,7 +625,7 @@ def build_scheduled_plan(
                     if on_demand:
                         inspection_config.update(preparation_version=PREPARATION_VERSION,
                                                  preparation_requirements=task_requirements(config, inspection=True))
-                if inspection_config["inspection_workflow_version"] == "home_badge":
+                if inspection_config["inspection_workflow_version"] == "home_badge" and (on_demand or standard_virtual):
                     inspection_config.update(preparation_version=PREPARATION_VERSION,
                                              preparation_requirements=task_requirements(inspection_config, inspection=True))
                 inspection_config.pop("round_index", None)

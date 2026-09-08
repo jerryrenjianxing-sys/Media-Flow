@@ -2,6 +2,7 @@ export const API = "http://127.0.0.1:48138";
 
 export type ContentMode = "general" | "mixed" | "search" | "hybrid";
 export type WorkbenchConfig = {
+  hybrid_probability_mode?: "topic" | "legacy"; round_interval_basis?: "completion" | "scheduled";
   device_id: string; device_ids: string[]; content_mode: ContentMode; search_query: string; search_trust_results: boolean;
   search_segment_min: number; search_segment_max: number; home_segment_min: number; home_segment_max: number;
   topic_prompt: string; content_plan_id?: string | null; content_plan_revision_id?: string | null;

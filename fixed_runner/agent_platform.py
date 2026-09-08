@@ -101,33 +101,39 @@ class AgentPlatform:
         return value if type(value) is int and value >= 0 else None
 
     @staticmethod
-    def resolve_devices(snapshot, selected):
-        """Accept inventory UUIDs or current endpoints, never infer a device by name."""
+    def _device_binding(snapshot, value):
+        """Resolve only authoritative visible inventory; never guess by name."""
         virtual = (snapshot.get('virtualization') or {}).get('devices') or []
+        matches = [('virtual', row) for row in virtual
+                   if value in (row.get('virtual_device_id'), row.get('adb_endpoint'))]
+        matches += [('physical', row) for row in snapshot.get('devices', [])
+                    if row.get('device_type') == 'physical' and row.get('device_id') == value]
+        if not matches:
+            raise ValueError('所选设备未找到当前设备身份映射，请刷新设备后重新预览')
+        if len(matches) != 1:
+            raise ValueError('设备身份映射不唯一，请到设备页核对；未创建任务')
+        kind, row = matches[0]
+        endpoint = row.get('adb_endpoint') if kind == 'virtual' else row.get('device_id')
+        if not endpoint:
+            raise ValueError('所选虚拟机ADB尚未连接，请到设备页连接后重新检查计划')
+        identity = ({key: row.get(key) for key in (
+            'virtual_device_id', 'provider_install_id', 'provider_instance_id', 'android_identity')}
+            if kind == 'virtual' else {key: row.get(key) for key in (
+                'device_id', 'device_type', 'model', 'android_identity')})
+        return endpoint, identity
+
+    @staticmethod
+    def resolve_devices(snapshot, selected):
         endpoints = []
         for value in selected:
-            matches = [row for row in virtual if value in (row.get('virtual_device_id'), row.get('adb_endpoint'))]
-            if not matches:
-                raise ValueError('所选设备未找到当前MuMu实例映射，请刷新设备后重新预览')
-            if len(matches) != 1:
-                raise ValueError('设备身份映射不唯一，请到设备页核对；未创建任务')
-            endpoint = matches[0].get('adb_endpoint')
-            if not endpoint:
-                raise ValueError('所选虚拟机ADB尚未连接，请到设备页连接后重新检查计划')
+            endpoint, _ = AgentPlatform._device_binding(snapshot, value)
             if endpoint not in endpoints:
                 endpoints.append(endpoint)
         return endpoints
 
     @staticmethod
     def identities(snapshot, device_ids):
-        virtual = (snapshot.get('virtualization') or {}).get('devices') or []
-        result = {}
-        for endpoint in device_ids:
-            row = next((item for item in virtual if item.get('adb_endpoint') == endpoint), None)
-            if not row:
-                raise ValueError('所选设备未找到当前MuMu实例映射，请刷新设备后重新预览')
-            result[endpoint] = {key: row.get(key) for key in ('virtual_device_id', 'provider_install_id', 'provider_instance_id', 'android_identity')}
-        return result
+        return {endpoint: AgentPlatform._device_binding(snapshot, endpoint)[1] for endpoint in device_ids}
 
     def plan(self, args, context):
         raw = args.get('config')
@@ -172,16 +178,15 @@ class AgentPlatform:
         # Do not inherit the user's old high-write draft or hidden write defaults.
         defaults = {key: 0 for key in ('like_probability', 'favorite_probability', 'comment_probability',
                                        'matched_like_probability', 'matched_favorite_probability', 'matched_comment_probability')}
-        config = normalized_config({**defaults, 'preview_only': True, 'inspection_mode': 'home_badge', **raw})
+        config = normalized_config({**defaults, 'preview_only': True, 'inspection_mode': 'home_badge',
+                                    'hybrid_probability_mode': 'topic', 'round_interval_basis': 'completion', **raw})
         selected = config['device_ids']
         if not selected:
-            raise ValueError('请选择要运行的虚拟机')
+            raise ValueError('请选择要运行的设备')
         snapshot = self.status_reader()
         selected = self.resolve_devices(snapshot, selected)
         config['device_ids'] = selected
         config['device_id'] = selected[0]
-        if any(row.get('device_type') != 'virtual' for row in snapshot.get('devices', []) if row.get('device_id') in selected):
-            raise ValueError('本版本Agent任务仅使用MuMu虚拟机')
         identity = self.identities(snapshot, selected)
         draft = {'revision': 1, 'config': config}
         preview = build_preview(self.store, draft, devices=snapshot.get('devices', []), paused=self.store.is_paused(),
@@ -192,7 +197,7 @@ class AgentPlatform:
         # Never silently drop an unavailable device from a user-confirmed scope.
         if set(preview['eligible_device_ids']) != set(selected):
             preview['ready'] = False
-            preview['blockers'].append('部分所选虚拟机不可用，请处理后重新预览；不会自动缩减设备范围')
+            preview['blockers'].append('部分所选设备不可用，请处理后重新预览；不会自动缩减设备范围')
         with self.database() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT id FROM plans WHERE call_id=?', (context['call_id'],)).fetchone()
@@ -265,17 +270,20 @@ class AgentPlatform:
             scheduled = build_scheduled_plan(config, submission_id=plan_id, plan_revision=revision,
                                             inspection_profiles=inspection_profiles_for_store(self.store))
             duration = max(3600, int(preview.get('estimated_seconds') or 0) * 2 + 1800)
-            if duration > 86400:
+            stop_policy = config.get('batch_stop_policy', 'deadline')
+            if stop_policy == 'deadline' and duration > 86400:
                 raise ValueError('这份计划超过一天，请拆分成较短的批次')
             self.store.submit_agent_batch(plan_id, session_id, scheduled.tasks,
-                                          fingerprint=preview['plan_hash'], deadline=time.time() + duration,
+                                          fingerprint=preview['plan_hash'],
+                                          deadline=None if stop_policy == 'round_count' else time.time() + duration,
+                                          stop_policy=stop_policy,
                                           resume_stopped_devices=body.get('resume_stopped_devices') is True)
             # A crash between these two databases is reconciled using the unique
             # batch receipt, never by re-creating the scheduled tasks.
             with self.database() as db:
                 db.execute("UPDATE plans SET state='submitted' WHERE id=?", (plan_id,))
             receipt = self.store.agent_batch_receipt(plan_id, session_id)
-        if receipt['state'] == 'cancelled' or receipt['deadline'] <= time.time():
+        if receipt['state'] == 'cancelled' or (receipt['deadline'] is not None and receipt['deadline'] <= time.time()):
             return {**receipt, 'message': '本次执行已停止或到期，不会自动重新执行'}
         if receipt['state'] == 'paused' or any(self.store.is_stop_requested(task['device_id']) for task in receipt['tasks'] if task['status'] in {'pending', 'running'}):
             snapshot = self.status_reader()

@@ -5,6 +5,13 @@ TBD - created by archiving change stabilize-runtime-lifecycle. Update Purpose af
 
 ## Requirements
 
+### Requirement: 实际轮末休息
+新计划 SHALL 冻结 `round_interval_basis=completion`，每台设备在本轮结束后休息配置分钟再开始下一轮；本轮安排的检查先运行，检查收口后计休息。等待时间 MUST 持久化、阻止后续轮次越过，并隔离其他设备及批次。历史缺少字段 SHALL 保留 scheduled 排程。
+
+#### Scenario: 视频执行比提交间隔更久
+- **WHEN** completion 任务指定一分钟间隔且上一轮执行十分钟
+- **THEN** 下一轮仍在该轮实际收口后至少六十秒才能领取，重启不重置等待或跳轮
+
 ### Requirement: 暂停只控制领取
 暂停 MUST 阻止 Worker 领取新任务，但不得把正在执行的任务显示为已停止或强制中断当前动作。
 

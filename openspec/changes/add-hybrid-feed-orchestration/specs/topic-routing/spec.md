@@ -1,6 +1,18 @@
 ## ADDED Requirements
 
+### Requirement: 显式主题双概率混合流
+新计划 SHALL 使用 `hybrid_probability_mode=topic`，搜索与主页均按实际主题命中选择 matched 或普通的点赞、收藏、评论概率。未命中评论 SHALL 根据当前内容生成，不套用目标主题素材；安全和发送前检查仍然有效。历史缺少字段的任务 SHALL 保持 legacy 路由，不改写历史。
+
+#### Scenario: 两阶段未命中但安全
+- **WHEN** topic 模式中任一已验证阶段内容未命中且安全，普通三项概率为 .3/.2/.1
+- **THEN** 三项分别按 .3/.2/.1 抽样，不把未命中评论暗中清零；不安全内容仍全部阻止
+
+#### Scenario: 旧混合任务
+- **WHEN** 已提交任务缺少 hybrid_probability_mode
+- **THEN** 使用下述原分阶段主题路由，不自动转换为新行为
+
 ### Requirement: 交替模式分阶段主题路由
+以下路由仅适用于 `hybrid_probability_mode=legacy` 或历史缺少该字段的任务；topic 模式 SHALL 使用上述显式主题双概率。
 `hybrid` 模式 SHALL 按当前已验证阶段选择动作路由。搜索阶段在 `search_trust_results=true` 且当前视频安全时，点赞和收藏 SHALL 使用搜索组概率而不要求主题为 `exact`；评论仍 MUST 满足 `exact`、当前画面证据、`safe=true`、发送前约束和对应控件检查。主页阶段所有安全内容的点赞和收藏 SHALL 使用主页组概率；评论只有在 `exact` 时才可按主页评论概率进入后续约束，非 `exact` 评论 MUST 被拦截。旧 `mixed` 模式的双概率语义保持不变。
 
 #### Scenario: 搜索阶段安全但主题不匹配

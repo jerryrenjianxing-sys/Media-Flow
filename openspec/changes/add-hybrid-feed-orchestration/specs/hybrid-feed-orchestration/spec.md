@@ -4,6 +4,14 @@
 
 ## ADDED Requirements
 
+### Requirement: 实际轮末休息
+新计划 SHALL 冻结 `round_interval_basis=completion`，每台设备在本轮结束后休息配置分钟再开始下一轮；本轮安排的检查先运行，检查收口后计休息。等待时间 MUST 持久化、阻止后续轮次越过，并隔离其他设备及批次。历史缺少字段 SHALL 保留 scheduled 排程。
+
+#### Scenario: 视频执行比提交间隔更久
+- **WHEN** completion 任务指定一分钟间隔且上一轮执行十分钟
+- **THEN** 下一轮仍在该轮实际收口后至少六十秒才能领取，重启不重置等待或跳轮
+
+
 ### Requirement: 随机交替阶段
 系统 SHALL 支持 `hybrid` 内容模式并从搜索阶段开始。每次进入搜索阶段时 SHALL 使用任务级随机数生成器在包含上下限的 `search_segment_min` 至 `search_segment_max` 中抽取本段目标量；每次进入主页阶段时 SHALL 在包含上下限的 `home_segment_min` 至 `home_segment_max` 中抽取本段目标量。系统依次交替执行直到处理量达到任务 `video_count`，最后阶段剩余处理量不足抽取目标时 SHALL 按任务总量截断，不得超额处理。
 

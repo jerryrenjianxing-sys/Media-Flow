@@ -246,9 +246,18 @@ def inspect_home_badge(inspector, policy) -> dict:
                 device_id=inspector._device_id, workflow_version="home_badge", status=status, result_kind=metadata["result_kind"],
                 restored=home, summary=summary, evidence=evidence, run_dir=str(root), started_at=started, finished_at=now_iso())
             device = inspector._store.get_virtual_device_for_adb(inspector._device_id)
-            if not device:
+            permanent_id = device.get("virtual_device_id") if device else None
+            if not permanent_id:
+                from device_profiles import load_device_profiles
+                serial = inspector._device_id
+                profile = load_device_profiles().get(serial)
+                # Physical USB identity is stable across app/service restarts.
+                # Never turn a missing emulator binding into a physical phone.
+                if profile and profile.verified and not (":" in serial or serial.startswith("emulator-")):
+                    permanent_id = "physical:" + hashlib.sha256(serial.encode("utf-8")).hexdigest()
+            if not permanent_id:
                 raise RuntimeError("permanent_device_identity_unavailable")
-            metadata.update(inspector._store.record_home_badge_observation(permanent_device_id=device["virtual_device_id"],
+            metadata.update(inspector._store.record_home_badge_observation(permanent_device_id=permanent_id,
                 device_id=inspector._device_id, task_id=inspector._task_id, state=result["state"], summary=summary))
         except Exception as exc:
             output.update(status="degraded", failure_reason="home_badge_persistence_failed")

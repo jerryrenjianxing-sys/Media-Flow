@@ -1797,6 +1797,12 @@ class TaskStore(AgentQueueMixin):
             if not isinstance(round_count, int) or not 1 <= round_count <= 20:
                 raise ValueError("round_count must be between 1 and 20")
             interval = payload.get("round_interval_minutes", 0)
+            if payload.get("round_interval_basis", "scheduled") not in {"scheduled", "completion"}:
+                raise ValueError("invalid round_interval_basis")
+            if payload.get("hybrid_probability_mode", "legacy") not in {"legacy", "topic"}:
+                raise ValueError("invalid hybrid_probability_mode")
+            if payload.get("batch_stop_policy", "deadline") not in {"deadline", "round_count"}:
+                raise ValueError("invalid batch_stop_policy")
             if not isinstance(interval, int) or not 0 <= interval <= 1440:
                 raise ValueError("round_interval_minutes must be between 0 and 1440")
             max_gate_skips = payload.get("max_gate_skips", 3)
@@ -2720,6 +2726,38 @@ class TaskStore(AgentQueueMixin):
                 raise RuntimeError(f"Task is not running or does not exist: {task_id}")
             if status in {'failed', 'stopped'}:
                 self.close_agent_batch_after_failure(connection, task_id)
+            else:
+                self._defer_following_rounds(connection, task_id)
+
+    @staticmethod
+    def _defer_following_rounds(connection, task_id):
+        """Persist actual per-device rest in the same transaction as completion.
+
+        Move the whole future tail so ready-time ordering cannot skip a round.
+        A same-round inspection remains immediately eligible and extends rest
+        again on completion. Existing scheduled payloads are untouched.
+        """
+        row = connection.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+        payload = json.loads(row['payload_json'])
+        if payload.get('round_interval_basis') != 'completion':
+            return
+        interval = int(payload.get('round_interval_minutes') or 0)
+        submission = payload.get('submission_id')
+        round_index = payload.get('round_index', payload.get('after_round_index'))
+        if not interval or not submission or not round_index:
+            return
+        ready = datetime.fromisoformat(row['finished_at']) + timedelta(minutes=interval)
+        pending = connection.execute(
+            "SELECT id,payload_json,not_before FROM tasks WHERE device_id=? AND status='pending' "
+            "AND json_extract(payload_json,'$.submission_id')=? ORDER BY not_before,created_at,id",
+            (row['device_id'], submission)).fetchall()
+        for offset, candidate in enumerate(pending):
+            next_payload = json.loads(candidate['payload_json'])
+            if int(next_payload.get('round_index', next_payload.get('after_round_index', 0))) <= int(round_index):
+                continue
+            not_before = max(datetime.fromisoformat(candidate['not_before']), ready) + timedelta(microseconds=offset+1)
+            connection.execute('UPDATE tasks SET not_before=? WHERE id=? AND status=\'pending\'',
+                               (not_before.isoformat(timespec='microseconds'), candidate['id']))
 
     @staticmethod
     def _task_recovery_payload(row: sqlite3.Row) -> dict[str, Any]:

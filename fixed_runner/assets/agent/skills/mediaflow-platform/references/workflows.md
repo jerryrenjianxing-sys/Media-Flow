@@ -34,7 +34,7 @@
 
 ## 从目标到运行
 
-1. 调用 `list_devices`、`list_tasks`，并用当前会话的 `plan_status` 核对计划。`list_devices.online` 是当前连接库存；永久设备 UUID 才能进入 `device_ids`。先按用户指定的真机/虚拟机范围筛选，不能用范围外设备补位。
+1. 调用 `list_devices`、`list_tasks`，并用当前会话的 `plan_status` 核对计划。虚拟机使用清单中的永久 UUID 或当前 ADB 地址；用户明确选真机时使用 `list_devices.online` 中 `device_type=physical` 的准确 `device_id`。不按名称猜地址。平台默认仍用虚拟机，不用范围外设备补位。
 2. 若用户选择内容计划，先读取真实 `plan_id/revision_id`。非 `general` 计划同时传 `content_plan_id` 和 `content_plan_revision_id`；计划会从首个启用主题补齐当前轮的 `topic_prompt/search_query`。不要重复询问已有字段，也不要让旧草稿字段覆盖所选修订。
 3. 默认一轮20条、首页 `general`、停留8～25秒、不巡检、六项互动概率全0、`preview_only=true`。显式搜索用 `search`，只缺搜索词才问；严格生产/证据场景 `search_trust_results=false`。模式细节见 `content-guide.md#四种内容模式`。
 4. `plan_tasks.arguments.config` 必须含 `device_ids,video_count,round_count,content_mode,engagement_inspection_enabled`。`search/hybrid` 需要 `search_query`，`mixed` 需要 `topic_prompt`；选内容计划时由真实修订补齐。启用巡检时传 `inspection_every_rounds`。
@@ -42,7 +42,11 @@
 
 ### 互动与评论
 
-主页概率为 `like_probability/favorite_probability/comment_probability`，主题命中概率为 `matched_like_probability/matched_favorite_probability/matched_comment_probability`；30%写 `0.3`。两套互不覆盖。未指定时六项全部为0，不使用旧草稿、内置预设或上次任务的默认高值。
+新混合计划默认 `hybrid_probability_mode=topic`：搜索、主页均用 `matched_like_probability/matched_favorite_probability/matched_comment_probability` 表示命中概率，`like_probability/favorite_probability/comment_probability` 表示未命中的安全内容概率；30%写 `0.3`。两套互不覆盖；未命中评论按当前内容生成，不套用目标主题素材。未指定时六项全部为0。旧任务 `legacy` 仍保留原分阶段规则，不自动迁移。
+
+新计划默认 `round_interval_basis=completion`：`round_interval_minutes` 是每台设备本轮实际结束后的休息，有该轮消息检查时先检查、再休息。旧 `scheduled` 是从提交时间排程，不等于实际轮间休息。字段随计划冻结，恢复原批次不改值。
+
+用户明确“只按轮数结束、不设时间停止”时传 `batch_stop_policy=round_count`。批次回执的 `deadline:null` 表示无执行时间截止，不是缺失配置；计划提交前的十分钟有效期是另一回事。未指定时沿用 `deadline` 策略。两种方式都保留暂停、安全停止与单次操作超时。
 
 评论模板/词池属于内容计划；发送前约束 `comment_policy_enabled/comment_policy_prompt` 属于任务参数/预设。用户明确要求评论时才配置。只预览保持 `preview_only=true`；真实发送需本次明确目标并设 `false`，固定安全与画面复核仍优先。
 

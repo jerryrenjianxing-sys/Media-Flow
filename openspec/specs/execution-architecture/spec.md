@@ -5,6 +5,21 @@ TBD - created by archiving change modularize-execution-core. Update Purpose afte
 
 ## Requirements
 
+### Requirement: 本地自动化复用当前可选设备
+自动化计划 SHALL 接受当前平台清单中的虚拟机身份或明确 physical 设备的 ADB 序列号，提交前复核身份与可执行状态。清单外设备、歧义映射及部分设备不可用 MUST 明确失败，不得猜测名称或缩减用户设备范围。真机展示偏好保持不变。
+
+#### Scenario: 已显示五台物理设备
+- **WHEN** 用户明确选中平台当前展示的五台物理设备并要求混合流运行
+- **THEN** 计划、提交、恢复复用原任务服务，不因缺少 MuMu 实例映射拒绝真机
+- **AND** 设备离线、占用或身份变化仍返回对应业务原因
+
+### Requirement: 按轮数结束的显式批次策略
+用户明确要求按轮数而不按时间结束时，系统 SHALL 冻结 `batch_stop_policy=round_count`，运行、等待、暂停恢复均不套用估算时间截止。历史批次继续使用原 deadline。安全停止、操作超时及未知写入不重放 MUST 保留。
+
+#### Scenario: 模型响应较慢
+- **WHEN** round_count 批次尚未完成指定轮数且已超过旧估算时长
+- **THEN** 不因墙上时钟到期取消任务，用户仍可暂停或停止原批次
+
 ### Requirement: 外部Skill贯通业务引导与既有服务
 系统 SHALL 通过同一可复制和下载的 Skill 指导主题定制、按需准备、内容计划/预设复用、计划运行和证据复盘。内容 SHALL 按用户目标加载，不增加权限分级、强制问卷或第二套队列。纯主题文案不依赖设备或业务模型，咨询和保存不隐含运行。
 

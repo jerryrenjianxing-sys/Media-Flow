@@ -546,6 +546,12 @@ def routed_action_plan(
             {action: "feed_phase_unverified" for action in ("like", "favorite", "comment")},
         )
 
+    if content_mode == "hybrid" and config.get("hybrid_probability_mode") == "topic":
+        route = "topic_matched" if matched else "other_safe_content"
+        return routed_action_probabilities(config, matched), {
+            action: route for action in ("like", "favorite", "comment")
+        }
+
     search_phase = content_mode == "search" or (
         content_mode == "hybrid" and feed_phase == "search"
     )
@@ -1095,6 +1101,9 @@ def topic_session(
                 feed_phase=active_phase_name,
             )
             entry["probability_route"] = (
+                ("matched" if matched else "general")
+                if content_mode == "hybrid" and config.get("hybrid_probability_mode") == "topic"
+                else
                 "search_trusted"
                 if summary["search_trust_results"] and active_phase_name == "search"
                 else "matched"
@@ -1181,7 +1190,11 @@ def topic_session(
                         comment_policy_prompt=str(
                             config.get("comment_policy_prompt", "")
                         ),
-                        content_plan_snapshot=config.get("content_plan_snapshot"),
+                        content_plan_snapshot=(
+                            None if content_mode == "hybrid"
+                            and config.get("hybrid_probability_mode") == "topic" and not matched
+                            else config.get("content_plan_snapshot")
+                        ),
                         task_seed=int(config.get("seed", 0)),
                         used_candidate_ids=used_comment_candidates,
                     )
