@@ -15,14 +15,25 @@ class AgentRuntimeTests(unittest.TestCase):
             other.parent.mkdir(parents=True)
             other.write_text('user guide', encoding='utf-8')
             target = install_platform_skill(root)
-            modified = target.stat().st_mtime_ns
+            skill_root = target.parent
+            installed = [
+                target,
+                skill_root / 'references/api.md',
+                skill_root / 'references/content-guide.md',
+                skill_root / 'references/workflows.md',
+                skill_root / 'scripts/mediaflow.py',
+                skill_root / 'scripts/mediaflow.ps1',
+            ]
+            modified = {path: path.stat().st_mtime_ns for path in installed}
             install_platform_skill(root)
-            self.assertEqual(target.stat().st_mtime_ns, modified)
+            self.assertEqual({path: path.stat().st_mtime_ns for path in installed}, modified)
             self.assertEqual(other.read_text(encoding='utf-8'), 'user guide')
             guide = target.read_text(encoding='utf-8')
             self.assertIn('name: mediaflow-platform', guide)
             self.assertIn('execute_plan', guide)
-            self.assertIn('matched_comment_probability', guide)
+            self.assertIn('references/content-guide.md', guide)
+            self.assertIn('matched_comment_probability',
+                          (skill_root / 'references/workflows.md').read_text(encoding='utf-8'))
 
     def test_platform_skill_is_native_and_has_no_arbitrary_twelve_step_limit(self):
         config=build_config('http://127.0.0.1:49200','ephemeral',['python','mcp.py'])
