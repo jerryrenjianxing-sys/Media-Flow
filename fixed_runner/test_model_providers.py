@@ -104,7 +104,7 @@ class TokenPlanTests(unittest.TestCase):
                 providers.activate(providers.QWEN)
         self.assertEqual(providers.selection()["revision"], 0)
 
-    def test_concurrent_limit_survives_reopen_and_failures(self):
+    def test_concurrent_usage_survives_reopen_without_a_limit(self):
         ref = self.passed()
         def attempt(_):
             try:
@@ -114,10 +114,12 @@ class TokenPlanTests(unittest.TestCase):
                 return exc.code
         with ThreadPoolExecutor(max_workers=8) as pool:
             results = list(pool.map(attempt, range(15)))
-        self.assertEqual(results.count("network_timeout"), 10)
-        self.assertEqual(results.count("acceptance_exhausted"), 5)
-        self.assertEqual(providers.status(providers.QWEN)["requests_used"], 10)
-        self.assertEqual(attempt(0), "acceptance_exhausted")
+        self.assertEqual(results, ["network_timeout"] * 15)
+        self.assertEqual(providers.status(providers.QWEN)["requests_used"], 15)
+        self.assertIsNone(providers.status(providers.QWEN)["request_limit"])
+        self.assertIsNone(providers.status(providers.QWEN)["requests_remaining"])
+        self.assertEqual(attempt(0), "network_timeout")
+        self.assertEqual(providers.status(providers.QWEN)["requests_used"], 16)
 
     def test_consent_missing_never_calls_model(self):
         self.save()
@@ -146,11 +148,10 @@ class TokenPlanTests(unittest.TestCase):
     def test_qwen_payload_and_usage_are_separate_from_usd_budget(self):
         ref = self.passed()
         response = self.response(value={"usage": {"total_tokens": 50, "secret": "bad", "cost": 100}})
-        with patch.dict(os.environ, {"MEDIAFLOW_MODEL_BUDGET_PATH": "must-not-touch.db"}), patch("model_budget._reservation") as reserve, patch("model_budget.requests.post", return_value=response) as post:
+        with patch.dict(os.environ, {"MEDIAFLOW_MODEL_BUDGET_PATH": "must-not-touch.db"}), patch("model_budget.requests.get", side_effect=AssertionError('no pricing lookup')), patch("model_budget.requests.post", return_value=response) as post:
             with budgeted_post(providers.QWEN_BASE_URL+"/chat/completions", candidate_ref=ref,
                                data=json.dumps({"model": providers.QWEN_MODEL, "provider": {"foo": 1}, "usage": {}, "stream": True}), headers={"Authorization": "Bearer dummy", "X-OpenRouter-Metadata": "enabled"}) as stream:
                 stream.json()
-        reserve.assert_not_called()
         body = post.call_args.kwargs["json"]
         self.assertNotIn("provider", body); self.assertNotIn("usage", body)
         self.assertNotIn("X-OpenRouter-Metadata", post.call_args.kwargs["headers"])
@@ -269,6 +270,9 @@ class TokenPlanTests(unittest.TestCase):
         from control_vision import VisionCandidateLocator
         from incident_analysis import analyze_incident
         self.passed(); providers.activate(providers.QWEN)
+        for _ in range(10):
+            with providers.admitted_request(providers.QWEN):
+                pass
         image = self.root / "test.png"
         Image.new("RGB", (900, 1600), "white").save(image)
         task = self.store.submit("healthcheck", "offline-test-only")
@@ -294,7 +298,7 @@ class TokenPlanTests(unittest.TestCase):
             self.assertEqual(call.args[0], providers.QWEN_BASE_URL + "/chat/completions")
             self.assertEqual(call.kwargs["json"]["model"], providers.QWEN_MODEL)
             self.assertFalse(call.kwargs["json"]["enable_thinking"])
-        self.assertEqual(providers.status(providers.QWEN)["requests_used"], 5)
+        self.assertEqual(providers.status(providers.QWEN)["requests_used"], 15)
 
 
 if __name__ == "__main__":

@@ -39,20 +39,21 @@ test('trial route reports unlimited usage above ten and client avoids a null quo
   assert.doesNotMatch(display,/\/null|剩余 10|\/10/);
 });
 
-test('trial route fails closed when its configured limit is invalid',()=>{
+test('trial route ignores old numeric or invalid quota settings',()=>{
   const routes=[];
   plugin.activate({route:(method,path,handler)=>{routes.push({method,path,handler});return ()=>{};}});
   const handler=routes.find(route=>route.path==='/trial').handler;
   const originalLimit=process.env.MEDIAFLOW_PI_REQUEST_LIMIT;
-  let status;
-  let payload;
-  process.env.MEDIAFLOW_PI_REQUEST_LIMIT='invalid';
   try {
-    handler({}, {status:value=>{status=value;return {json:value=>{payload=value;}};}});
+    for(const limit of ['10','invalid']) {
+      process.env.MEDIAFLOW_PI_REQUEST_LIMIT=limit;
+      let payload;
+      handler({}, {json:value=>{payload=value;}});
+      assert.equal(payload.limit,'unlimited');
+      assert.equal(payload.remaining,null);
+    }
   } finally {
     if(originalLimit===undefined) delete process.env.MEDIAFLOW_PI_REQUEST_LIMIT;
     else process.env.MEDIAFLOW_PI_REQUEST_LIMIT=originalLimit;
   }
-  assert.equal(status,503);
-  assert.deepEqual(payload,{error:'请求额度配置无效，停止真实验证。'});
 });

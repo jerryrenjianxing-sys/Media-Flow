@@ -75,7 +75,7 @@ def _operate(args,config,root):
         if not Path(config[field]).is_file(): raise ValueError(f'Pi专用运行资源缺失：{field}')
     spec=launch_spec(root,config['node'],config['source'],config['guard'],
                      python=config['python'],port=config.get('port',3000),
-                     request_limit=config.get('request_limit',10))
+                     request_limit=config.get('request_limit','unlimited'))
     if os.name=='nt': validate_windows_shell(spec.env)
     from native_console_host import require_available_ports
     require_available_ports([config.get('port',3000)])

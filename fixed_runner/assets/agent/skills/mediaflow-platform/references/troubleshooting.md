@@ -7,7 +7,8 @@
 
 - result_unknown：写请求可能已送达。先request_status查原编号，再plan_status/virtual_operation_status/repair_update_status核对。原写入不自动重试、不删除SQLite回执、不换编号试跑。
 - content_plan/preset写入阻断：读取原对象核对名称、ID、修订和字段限制；只有用户要求的新操作才使用新编号。内容计划同ID保存是新修订，预设同名保存是替换且没有历史版本。
-- 模型 `failed/blocked`：保留返回的具体reason_code和user_message。凭据不可读、配置锁定、次数/预算不足、缺少上传同意、任务或分析忙碌等都是已知阻断，不是`result_unknown`；引导用户在原平台修复对应状态后，由用户决定是否再次测试或启用。不要自动联网验证、切换provider或重复付费测试。
+- 历史 `model_budget_exhausted/model_budget_price_unavailable/acceptance_exhausted` 不是当前执行门槛。读取当前模型状态，不清空用量，不索取预算，不自动重放原任务。
+- 模型 `failed/blocked`：保留返回的具体reason_code和user_message。凭据不可读、配置锁定、服务商实际套餐额度耗尽、缺少上传同意、任务或分析忙碌等都是已知阻断，不是`result_unknown`；引导用户在原平台修复对应状态后，由用户决定是否再次测试或启用。不要自动联网验证、切换provider或重复付费测试。
 - worker_start_unconfirmed：任务已存，执行者未确认。查原plan_status；用户要求继续时用新请求编号恢复原plan_id，任务ID保持原批次。
 - missing_parameters：采用已知参数和合理默认，只问真正缺少或含糊字段；没有创建任务。
 - 设备映射、ADB或身份错误：区分虚拟机离线、端点变更、任务停止与执行者故障。先list_devices；不能猜目标、静默缩减设备或把在线但停止说成关机。

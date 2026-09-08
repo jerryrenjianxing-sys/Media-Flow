@@ -13,7 +13,7 @@ type ThemeDraft = { id?: string; name: string; topic_prompt: string; search_quer
 type Draft = { planId?: string; name: string; comment_template: string; commonPoolText: string; themes: ThemeDraft[] };
 type Preset = { name: string; builtin: boolean; config: Record<string, unknown> };
 type StorageStatus = { data_root: string; configured: boolean; categories: string[]; pending_migration?: { target?: string } | null; last_migration?: { applied?: boolean; message?: string; target?: string } | null };
-type ModelStatus = { provider: string; model: string; key_configured: boolean; storage_status: "empty" | "pending" | "stored" | "unreadable"; auth_status: string; model_test_status: string; last_verified_at?: string | null; last_model_test_at?: string | null; last_model_latency_ms?: number | null; message: string; model_ready: boolean; has_pending_key: boolean; active_provider?: string; config_version?: number; requests_used?: number; requests_remaining?: number; can_enable?: boolean };
+type ModelStatus = { provider: string; model: string; key_configured: boolean; storage_status: "empty" | "pending" | "stored" | "unreadable"; auth_status: string; model_test_status: string; last_verified_at?: string | null; last_model_test_at?: string | null; last_model_latency_ms?: number | null; message: string; model_ready: boolean; has_pending_key: boolean; active_provider?: string; config_version?: number; requests_used?: number; requests_remaining?: number | null; can_enable?: boolean };
 
 const blankTheme = (): ThemeDraft => ({ name: "", topic_prompt: "", search_query: "", comment_template: "", poolText: "", enabled: true });
 const blankDraft = (): Draft => ({ name: "", comment_template: "", commonPoolText: "", themes: [blankTheme()] });
@@ -314,13 +314,13 @@ export default function ContentAssetsPage() {
           {isQwen && <div className="model-connection-feedback">
             <p>模型固定为 qwen3.8-flash；地址由软件预设。Token Plan专属Key与OpenRouter分别加密保存。</p>
             <p>个人套餐官方FAQ限制后台自动化使用。本接入仅为实验性验证，不代表符合生产后台使用要求。不会自动切换到按量接口或其他服务商。</p>
-            <p>本轮请求：{model?.requests_used ?? 0}/10（失败、超时也计入；重启不重置）。Credits以千问工作台为准，不等同于零费用。</p>
+            <p>累计请求：{model?.requests_used ?? 0} 次（失败、超时也计入；重启不重置）。平台不设次数或金额上限；Credits以千问工作台为准，不等同于零费用。</p>
             <p><a href="https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-faq" target="_blank" rel="noreferrer">官方使用与数据条款</a></p>
             <label><input type="checkbox" checked={uploadConsent} disabled={busy} onChange={(event) => setUploadConsent(event.target.checked)}/> 我确认：测试图及后续明确授权的完整应用截图将发送到千问Token Plan服务并消耗套餐额度；个人版输入输出可能用于服务及模型改进。不上传电脑桌面、配置或Key。</label>
           </div>}
           <div className="model-connection-body"><div className="key-entry"><input aria-label={isQwen ? "千问 Token Plan API Key" : "OpenRouter API Key"} type="password" autoComplete="off" value={apiKey} disabled={busy} onChange={(event) => setApiKey(event.target.value)} placeholder={isQwen ? "粘贴 Token Plan 专属 sk-sp- Key" : "粘贴 OpenRouter Key"}/><button type="button" className="secondary" disabled={busy || !apiKey.trim()} onClick={() => void saveModelKey()}>{isQwen ? "安全保存" : "安全保存并鉴权"}</button></div>
             <div className="model-actions">{!isQwen && (model?.has_pending_key || (model?.key_configured && model.auth_status !== "authenticated")) && <button type="button" className="secondary" disabled={busy} onClick={() => void verifyModelKey()}>重新验证 Key</button>}
-              <button type="button" className="secondary" disabled={busy || !model?.key_configured || (isQwen ? !uploadConsent || model?.requests_remaining === 0 : model.auth_status !== "authenticated")} onClick={() => void testModel()}>{isQwen ? "测试图片与结构化响应（消耗1次）" : "测试当前模型（少量计费）"}</button>
+              <button type="button" className="secondary" disabled={busy || !model?.key_configured || (isQwen ? !uploadConsent : model.auth_status !== "authenticated")} onClick={() => void testModel()}>{isQwen ? "测试图片与结构化响应" : "测试当前模型（少量计费）"}</button>
               <button type="button" className="primary" disabled={busy || !model?.model_ready || (isQwen && !model.can_enable)} onClick={() => void enableModel()}>启用为全平台模型</button><a className="secondary" href="/governance">打开评测与证据</a>
             </div></div>
           <div className={`model-connection-feedback ${model?.model_test_status === "failed" ? "danger" : ""}`} role="status"><strong>{modelAction === "saving" ? isQwen ? "正在本机加密和解密回读，不发送联网请求…" : "正在本机加密并进行免费鉴权，最长约35秒…" : modelAction === "verifying" ? "正在重新验证Key，最长约20秒…" : modelAction === "testing" ? isQwen ? "正在验证文本、图片与JSON，20秒后收口，不自动重试…" : "正在测试当前模型，最长约45秒…" : modelAction === "enabling" ? "正在核对任务和分析调用是否空闲…" : model?.message || "请选择服务商并保存独立Key。"}</strong>{model?.last_model_test_at && <small>最近测试：{new Date(model.last_model_test_at).toLocaleString()}{model.last_model_latency_ms ? ` · ${model.last_model_latency_ms} ms` : ""}</small>}</div>

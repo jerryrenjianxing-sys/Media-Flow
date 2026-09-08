@@ -21,8 +21,8 @@ export const navigationFeedback: Record<string, string> = {
   model_timeout: "模型连接超时；请检查网络后重试，设备连接和看屏不受影响。",
   model_permanent_rejection: "模型服务拒绝该请求；请检查账号权限和服务限制，不会自动更换服务绕过拒绝。",
   model_rate_limited: "模型服务限流；请稍后重试，本次未继续猜测点击。",
-  model_budget_exhausted: "本轮模型预算已用完或已预留满，已停止新增付费请求。",
-  model_budget_price_unavailable: "无法可靠确定模型费用上限，已停止付费请求；请检查价格信息。",
+  model_budget_exhausted: "历史本地预算限制记录；当前版本已取消此限制，请查看当前模型状态。",
+  model_budget_price_unavailable: "历史价格查询失败记录；当前版本不再依赖价格查询放行请求。",
 };
 
 export function navigationReason(reason?: string | null): string | undefined {

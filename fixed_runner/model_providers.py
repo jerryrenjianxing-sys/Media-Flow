@@ -1,4 +1,4 @@
-"""Provider configuration and acceptance gate. Secrets never leave this boundary.
+"""Provider configuration and request accounting. Secrets never leave this boundary.
 
 SQLite serializes activation and request admission across API/worker/analyzer
 processes. Candidate secrets are immutable DPAPI files; testing never replaces
@@ -37,7 +37,6 @@ ERRORS = {
     "quota_exhausted": "套餐额度已耗尽，请在千问工作台检查；不会切换到按量付费",
     "network_timeout": "网络连接或模型响应超时，请稍后手动重试",
     "invalid_response": "模型没有返回符合要求的图片与结构化结果",
-    "acceptance_exhausted": "本轮10次验收请求已用完；已停止新增千问请求",
     "configuration_changed": "模型配置已变化，请重新开始当前验证",
     "upload_consent_required": "请先确认图片上传、套餐额度和个人版数据使用说明",
     "provider_failure": "模型服务暂时异常，请稍后手动重试",
@@ -50,7 +49,7 @@ class ProviderError(CloudModelError):
         self.code = code
         kind = {"authentication": "authentication", "permission": "permanent_rejection",
                 "model_unavailable": "invalid_request", "rate_limited": "rate_limited",
-                "quota_exhausted": "balance", "acceptance_exhausted": "balance",
+                "quota_exhausted": "balance",
                 "network_timeout": "transient_network", "invalid_response": "invalid_response"}.get(code, "provider_failure")
         super().__init__(kind, ERRORS.get(code, "模型配置异常，请重新保存并测试"),
                          retryable=False, diagnostics={"reason_code": code})
@@ -126,7 +125,8 @@ def resolve_runtime_model(api_key=None, base_url=None, model=None):
 def status(provider: str | None = None) -> dict:
     from model_connection import status as openrouter_status
     active = selection()
-    old = {**openrouter_status(), "provider_id": OPENROUTER}
+    old = {**openrouter_status(), "provider_id": OPENROUTER,
+           "request_limit": None, "requests_remaining": None, "local_limits_enabled": False}
     candidate, count = {}, 0
     if CONFIG_DB.is_file():
         with database() as c:
@@ -146,7 +146,8 @@ def status(provider: str | None = None) -> dict:
         "last_model_latency_ms": candidate.get("latency_ms"),
         "message": candidate.get("message", "请输入 Token Plan 专属 Key；保存不会发起联网鉴权"),
         "reason_code": candidate.get("reason_code"), "experimental": True,
-        "request_limit": 10, "requests_used": count, "requests_remaining": max(0, 10-count),
+        "request_limit": None, "requests_used": count, "requests_remaining": None,
+        "local_limits_enabled": False,
         "credits": None, "usage_message": "Credits以千问工作台为准；不等同于美元或零费用",
         "can_enable": bool(passed and candidate.get("consent") == NOTICE_VERSION),
     }
@@ -268,7 +269,7 @@ def verify_openrouter():
 
 @contextmanager
 def admitted_request(provider, *, candidate_ref=None, configuration_test=False, expected_key=None):
-    """Reserve before transmission. Failed/late/crashed attempts keep their slot."""
+    """Record before transmission and serialize configuration, without quotas."""
     token = uuid.uuid4().hex
     with database() as c:
         c.execute("BEGIN IMMEDIATE")
@@ -286,8 +287,6 @@ def admitted_request(provider, *, candidate_ref=None, configuration_test=False, 
                 raise ProviderError("configuration_changed")
             elif expected_key is not None and not secrets.compare_digest(expected_key, _key(active["active_key"])):
                 raise ProviderError("configuration_changed")
-            if c.execute("SELECT COUNT(*) FROM calls WHERE provider=?", (QWEN,)).fetchone()[0] >= 10:
-                raise ProviderError("acceptance_exhausted")
         c.execute("INSERT INTO calls VALUES (?,?,?,?,?,NULL,NULL,NULL)", (token, provider, active["revision"], os.getpid(), time.time()))
     receipt = {"usage": None, "error_code": None}
     try:
@@ -377,7 +376,7 @@ def test_candidate(*, consent=False):
 
 def _reconcile_calls(c):
     # Inspect process identity, not elapsed time: a slow surviving request must
-    # still block activation. Never replay interrupted calls or reclaim slots.
+    # still block activation. Never replay interrupted calls or erase history.
     from runtime_control import SystemProcessInspector
     inspector = SystemProcessInspector()
     for row in c.execute("SELECT id,pid FROM calls WHERE finished IS NULL").fetchall():
@@ -385,5 +384,5 @@ def _reconcile_calls(c):
             c.execute("UPDATE calls SET finished=?,error_code='interrupted' WHERE id=?", (time.time(), row["id"]))
     candidate = _candidate(c)
     if candidate.get("model_test_status") == "testing" and inspector.snapshot(candidate.get("testing_pid", 0)) is None:
-        candidate.update(model_test_status="failed", reason_code="interrupted", message="上次测试被中断；原配置未改变，可手动重新测试（占用新的验收次数）")
+        candidate.update(model_test_status="failed", reason_code="interrupted", message="上次测试被中断；原配置未改变，可手动重新测试")
         _write_candidate(c, candidate)

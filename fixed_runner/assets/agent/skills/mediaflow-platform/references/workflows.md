@@ -60,8 +60,10 @@
 
 - `model_status` 纯读取，不测试、不调用付费验证，也不自动切换 provider。
 - Key 由用户在原平台模型页面填写，automation 不接收、不回显 Key。
-- 只有用户明确要求“测试”时才 `model_test`。千问沿用图片上传同意和次数门禁；OpenRouter 沿用费用/预算验证，且不接受 `upload_consent:true`。
+- 只有用户明确要求“测试”时才 `model_test`。千问沿用图片上传同意；OpenRouter 不接受 `upload_consent:true`。
 - 只有用户明确要求启用指定 provider 时才 `model_activate`；原测试通过、队列暂停、任务/分析空闲等门禁继续生效。不因状态查询或测试通过自动启用。
+
+平台不设本地请求次数或美元预算上限，不做剩余次数检查，不要求预算确认或加额度。`local_limits_enabled=false`、`request_limit:null`、`requests_remaining:null` 表示平台不限量；`requests_used` 是累计历史调用量，达到或超过 10 也可以继续。用量未知不显示为零费用；服务商实际额度以其工作台为准。
 
 模型测试返回 `passed/failed/blocked` 及真实原因。失败不代表旧有效配置已经改变；不要自动改 provider、重试付费测试或把历史验收次数当当前余额。
 

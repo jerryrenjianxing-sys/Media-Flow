@@ -75,3 +75,13 @@ TBD - created by archiving change modularize-execution-core. Update Purpose afte
 #### Scenario: 设备正在运行普通任务
 - **WHEN** 用户尝试启动该设备初始化
 - **THEN** 系统拒绝开始并显示设备被占用，不中断或接管现有任务
+### Requirement: Skill不设置本地模型预算门槛
+平台 Skill SHALL 不要求本地请求次数或金额预算授权，累计用量 MUST 不成为计划与执行门槛。接口的 local_limits_enabled=false 和 request_limit/requests_remaining=null 表示平台不设本地额度，不表示服务商免费或无限配额。
+
+#### Scenario: 历史用量已超过旧上限
+- **WHEN** 已启用模型可用且累计请求超过十次或旧美元预留用完
+- **THEN** Agent 按用户原意继续准备或执行，不要求加额度、不清空用量、不额外测试模型；咨询仍不启动任务
+
+#### Scenario: 服务商返回实际套餐额度耗尽
+- **WHEN** 服务商实际响应配额耗尽、鉴权失败、限流或请求超时
+- **THEN** 保留真实原因并处理受影响步骤，不自动切换服务商、不将历史本地额度记录解释为当前阻断

@@ -31,7 +31,7 @@ class PiRuntimeTests(unittest.TestCase):
             self.assertFalse(result['credential_present'])
             self.assertTrue((root/'agent/settings.json').is_file())
 
-    def test_launch_is_independent_and_budgeted(self):
+    def test_launch_is_independent_and_metered(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
             spec=launch_spec(root,root/'node.exe',root/'ui',root/'guard.mjs',python=root/'python.exe',port=13030)
@@ -42,7 +42,7 @@ class PiRuntimeTests(unittest.TestCase):
             self.assertEqual(spec.env['PI_WEB_ENGINE'],'pi')
             self.assertNotIn('OPENCODE_CONFIG_CONTENT',spec.env)
             self.assertEqual(spec.env['MEDIAFLOW_PI_TRIAL_BUDGET_DIR'],str(root/'trial-request-budget'))
-            self.assertEqual(spec.env['MEDIAFLOW_PI_REQUEST_LIMIT'],'10')
+            self.assertEqual(spec.env['MEDIAFLOW_PI_REQUEST_LIMIT'],'unlimited')
 
     def test_launch_accepts_explicit_unlimited_request_accounting(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -50,11 +50,12 @@ class PiRuntimeTests(unittest.TestCase):
             spec=launch_spec(root,root/'node.exe',root/'ui',root/'guard.mjs',request_limit='unlimited')
             self.assertEqual(spec.env['MEDIAFLOW_PI_REQUEST_LIMIT'],'unlimited')
 
-    def test_launch_rejects_invalid_request_limit(self):
+    def test_launch_ignores_legacy_request_limit(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
-            with self.assertRaisesRegex(ValueError,'request limit'):
-                launch_spec(root,root/'node.exe',root/'ui',root/'guard.mjs',request_limit='invalid')
+            for limit in (10, 'invalid'):
+                spec=launch_spec(root,root/'node.exe',root/'ui',root/'guard.mjs',request_limit=limit)
+                self.assertEqual(spec.env['MEDIAFLOW_PI_REQUEST_LIMIT'],'unlimited')
 
     def test_prepare_runtime_persists_unlimited_request_limit(self):
         from unittest.mock import patch

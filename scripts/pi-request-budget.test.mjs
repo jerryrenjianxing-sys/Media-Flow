@@ -8,17 +8,17 @@ import {spawn} from 'node:child_process';
 import { createBudgetFetch } from './pi-request-budget.mjs';
 
 const endpoint = 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions';
-test('concurrent, failed and restarted requests share ten durable slots', async () => {
+test('concurrent, failed and restarted requests retain unlimited durable records', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'mediaflow-budget-'));
   let sent = 0;
   const upstream = async () => { sent++; throw Error('network failure'); };
   const guarded = createBudgetFetch({ directory, endpoint, fetch: upstream });
   await Promise.allSettled(Array.from({length: 14}, () => guarded(endpoint, {method:'POST'})));
-  assert.equal(sent, 10);
+  assert.equal(sent, 14);
   const restarted = createBudgetFetch({ directory, endpoint, fetch: upstream });
-  await assert.rejects(restarted(endpoint, {method:'POST'}), /10/);
-  assert.equal(sent, 10);
-  assert.equal(readdirSync(directory).length, 10);
+  await assert.rejects(restarted(endpoint, {method:'POST'}), /network failure/);
+  assert.equal(sent, 15);
+  assert.equal(readdirSync(directory).length, 15);
 });
 test('guard preserves streaming response identity and never stores request contents', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'mediaflow-budget-'));
@@ -34,14 +34,14 @@ test('other URLs are untouched and a missing ledger fails closed', async () => {
   await assert.rejects(guarded(endpoint,{method:'POST'}), /ledger/);
   assert.equal(sent, 1);
 });
-test('independent Node processes cannot reserve more than ten requests',async()=>{
+test('independent Node processes all record requests without a quota',async()=>{
   const directory=mkdtempSync(join(tmpdir(),'mediaflow-process-budget-'));
   const worker=`import {createBudgetFetch} from ${JSON.stringify(new URL('./pi-request-budget.mjs',import.meta.url).href)};let count=0;const f=createBudgetFetch({directory:${JSON.stringify(directory)},endpoint:${JSON.stringify(endpoint)},fetch:async()=>{count++;return new Response('ok');}});for(let i=0;i<10;i++){try{await f(${JSON.stringify(endpoint)},{method:'POST'});}catch{}}process.stdout.write(String(count));`;
   const counts=await Promise.all(Array.from({length:4},()=>new Promise((resolve,reject)=>{
     const child=spawn(process.execPath,['--input-type=module','-e',worker],{windowsHide:true});let output='';
     child.stdout.on('data',chunk=>output+=chunk);child.on('error',reject);child.on('exit',code=>code===0?resolve(Number(output)):reject(Error('worker failed')));
   })));
-  assert.equal(counts.reduce((a,b)=>a+b,0),10);
+  assert.equal(counts.reduce((a,b)=>a+b,0),40);
 });
 test('independent Node processes preserve ten claims and add contiguous unlimited claims',async()=>{
   const directory=mkdtempSync(join(tmpdir(),'mediaflow-process-unlimited-budget-'));
@@ -70,13 +70,13 @@ test('unlimited requests preserve the first ten claims and continue monotonicall
   assert.deepEqual(readdirSync(directory).sort((a,b)=>Number.parseInt(a)-Number.parseInt(b)),
                    Array.from({length:15},(_,index)=>`${index+1}.claim`));
 });
-test('invalid request limits fail closed before a wire request',async()=>{
-  for(const limit of [0,-1,'0','10.5','forever',null]) {
+test('legacy request limits do not block transport',async()=>{
+  for(const limit of [0,-1,'0','10.5','forever',null,10]) {
     let sent=0;
-    assert.throws(()=>createBudgetFetch({directory:mkdtempSync(join(tmpdir(),'mediaflow-invalid-budget-')),
-                                        endpoint,limit,fetch:async()=>{sent++;return new Response('ok');}}),
-                  /request limit/i);
-    assert.equal(sent,0);
+    const call=createBudgetFetch({directory:mkdtempSync(join(tmpdir(),'mediaflow-old-quota-')),
+                                 endpoint,limit,fetch:async()=>{sent++;return new Response('ok');}});
+    for(let n=0;n<11;n++) await call(endpoint,{method:'POST'});
+    assert.equal(sent,11);
   }
 });
 test('guard import reads unlimited mode from the launch environment',async()=>{
@@ -117,8 +117,8 @@ test('locked Pi SDK uses guarded fetch before each real wire request', {skip:!pr
     for(let n=0;n<11;n++) {
       const stream=sdk.streamSimple(model,{messages:[{role:'user',content:'local only',timestamp:1}]},{apiKey:'local-test-not-a-key',maxRetries:0});
       const result=await stream.result();
-      assert.equal(result.stopReason,n<10?'stop':'error');
+      assert.equal(result.stopReason,'stop');
     }
-    assert.equal(sent,10);
+    assert.equal(sent,11);
   } finally {globalThis.fetch=original;}
 });

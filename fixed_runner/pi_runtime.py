@@ -16,14 +16,9 @@ PROVIDER = 'mediaflow-qwen-token-plan'
 MODEL = 'qwen3.8-flash'
 
 
-def normalize_request_limit(value=10):
-    if value == 'unlimited':
-        return value
-    if isinstance(value,str) and re.fullmatch(r'[1-9]\d*',value):
-        value=int(value)
-    if type(value) is not int or value < 1 or value > 9007199254740991:
-        raise ValueError('MediaFlow request limit is invalid')
-    return value
+def normalize_request_limit(value=None):
+    """Ignore historical local caps while preserving configuration compatibility."""
+    return 'unlimited'
 
 
 def _load(path):
@@ -96,7 +91,7 @@ def validate_windows_shell(env):
         raise ValueError('Pi所需Bash运行组件缺失；请先准备Git Bash后重试，未自动下载工具。')
 
 
-def launch_spec(root, node, source, guard, *, python=None, port=3000, request_limit=10):
+def launch_spec(root, node, source, guard, *, python=None, port=3000, request_limit=None):
     root,node,source,guard=map(Path,(root,node,source,guard))
     request_limit=normalize_request_limit(request_limit)
     client_python=Path(python or sys.executable).with_name('python.exe')

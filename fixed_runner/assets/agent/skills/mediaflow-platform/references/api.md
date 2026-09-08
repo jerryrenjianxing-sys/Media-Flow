@@ -51,7 +51,7 @@ GET 同时返回 `client_runtime`：api_url、management_url、mode（developmen
 
 `Preset` 为 `{name,builtin,config}`。自定义同名 `preset_save` 是替换当前同名预设，**没有不可变版本历史**；想保留旧方案时用用户确认的新版本名（如“严格生产搜索-v2”）。读取预设不会套用或运行。内容计划的新修订、预设替换以及以后提交的新任务都不会改变已经冻结/提交的任务。
 
-`ModelStatus` 保留 provider 的公开状态字段并递归移除 `api_key/key/key_ref/active_key/authorization`。Key 不通过本 API 保存或回显，只能由用户在原平台界面填写。千问测试把 `upload_consent` 原样交给既有门禁；OpenRouter 不接受 `upload_consent:true`。只读 `model_status` 不联网验证、不消耗模型次数。
+`ModelStatus` 保留 provider 的公开状态字段并递归移除 `api_key/key/key_ref/active_key/authorization`。Key 不通过本 API 保存或回显，只能由用户在原平台界面填写。千问测试把 `upload_consent` 原样交给既有门禁；OpenRouter 不接受 `upload_consent:true`。只读 `model_status` 不联网验证、不调用模型。`local_limits_enabled:false` 和 `request_limit:null/requests_remaining:null` 明确表示平台不设本地次数或金额上限，不是额度用完或配置缺失；`requests_used` 是累计历史用量，不是任务门槛。保留服务商真实配额/限流错误，不自动更换服务商或把未知用量当零费用。
 
 `Notification` 为 `{id,task_id,device_id,sources,summary,fingerprint,status,detected_at,viewed_at}`。确认只改变 MediaFlow 平台提醒状态，不打开消息页、不清除抖音角标，也不表示抖音消息已读。
 

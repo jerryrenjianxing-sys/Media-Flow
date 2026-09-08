@@ -19,7 +19,7 @@ def digest(path):
         return hashlib.file_digest(stream,'sha256').hexdigest()
 
 
-def prepare(source,node,root,output,python,old_auth=None,port=3000,request_limit=10):
+def prepare(source,node,root,output,python,old_auth=None,port=3000,request_limit='unlimited'):
     source,node,root,output,python=map(lambda p:Path(p).resolve(),(source,node,root,output,python))
     request_limit=normalize_request_limit(request_limit)
     validate_source(source)
@@ -47,6 +47,6 @@ if __name__=='__main__':
     for name in ('source','node','root','output','python'): parser.add_argument('--'+name,required=True,type=Path)
     parser.add_argument('--old-auth',type=Path)
     parser.add_argument('--port',type=int,default=3000)
-    parser.add_argument('--request-limit',type=normalize_request_limit,default=10)
+    parser.add_argument('--request-limit',type=normalize_request_limit,default='unlimited')
     args=parser.parse_args()
     print(json.dumps(prepare(**vars(args)),ensure_ascii=False))
