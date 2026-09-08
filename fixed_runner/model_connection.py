@@ -30,11 +30,15 @@ MODEL_OPERATION_LOCK = threading.Lock()
 DPAPI_PREFIX = "MEDIAFLOW-DPAPI-V1:"
 
 
+class ModelOperationBusyError(RuntimeError):
+    reason_code = "model_operation_busy"
+
+
 def exclusive_model_operation(function):
     @wraps(function)
     def wrapped(*args, **kwargs):
         if not MODEL_OPERATION_LOCK.acquire(blocking=False):
-            raise RuntimeError("已有模型配置操作正在进行，请稍候查看结果，不要重复提交")
+            raise ModelOperationBusyError("已有模型配置操作正在进行，请稍候查看结果，不要重复提交")
         try:
             return function(*args, **kwargs)
         finally:

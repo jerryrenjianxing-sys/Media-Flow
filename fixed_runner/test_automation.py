@@ -211,6 +211,52 @@ class AutomationTests(unittest.TestCase):
             self.assertTrue(enabled['ok'], enabled)
             activate.assert_called_once_with('qwen_token_plan', task_db=self.store.path)
 
+    def test_model_activation_provider_refusal_is_blocked_and_cached(self):
+        from model_providers import ProviderError
+        state = {'provider_id': 'qwen_token_plan', 'model_test_status': 'passed',
+                 'model_ready': True, 'message': 'existing model remains active', 'providers': {}}
+        body = {'action': 'model_activate', 'arguments': {'provider': 'qwen_token_plan'},
+                'request_id': 'activate-unreadable'}
+        with patch('model_providers.status', return_value=state), \
+             patch('model_providers.activate', side_effect=ProviderError('credential_unreadable')) as activate:
+            first = self.service().call(body)
+            second = self.service().call(body)
+        self.assertFalse(first['ok'])
+        self.assertEqual(first['status'], 'blocked')
+        self.assertEqual(first['reason_code'], 'credential_unreadable')
+        self.assertIn('重新输入', first['user_message'])
+        self.assertEqual(second, first)
+        self.assertEqual(activate.call_count, 1)
+
+    def test_typed_model_operation_busy_refusal_is_blocked(self):
+        from model_connection import ModelOperationBusyError
+        state = {'provider_id': 'openrouter', 'model_test_status': 'passed',
+                 'model_ready': True, 'message': 'existing model remains active', 'providers': {}}
+        with patch('model_providers.status', return_value=state), \
+             patch('model_connection.test_current_model', side_effect=ModelOperationBusyError(
+                 '已有模型配置操作正在进行，请稍候查看结果，不要重复提交')):
+            response = self.service().call({'action': 'model_test', 'arguments': {
+                'provider': 'openrouter'}, 'request_id': 'model-busy'})
+        self.assertFalse(response['ok'])
+        self.assertEqual(response['status'], 'blocked')
+        self.assertEqual(response['reason_code'], 'model_operation_busy')
+        self.assertIn('正在进行', response['user_message'])
+        self.assertFalse(response['retryable'])
+
+    def test_untyped_model_runtime_failure_remains_durable_unknown(self):
+        with patch('model_connection.test_current_model', side_effect=RuntimeError(
+                'unexpected failure after transport may have started')) as test:
+            body = {'action': 'model_test', 'arguments': {'provider': 'openrouter'},
+                    'request_id': 'model-uncertain'}
+            first = self.service().call(body)
+            second = self.service().call(body)
+        self.assertEqual(first['status'], 'unknown')
+        self.assertEqual(first['reason_code'], 'result_unknown')
+        self.assertFalse(first['retryable'])
+        self.assertEqual(second, first)
+        self.assertEqual(test.call_count, 1)
+        self.assertNotIn('unexpected failure', json.dumps(first))
+
     def test_task_evidence_separates_requested_count_from_whitelisted_actual_result(self):
         task_id = self.store.submit('healthcheck', 'vm-one', {'video_count': 10, 'round_index': 2})
         pending = self.service().call({'action': 'task_evidence', 'arguments': {'task_id': task_id}})

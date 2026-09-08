@@ -74,9 +74,14 @@ def dispatch(host: Any, action: str, args: dict[str, Any]) -> dict[str, Any]:
         return _test_model(args)
     if action == 'model_activate':
         _only(args, {'provider'})
-        from model_providers import activate
+        from model_providers import ERRORS, ProviderError, activate, status
         provider = _provider(args.get('provider'))
-        model = _without_secrets(activate(provider, task_db=store.path))
+        try:
+            model = _without_secrets(activate(provider, task_db=store.path))
+        except ProviderError as exc:
+            return {'status': 'blocked', 'reason_code': exc.code,
+                    'user_message': ERRORS.get(exc.code, str(exc)),
+                    'model': _without_secrets(status(provider))}
         return {'status': 'completed', 'reason_code': 'model_activated',
                 'user_message': model.get('message') or '模型已启用', 'model': model}
     if action == 'notification_list':
@@ -102,6 +107,7 @@ def dispatch(host: Any, action: str, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _test_model(args: dict[str, Any]) -> dict[str, Any]:
+    from model_connection import ModelOperationBusyError
     from model_providers import ERRORS, OPENROUTER, ProviderError, QWEN, status, test_candidate
     provider = _provider(args.get('provider'))
     consent = args.get('upload_consent', False)
@@ -116,6 +122,9 @@ def _test_model(args: dict[str, Any]) -> dict[str, Any]:
             from model_connection import test_current_model
             test_current_model()
             model = status(OPENROUTER)
+    except ModelOperationBusyError as exc:
+        return {'status': 'blocked', 'reason_code': exc.reason_code,
+                'user_message': str(exc), 'model': _without_secrets(status(provider))}
     except ProviderError as exc:
         return {'status': 'blocked', 'reason_code': exc.code,
                 'user_message': ERRORS.get(exc.code, str(exc)), 'model': _without_secrets(status(provider))}

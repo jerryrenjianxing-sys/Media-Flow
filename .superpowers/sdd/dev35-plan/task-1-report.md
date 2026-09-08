@@ -41,7 +41,7 @@
 | `preset_save` | 是 | `{name: string, config: object}` | `{status:"completed", reason_code:"preset_saved", user_message, preset: Preset, presets: Preset[]}`；不创建任务 |
 | `model_status` | 否 | `{provider?: "openrouter"|"qwen_token_plan"}` | `{model: ModelStatus}`；只调用现有 `model_providers.status`，不测试、不联网验证 |
 | `model_test` | 是 | `{provider:"openrouter"|"qwen_token_plan", upload_consent?:boolean}` | `{status:"passed"|"failed"|"blocked", reason_code, user_message, model:ModelStatus}`；千问把 consent 原样交给现有测试门禁，OpenRouter 不接受 true |
-| `model_activate` | 是 | `{provider:"openrouter"|"qwen_token_plan"}` | `{status:"completed", reason_code:"model_activated", user_message, model:ModelStatus}`；现有空闲、暂停、测试通过门禁继续生效 |
+| `model_activate` | 是 | `{provider:"openrouter"|"qwen_token_plan"}` | 成功为 `{status:"completed", reason_code:"model_activated", user_message, model:ModelStatus}`；已知 provider 前置拒绝为 `{status:"blocked", reason_code:<provider code>, user_message, model:ModelStatus}`。现有空闲、暂停、测试通过门禁继续生效 |
 | `notification_list` | 否 | `{status?:"unread"|"viewed", limit?:integer 1..100, offset?:integer >=0}` | `{notifications:Notification[], total, unread_count, limit, offset}` |
 | `notification_acknowledge` | 是 | `{notification_ids:string[]}` | `{status:"completed", reason_code:"notifications_acknowledged", user_message, acknowledged, acknowledged_ids, remaining_unread}`；仅确认平台提醒，不代表抖音已读 |
 
@@ -132,13 +132,51 @@ Ran 19 tests in 1.893s
 OK
 ```
 
+### 评审后模型错误分类修正
+
+根因：`model_activate` 的已知 `ProviderError` 和 OpenRouter 配置互斥锁的普通 `RuntimeError` 都越过薄适配器，被外层当成不确定执行异常。互斥锁现在抛出仍兼容 `RuntimeError` 的 `ModelOperationBusyError(reason_code="model_operation_busy")`；automation 只捕获该类型及 `ProviderError`。其他未分类 `RuntimeError` 继续返回持久化 `unknown`，不会因扩大捕获范围而误报为安全拒绝。
+
+类型 RED：
+
+```text
+python.exe -m unittest fixed_runner.test_model_connection.ModelConnectionTest.test_exclusive_model_operation_busy_refusal_has_a_typed_reason
+Ran 1 test in 0.001s
+FAILED (failures=1)
+```
+
+automation 分类 RED：
+
+```text
+python.exe -m unittest fixed_runner.test_automation.AutomationTests.test_model_activation_provider_refusal_is_blocked_and_cached fixed_runner.test_automation.AutomationTests.test_typed_model_operation_busy_refusal_is_blocked fixed_runner.test_automation.AutomationTests.test_untyped_model_runtime_failure_remains_durable_unknown
+Ran 3 tests in 0.136s
+FAILED (failures=2)
+```
+
+修正后针对性 GREEN：
+
+```text
+python.exe -m unittest fixed_runner.test_model_connection.ModelConnectionTest.test_exclusive_model_operation_busy_refusal_has_a_typed_reason fixed_runner.test_automation.AutomationTests.test_model_activation_provider_refusal_is_blocked_and_cached fixed_runner.test_automation.AutomationTests.test_typed_model_operation_busy_refusal_is_blocked fixed_runner.test_automation.AutomationTests.test_untyped_model_runtime_failure_remains_durable_unknown
+Ran 4 tests in 0.153s
+OK
+```
+
+修正后聚焦回归（automation + 两套现有模型实现）：
+
+```text
+python.exe -m unittest fixed_runner.test_automation fixed_runner.test_model_connection fixed_runner.test_model_providers
+Ran 57 tests in 11.712s
+OK
+```
+
 ## 修改文件
 
 - `fixed_runner/automation_business.py`：薄业务适配、参数白名单、模型结果真实性与脱敏。
+- `fixed_runner/model_connection.py`：模型配置互斥锁使用可分类、兼容 `RuntimeError` 的忙碌异常。
 - `fixed_runner/automation.py`：catalog/write receipt 分类及业务 dispatch 连接。
 - `fixed_runner/agent_platform.py`：内容计划优先预检、general 忽略语义、任务结果白名单摘要。
 - `fixed_runner/assets/agent/skills/mediaflow-platform/scripts/_common.py`：新增只读 action 分类；无 Skill 文档变更。
 - `fixed_runner/test_automation.py`：持久化/并发/重启/未知、版本/归档、预检/冻结/轮换、模型/通知、客户端及结果摘要回归。
+- `fixed_runner/test_model_connection.py`：模型配置忙碌异常类型回归。
 - `.superpowers/sdd/dev35-plan/task-1-report.md`：本报告。
 
 ## 担忧与边界

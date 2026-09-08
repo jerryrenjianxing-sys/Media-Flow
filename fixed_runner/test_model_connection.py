@@ -9,6 +9,22 @@ import model_connection
 
 
 class ModelConnectionTest(unittest.TestCase):
+    def test_exclusive_model_operation_busy_refusal_has_a_typed_reason(self) -> None:
+        calls = []
+        @model_connection.exclusive_model_operation
+        def operation() -> None:
+            calls.append(1)
+
+        self.assertTrue(model_connection.MODEL_OPERATION_LOCK.acquire(blocking=False))
+        try:
+            with self.assertRaisesRegex(RuntimeError, "已有模型配置操作正在进行") as raised:
+                operation()
+        finally:
+            model_connection.MODEL_OPERATION_LOCK.release()
+        self.assertEqual(type(raised.exception).__name__, "ModelOperationBusyError")
+        self.assertEqual(getattr(raised.exception, "reason_code", None), "model_operation_busy")
+        self.assertEqual(calls, [])
+
     def test_forbidden_is_not_misreported_as_invalid_key(self):
         with patch("model_connection.requests.get", return_value=Mock(status_code=403)):
             status, message = model_connection._auth("test")
