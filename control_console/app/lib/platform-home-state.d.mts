@@ -10,3 +10,4 @@ export function platformSummary(snapshot:PlatformSnapshot|null,error:boolean):{
   metrics:{online:number|null;running:number|null;pending:number|null;queue:string}|null;
 };
 export function loadSkillArchive(request:()=>Promise<Response>):Promise<Blob>;
+export function loadSkillMarkdown(request:()=>Promise<Response>):Promise<string>;

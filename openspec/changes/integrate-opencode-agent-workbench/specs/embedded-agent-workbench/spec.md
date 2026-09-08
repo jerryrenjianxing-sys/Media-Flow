@@ -4,6 +4,17 @@
 
 ## ADDED Requirements
 
+### Requirement: 中文双入口 Skill 首页
+外部 Skill 首页 SHALL 使用中文极简居中构图，提供下载 Skill 与复制 Skill 两个主操作、可减少动态效果的 Agent 图标展示带及角落“任务台”管理入口；原管理功能与路由 MUST 保留。复制表示 MUST 包含与下载同源的完整白名单 Markdown、参考和脚本，不包含运行数据或凭证。
+
+#### Scenario: 复制材料独立可用
+- **WHEN** 用户选择复制 Skill
+- **THEN** 复制完整 Markdown 材料供外部 Agent 使用；剪贴板拒绝时展示可手动选择的文本，不提示复制成功；API 失败时可重试。
+
+#### Scenario: 管理和主题保持
+- **WHEN** 用户从角落任务台进入并返回首页，或使用窄屏及减少动态效果设置
+- **THEN** 原管理接口及页面保持可用，首页没有管理导航或大状态卡，按钮可见且无横向溢出，图标动画可暂停并尊重减少动态效果。
+
 ### Requirement: Agent与平台独立运行
 系统 SHALL 将选定Agent与MediaFlow业务后台作为独立运行单元；唯一业务连接为原生Skill调用本地automation接口。dev.30 SHALL 先隔离验证Pi与社区pi-web-ui，不修改会话核心；不合适时 MUST 提供外部Skill首页而不回退OpenCode。平台不得迁移原生会话。Agent不得依赖平台启动才可打开设置或聊天历史。
 

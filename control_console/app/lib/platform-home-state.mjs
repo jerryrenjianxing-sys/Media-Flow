@@ -20,3 +20,11 @@ export async function loadSkillArchive(request) {
   if(!archive.size) throw new Error('skill_download_empty');
   return archive;
 }
+
+export async function loadSkillMarkdown(request) {
+  const response=await request();
+  if(!response.ok || !response.headers.get('content-type')?.toLowerCase().startsWith('text/markdown')) throw new Error('skill_copy_failed');
+  const document=await response.text();
+  if(!document.trim()) throw new Error('skill_copy_empty');
+  return document;
+}

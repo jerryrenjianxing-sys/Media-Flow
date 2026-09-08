@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { platformSummary, loadSkillArchive } from '../app/lib/platform-home-state.mjs';
+import { platformSummary, loadSkillArchive, loadSkillMarkdown } from '../app/lib/platform-home-state.mjs';
+
+test('copy loads complete Markdown and rejects HTML errors and empty responses', async () => {
+  const document='# MediaFlow Skill\n\n### `mediaflow-platform/SKILL.md`\n\n````markdown\nhello\n````\n';
+  assert.equal(await loadSkillMarkdown(async()=>new Response(document,{headers:{'content-type':'text/markdown; charset=utf-8'}})),document);
+  for(const response of [new Response('error',{status:503}),new Response('<html>oops</html>',{headers:{'content-type':'text/html'}}),new Response('',{headers:{'content-type':'text/markdown'}})]){
+    await assert.rejects(loadSkillMarkdown(async()=>response));
+  }
+});
 
 test('loading and failure never claim stale devices or tasks are current', () => {
   assert.equal(platformSummary(null, false).state, 'loading');

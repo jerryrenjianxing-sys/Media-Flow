@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from io import BytesIO
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -50,6 +51,7 @@ if sys.argv[1] == 'fail':
     def fail_bundle(*args, **kwargs):
         raise OSError('private fixture detail must not escape')
     control_api.build_skill_bundle = fail_bundle
+    control_api.build_skill_markdown = fail_bundle
 
 server = ThreadingHTTPServer(('127.0.0.1', 0), IsolatedHandler)
 thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -65,6 +67,29 @@ finally:
 
 
 class PlatformSkillDownloadTests(unittest.TestCase):
+    def test_markdown_reconstructs_every_downloaded_file_without_task_store_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.isolated_server(Path(directory)) as (base_url, temporary_root):
+                with urllib.request.urlopen(base_url + '/api/platform-skill?format=markdown', timeout=10) as response:
+                    self.assertEqual(response.headers['Content-Type'], 'text/markdown; charset=utf-8')
+                    markdown = response.read().decode('utf-8')
+                entries = re.findall(r'### `([^`]+)`\n\n(`{4,})[^\n]*\n(.*?)\n\2\n', markdown, re.S)
+                restored = {name: body for name, _, body in entries}
+                self.assertEqual(sorted(restored), EXPECTED_FILES)
+                with urllib.request.urlopen(base_url + '/api/platform-skill', timeout=10) as response:
+                    archive = zipfile.ZipFile(BytesIO(response.read()))
+                for name in EXPECTED_FILES:
+                    self.assertEqual(restored[name], archive.read(name).decode('utf-8-sig'))
+                skill_root = Path(directory) / 'reconstructed'
+                for name, body in restored.items():
+                    target = skill_root / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(body, encoding='utf-8')
+                result = subprocess.run([sys.executable, str(skill_root / 'mediaflow-platform/scripts/mediaflow.py'), '--help'], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('--request-id', result.stdout)
+                self.assertEqual(list(temporary_root.iterdir()), [])
+
     @contextmanager
     def isolated_server(self, root: Path, mode: str = "ok"):
         data_root = root / "data"
@@ -146,6 +171,17 @@ class PlatformSkillDownloadTests(unittest.TestCase):
                     {"error": "MediaFlow Skill 下载包暂不可用，请检查安装文件后重试。"},
                 )
                 self.assertNotIn("private fixture detail", payload)
+                self.assertEqual(list(temporary_root.iterdir()), [])
+
+    def test_markdown_failure_never_returns_upstream_detail_or_false_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.isolated_server(Path(directory), 'fail') as (base_url, temporary_root):
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(base_url + '/api/platform-skill?format=markdown', timeout=10)
+                self.assertEqual(raised.exception.code, 503)
+                payload = json.loads(raised.exception.read())
+                self.assertIn('重试', payload['error'])
+                self.assertNotIn('private fixture', payload['error'])
                 self.assertEqual(list(temporary_root.iterdir()), [])
 
     def test_retired_chat_points_to_platform_not_a_stopped_agent(self):

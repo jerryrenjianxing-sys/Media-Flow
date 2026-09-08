@@ -42,14 +42,12 @@ test("platform home offers Skill download and management without an embedded cha
   assert.equal(response.status, 200);
   assert.doesNotMatch(html, /id="agent-input"|aria-label="会话历史"/);
   assert.doesNotMatch(html, /127\.0\.0\.1:3000|打开 Agent|返回 Agent/);
-  assert.match(html, /下载 MediaFlow Skill/);
-  assert.match(html, /正在读取平台状态/);
-  assert.match(html, /SKILL\.md/);
-  assert.match(html, /config\.json/);
+  assert.match(html, /下载 Skill/);
+  assert.match(html, /复制 Skill/);
   assert.match(html, /href="\/manage"/);
-  assert.match(html, /class="mf-management-nav"/);
+  assert.doesNotMatch(html, /class="mf-management-nav"/);
   assert.doesNotMatch(html, /正在准备任务台/);
-  assert.match(html, /管理中心/);
+  assert.match(html, /任务台/);
   const settings=await render('/settings');
   assert.equal(settings.status,200);
   const settingsHtml=await settings.text();
@@ -60,16 +58,14 @@ test("platform home offers Skill download and management without an embedded cha
   assert.equal(legacy.headers.get('location'),'/settings');
 });
 
-test("Skill instructions keep explicit numbering and optional configuration in continuous paragraphs", async () => {
+test("Skill home keeps real local Agent marks and management links out of primary content", async () => {
   const html = await (await render()).text();
-  const section = html.match(/<section[^>]*aria-labelledby="platform-skill-heading"[^>]*>[\s\S]*?<\/section>/)?.[0];
-  assert.ok(section, "Skill instructions must be present in rendered HTML");
-  const steps = [...section.matchAll(/<p>([123]\. [^<]+)<\/p>/g)].map(match => match[1]);
-  assert.equal(steps.length, 3, "Each step needs a visible number and uninterrupted paragraph text");
-  assert.match(steps[0], /SKILL\.md。$/);
-  assert.match(steps[1], /config\.json.*可选/);
-  assert.match(steps[1], /无需/);
-  assert.doesNotMatch(section, /<code\b|<ol\b/);
+  assert.match(html,/src="\/agents\/codex.svg"/);
+  assert.match(html,/暂停图标滚动/);
+  assert.doesNotMatch(html,/href="\/(devices|workbench|governance|run)"/);
+  const management=await (await render('/manage')).text();
+  assert.match(management,/href="\/devices"/);
+  assert.match(management,/class="mf-management-nav"/);
 });
 
 test("legacy session bookmarks stay on platform home and explain preserved data", async () => {
@@ -78,7 +74,7 @@ test("legacy session bookmarks stay on platform home and explain preserved data"
   assert.equal(response.headers.get('location'), null);
   const html = await response.text();
   assert.match(html, /旧会话数据仍保留/);
-  assert.match(html, /下载 MediaFlow Skill/);
+  assert.match(html, /下载 Skill/);
   assert.doesNotMatch(html, /127\.0\.0\.1:3000|id="agent-input"/);
 });
 
@@ -123,8 +119,8 @@ test("model settings expose isolated experimental Token Plan save test and enabl
   assert.match(page, /finally \{ setModelAction\(""\); setBusy\(false\); \}/);
 });
 
-test("renders one branded application header with persisted theme and recoverable status", async () => {
-  const response = await render();
+test("management retains one branded application header with persisted theme and recoverable status", async () => {
+  const response = await render('/manage');
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /MediaFlow · 一站式媒体自动化Agent/);

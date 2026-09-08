@@ -15,8 +15,10 @@ export default function ConsoleShell({children}:{children:React.ReactNode}){
   const path=usePathname();
   const [status,setStatus]=useState<PlatformSnapshot|null>(null),[error,setError]=useState(false),[dark,setDark]=useState(false);
   const refresh=useCallback(async()=>{try{const r=await fetchLocalApi(`${API}/api/status`,{cache:"no-store"},5000);if(!r.ok)throw Error();setStatus(await r.json());setError(false);}catch{setError(true);}},[]);
-  useEffect(()=>{const first=setTimeout(()=>void refresh(),0),timer=setInterval(()=>void refresh(),5000);const sync=()=>setDark(document.documentElement.dataset.theme==="dark");const initial=setTimeout(sync,0);const system=matchMedia("(prefers-color-scheme: dark)");const changed=()=>{if(!localStorage.getItem("mediaflow-theme"))document.documentElement.dataset.theme=system.matches?"dark":"light";sync();};system.addEventListener("change",changed);window.addEventListener("mediaflow-theme-change",sync);return()=>{clearTimeout(first);clearTimeout(initial);clearInterval(timer);system.removeEventListener("change",changed);window.removeEventListener("mediaflow-theme-change",sync);};},[refresh]);
+  useEffect(()=>{if(path==='/')return;const first=setTimeout(()=>void refresh(),0),timer=setInterval(()=>void refresh(),5000);return()=>{clearTimeout(first);clearInterval(timer);};},[path,refresh]);
+  useEffect(()=>{const sync=()=>setDark(document.documentElement.dataset.theme==="dark");const initial=setTimeout(sync,0);const system=matchMedia("(prefers-color-scheme: dark)");const changed=()=>{if(!localStorage.getItem("mediaflow-theme"))document.documentElement.dataset.theme=system.matches?"dark":"light";sync();};system.addEventListener("change",changed);window.addEventListener("mediaflow-theme-change",sync);return()=>{clearTimeout(initial);system.removeEventListener("change",changed);window.removeEventListener("mediaflow-theme-change",sync);};},[]);
   const online=status?.devices?.filter(d=>d.state==="device").length||0,issues=status?.virtualization?.issues?.length||0,running=status?.task_summary?.running||0,pending=status?.task_summary?.pending||0;
+  if(path==='/')return <><a className="skip-link" href="#main-content">跳到主要内容</a>{children}</>;
   return <div className="mf-shell mf-management-shell">
     <a className="skip-link" href="#main-content">跳到主要内容</a>
     <header className="mf-topbar">

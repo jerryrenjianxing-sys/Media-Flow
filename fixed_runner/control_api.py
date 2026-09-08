@@ -66,7 +66,7 @@ from virtual_devices import MuMuProvider, resolve_mumu_manager
 from virtual_device_inventory import VirtualDeviceInventory, manager_identity
 from storage_setup import schedule_data_root, storage_status, validate_data_root
 from product_version import product_version
-from skill_bundle import build_skill_bundle
+from skill_bundle import build_skill_bundle, build_skill_markdown
 
 
 HOST = "127.0.0.1"
@@ -2951,10 +2951,14 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         if path == "/api/platform-skill":
+            as_markdown = parse_qs(parsed.query).get('format') == ['markdown']
             try:
-                with tempfile.TemporaryDirectory(prefix="mediaflow-skill-") as directory:
-                    archive = build_skill_bundle(Path(directory) / "MediaFlow-Skill.zip")
-                    payload = archive.read_bytes()
+                if as_markdown:
+                    payload = build_skill_markdown().encode('utf-8')
+                else:
+                    with tempfile.TemporaryDirectory(prefix="mediaflow-skill-") as directory:
+                        archive = build_skill_bundle(Path(directory) / "MediaFlow-Skill.zip")
+                        payload = archive.read_bytes()
             except Exception:
                 self._json(
                     {"error": "MediaFlow Skill 下载包暂不可用，请检查安装文件后重试。"},
@@ -2962,10 +2966,10 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             self.send_response(200)
-            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Type", "text/markdown; charset=utf-8" if as_markdown else "application/zip")
             self.send_header(
                 "Content-Disposition",
-                'attachment; filename="MediaFlow-Skill.zip"',
+                'attachment; filename="MediaFlow-Skill.md"' if as_markdown else 'attachment; filename="MediaFlow-Skill.zip"',
             )
             self.send_header("Content-Length", str(len(payload)))
             origin = self.headers.get("Origin", "")

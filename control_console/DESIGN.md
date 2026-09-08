@@ -1,6 +1,6 @@
 ---
-version: 2.0
-name: MediaFlow Agent-first Console
+version: 3.0
+name: MediaFlow Skill Home and Console
 status: active
 tokens: app/design-tokens.css
 ---
@@ -11,7 +11,11 @@ tokens: app/design-tokens.css
 
 ## 产品与导航
 
-首页是Agent工作空间，不加载或保存传统任务草稿。用户描述目标，Agent依据内置Skill补参数、出计划、执行与复盘；无会话权限等级，不要求固定授权话术。专业管理页面全部保留。
+首页不再内置 Agent，是外部 Skill 接入入口，不加载或保存任务草稿。按用户选择参考 https://www.skills.sh/ 的极简居中构图：MediaFlow 大字、中文“一份 Skill，一站式掌控媒体自动化。”，下载 Skill 和复制 Skill 两个按钮，下方真实 Agent 标识滚动带；非关键管理功能只留角落“任务台”链接。无榜单、大状态卡或聊天会话栏。复制提供完整 Markdown 材料及脚本，下载为同源 ZIP。首页样式独立于管理页面，见 app/skill-home.css；下方旧聊天交互规范只约束保留的历史组件，不重新启用内置 Agent。
+
+首页使用黑/冷白底、青绿点缀、细分隔线，大字与克制留白；默认跟随系统且尊重用户主题选择。Agent 标识保持原图形并本地保存，单色呈现不抹平图形细节；连续滚动可暂停，减少动态效果时改为静态排列。不表示商业合作或全部实测支持。1366×768 首屏可见两个主按钮、滚动带和任务台，390px自然纵向排版。
+
+以下应用外壳与导航要求用于管理工作区，不渲染在新首页：
 
 - 唯一顶部品牌栏：M标识、MediaFlow、产品副标题。只显示紧凑运行状态、问题数、停止入口；停止入口在窄屏也可见。
 - 左侧约240px：新建、可读会话标题、管理中心、设置。历史独立滚动，窄屏采用可关闭抽屉。

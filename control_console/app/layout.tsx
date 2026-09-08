@@ -3,6 +3,7 @@ import "./globals.css";
 import "./agent.css";
 import "./agent-studio.css";
 import "./workspace-pages.css";
+import "./skill-home.css";
 import ConsoleShell from "./components/console-shell";
 import { BRAND } from "./brand";
 
