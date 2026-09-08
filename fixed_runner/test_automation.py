@@ -22,6 +22,20 @@ from agent_memory import AgentMemory
 from task_store import TaskStore
 
 
+def content_plan_document(name='产业主题轮换'):
+    return {'name': name, 'comment_template': '围绕主题交流', 'common_comment_pool': [],
+        'themes': [
+            {'id': 'a', 'name': '人工智能', 'topic_prompt': '主要内容必须直接讨论人工智能技术',
+             'search_query': '人工智能', 'comment_template': '', 'comment_pool': [], 'enabled': True},
+            {'id': 'disabled', 'name': '停用主题', 'topic_prompt': '不参与队列',
+             'search_query': '停用', 'comment_template': '', 'comment_pool': [], 'enabled': False},
+            {'id': 'b', 'name': '智能制造', 'topic_prompt': '主要内容必须直接讨论智能制造',
+             'search_query': '智能制造', 'comment_template': '', 'comment_pool': [], 'enabled': True},
+            {'id': 'c', 'name': '塑料包装', 'topic_prompt': '主要内容必须直接讨论塑料包装',
+             'search_query': '塑料包装', 'comment_template': '', 'comment_pool': [], 'enabled': True},
+        ]}
+
+
 class AutomationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -53,6 +67,175 @@ class AutomationTests(unittest.TestCase):
 
     def plan(self, service):
         return service.call({'action': 'plan_tasks', 'arguments': {'config': self.config}, 'request_id': 'plan-1'})['result']
+
+    def test_content_plan_actions_are_versioned_durable_and_archive_keeps_history(self):
+        service = self.service()
+        self.assertEqual(service.call({'action': 'content_plan_list'})['result']['content_plans'], [])
+        create = {'action': 'content_plan_save', 'arguments': {'document': content_plan_document()},
+                  'request_id': 'content-create'}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            replies = list(pool.map(lambda _: self.service().call(create), range(4)))
+        first = service.call(create)
+        self.assertTrue(first['ok'], first)
+        self.assertTrue(all(reply == first or reply['status'] == 'unknown' for reply in replies))
+        self.assertEqual(len(self.store.list_content_plans()), 1)
+        plan_id = first['result']['content_plan']['plan_id']
+        revision_id = first['result']['content_plan']['revision_id']
+
+        changed = content_plan_document('产业主题轮换新版')
+        second = self.service().call({'action': 'content_plan_save', 'arguments': {
+            'content_plan_id': plan_id, 'document': changed}, 'request_id': 'content-update'})
+        self.assertEqual(second['result']['content_plan']['revision_number'], 2)
+        old = service.call({'action': 'content_plan_get', 'arguments': {
+            'content_plan_id': plan_id, 'revision_id': revision_id}})
+        self.assertEqual(old['result']['content_plan']['document']['name'], '产业主题轮换')
+        wrong = service.call({'action': 'content_plan_get', 'arguments': {
+            'content_plan_id': 'wrong-plan', 'revision_id': revision_id}})
+        self.assertFalse(wrong['ok'])
+        self.assertEqual(wrong['reason_code'], 'business_rejected')
+
+        archived = service.call({'action': 'content_plan_archive', 'arguments': {
+            'content_plan_id': plan_id}, 'request_id': 'content-archive'})
+        self.assertTrue(archived['ok'], archived)
+        self.assertEqual(service.call({'action': 'content_plan_list'})['result']['content_plans'], [])
+        listed = service.call({'action': 'content_plan_list', 'arguments': {'include_archived': True}})
+        self.assertEqual(listed['result']['content_plans'][0]['revision_number'], 2)
+        historical = self.service().call({'action': 'content_plan_get', 'arguments': {
+            'content_plan_id': plan_id, 'revision_id': revision_id}})
+        self.assertTrue(historical['result']['content_plan']['archived'])
+
+    def test_content_plan_unknown_after_side_effect_is_persisted_and_never_replayed(self):
+        real_save = self.store.save_content_plan
+        calls = []
+        def uncertain(document, *, plan_id=None):
+            calls.append(1)
+            real_save(document, plan_id=plan_id)
+            raise TimeoutError('result lost after commit')
+        self.store.save_content_plan = uncertain
+        body = {'action': 'content_plan_save', 'arguments': {'document': content_plan_document()},
+                'request_id': 'content-unknown'}
+        first = self.service().call(body)
+        second = self.service().call(body)
+        self.assertEqual(first['status'], 'unknown')
+        self.assertFalse(first['retryable'])
+        self.assertEqual(second, first)
+        self.assertEqual(calls, [1])
+        self.assertEqual(len(self.store.list_content_plans()), 1)
+
+    def test_content_plan_preflight_resolves_revision_before_required_theme_fields(self):
+        revision = self.store.save_content_plan(content_plan_document())
+        planned = self.service().call({'action': 'plan_tasks', 'arguments': {'config': {
+            **self.config, 'round_count': 5, 'content_mode': 'search',
+            'search_query': '', 'topic_prompt': '不应覆盖内容计划的旧主题',
+            'content_plan_id': revision['plan_id'],
+            'content_plan_revision_id': revision['revision_id'],
+        }}, 'request_id': 'content-plan'})
+        self.assertTrue(planned['ok'], planned)
+        self.assertNotEqual(planned['status'], 'waiting_user')
+        self.assertEqual(planned['result']['config']['search_query'], '人工智能')
+        self.assertEqual(planned['result']['config']['topic_prompt'], '主要内容必须直接讨论人工智能技术')
+        plan_id = planned['result']['plan_id']
+        second_revision = self.store.save_content_plan(
+            content_plan_document('编辑后的新版本'), plan_id=revision['plan_id'])
+        executed = self.service().call({'action': 'execute_plan', 'arguments': {
+            'plan_id': plan_id}, 'request_id': 'content-execute'})
+        task_ids = executed['result']['task_ids']
+        names = [self.store.get(task_id).payload['content_plan_snapshot']['theme']['name']
+                 for task_id in task_ids]
+        self.assertEqual(names, ['人工智能', '智能制造', '塑料包装', '人工智能', '智能制造'])
+        self.assertTrue(all(self.store.get(task_id).payload['content_plan_snapshot']
+                            ['content_plan_revision_id'] == revision['revision_id'] for task_id in task_ids))
+        self.assertNotEqual(revision['revision_id'], second_revision['revision_id'])
+
+        mismatch = self.service().call({'action': 'plan_tasks', 'arguments': {'config': {
+            **self.config, 'content_mode': 'mixed', 'content_plan_id': 'wrong-plan',
+            'content_plan_revision_id': revision['revision_id'],
+        }}, 'request_id': 'content-mismatch'})
+        self.assertFalse(mismatch['ok'])
+        self.assertIn('不匹配', mismatch['user_message'])
+
+    def test_general_preflight_ignores_content_plan_and_keeps_zero_write_defaults(self):
+        planned = self.service().call({'action': 'plan_tasks', 'arguments': {'config': {
+            **self.config, 'content_plan_id': 'missing-plan',
+            'content_plan_revision_id': 'missing-revision', 'like_probability': 0.9,
+        }}, 'request_id': 'general-plan'})
+        self.assertTrue(planned['ok'], planned)
+        self.assertIsNone(planned['result']['config']['content_plan_id'])
+        self.assertIsNone(planned['result']['config']['content_plan_revision_id'])
+        self.assertEqual(planned['result']['config']['like_probability'], 0.9)
+
+    def test_preset_model_and_notification_actions_reuse_existing_services_truthfully(self):
+        preset = self.service().call({'action': 'preset_save', 'arguments': {
+            'name': '零写入计划', 'config': self.config}, 'request_id': 'preset-save'})
+        self.assertTrue(preset['ok'], preset)
+        self.assertEqual(self.service().call({'action': 'preset_list'})['result']['presets'][-1]['name'], '零写入计划')
+
+        alert, _ = self.store.record_interaction_alert(task_id='task-one', device_id='vm-one',
+            sources=['received_likes'], summary={'headline': '5条'}, fingerprint='fixture')
+        notifications = self.service().call({'action': 'notification_list', 'arguments': {'status': 'unread'}})
+        self.assertEqual(notifications['result']['notifications'][0]['id'], alert['id'])
+        self.assertNotIn('alerts', notifications['result'])
+        acknowledged = self.service().call({'action': 'notification_acknowledge', 'arguments': {
+            'notification_ids': [alert['id']]}, 'request_id': 'notify-ack'})
+        self.assertEqual(acknowledged['result']['acknowledged'], 1)
+        self.assertEqual(self.service().call({'action': 'notification_acknowledge', 'arguments': {
+            'notification_ids': [alert['id']]}, 'request_id': 'notify-ack'}), acknowledged)
+
+        passed = {'provider_id': 'qwen_token_plan', 'model_test_status': 'passed',
+                  'model_ready': True, 'message': 'fixture passed', 'providers': {}}
+        failed = {**passed, 'model_test_status': 'failed', 'model_ready': False,
+                  'reason_code': 'invalid_response', 'message': 'fixture failed'}
+        with patch('model_providers.status', return_value=passed) as status, \
+             patch('model_providers.test_candidate', side_effect=[failed, passed]) as test, \
+             patch('model_providers.activate', return_value={**passed, 'ok': True}) as activate:
+            observed = self.service().call({'action': 'model_status', 'arguments': {
+                'provider': 'qwen_token_plan'}})
+            self.assertTrue(observed['ok'])
+            status.assert_called_once_with('qwen_token_plan')
+            rejected_key = self.service().call({'action': 'model_test', 'arguments': {
+                'provider': 'qwen_token_plan', 'upload_consent': True, 'api_key': 'must-not-pass'},
+                'request_id': 'model-with-key'})
+            self.assertFalse(rejected_key['ok'])
+            self.assertEqual(test.call_count, 0)
+            failure = self.service().call({'action': 'model_test', 'arguments': {
+                'provider': 'qwen_token_plan', 'upload_consent': True}, 'request_id': 'model-test-fail'})
+            self.assertFalse(failure['ok'])
+            self.assertEqual(failure['status'], 'failed')
+            self.assertEqual(failure['reason_code'], 'invalid_response')
+            success = self.service().call({'action': 'model_test', 'arguments': {
+                'provider': 'qwen_token_plan', 'upload_consent': True}, 'request_id': 'model-test-pass'})
+            self.assertTrue(success['ok'], success)
+            self.assertEqual(test.call_args.kwargs, {'consent': True})
+            enabled = self.service().call({'action': 'model_activate', 'arguments': {
+                'provider': 'qwen_token_plan'}, 'request_id': 'model-activate'})
+            self.assertTrue(enabled['ok'], enabled)
+            activate.assert_called_once_with('qwen_token_plan', task_db=self.store.path)
+
+    def test_task_evidence_separates_requested_count_from_whitelisted_actual_result(self):
+        task_id = self.store.submit('healthcheck', 'vm-one', {'video_count': 10, 'round_index': 2})
+        pending = self.service().call({'action': 'task_evidence', 'arguments': {'task_id': task_id}})
+        self.assertEqual(pending['result']['task']['requested'], {'video_count': 10, 'round_index': 2})
+        self.assertIsNone(pending['result']['task']['result_summary'])
+
+        self.store.set_paused(False)
+        self.store.claim_next('vm-one', 'fixture-worker')
+        self.store.finish(task_id, status='completed', run_dir='C:/private/evidence', result={
+            'status': 'passed_with_recovery', 'videos_seen': 8, 'topic_matches': 5,
+            'skipped_videos': 2, 'video_errors': 1, 'likes': 3, 'favorites': 2,
+            'comments_generated': 2, 'comments_sent': 1, 'model_attempts': 8,
+            'model_valid_decisions': 7, 'model_errors': 1, 'stopped_by_user': False,
+            'private_decisions': [{'secret': 'must-not-leak'}], 'result_path': 'C:/private/result.json',
+        })
+        completed = self.service().call({'action': 'task_evidence', 'arguments': {'task_id': task_id}})
+        self.assertEqual(completed['result']['task']['result_summary'], {
+            'result_status': 'passed_with_recovery', 'videos_seen': 8, 'topic_matches': 5,
+            'skipped_videos': 2, 'video_errors': 1, 'likes': 3, 'favorites': 2,
+            'comments_generated': 2, 'comments_sent': 1, 'model_attempts': 8,
+            'model_valid_decisions': 7, 'model_errors': 1, 'stopped_by_user': False,
+        })
+        serialized = json.dumps(completed, ensure_ascii=False)
+        self.assertNotIn('must-not-leak', serialized)
+        self.assertNotIn('C:/private', serialized)
 
     def test_no_host_session_default_zero_draft_and_scoped_resume(self):
         service = self.service()
@@ -353,6 +536,13 @@ class AutomationCliTests(unittest.TestCase):
         self.failures = 10
         self.assertNotEqual(self.run_cli('list_tasks').returncode, 0)
         self.assertEqual(len(self.hits), 3)
+
+    def test_new_business_reads_do_not_require_request_id_and_retry(self):
+        self.failures = 2
+        response = self.run_cli('content_plan_list')
+        self.assertEqual(response.returncode, 0, response.stderr)
+        self.assertEqual(len(self.hits), 3)
+        self.assertEqual(self.hits[-1]['action'], 'content_plan_list')
 
     def test_write_failure_never_retries_even_across_processes(self):
         self.failures = 100

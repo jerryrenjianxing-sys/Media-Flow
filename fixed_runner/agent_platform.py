@@ -9,6 +9,7 @@ import uuid
 
 from control_config import normalized_config, PRESET_FIELDS, build_scheduled_plan, inspection_profiles_for_store
 from run_planning import build_preview
+from content_plans import enabled_themes
 
 
 def bounded_diagnostic(value):
@@ -61,7 +62,7 @@ class AgentPlatform:
                 raise ValueError('请指定有效任务编号')
             task = self.store.get(task_id)
             incidents = self.store.list_incidents_for_tasks([task_id])
-            return {'task': self._task(task), 'incidents': [{
+            return {'task': self._task(task, include_result=True), 'incidents': [{
                 'id': row.id, 'stage': row.stage, 'reason_code': row.error_type,
                 'message': bounded_diagnostic(row.error_message), 'outcome': row.outcome,
                 'recovery_action': bounded_diagnostic(row.recovery_action), 'has_screenshot': bool(row.screenshot_path),
@@ -74,11 +75,30 @@ class AgentPlatform:
         raise ValueError('此平台工具尚未接入，未执行操作')
 
     @staticmethod
-    def _task(task):
-        return {'task_id': task.id, 'device_id': task.device_id, 'task_type': task.task_type,
+    def _task(task, *, include_result=False):
+        public = {'task_id': task.id, 'device_id': task.device_id, 'task_type': task.task_type,
                 'status': task.status, 'created_at': task.created_at, 'finished_at': task.finished_at,
                 'error': bounded_diagnostic(task.error), 'round_index': task.payload.get('round_index'),
                 'video_count': task.payload.get('video_count')}
+        if not include_result:
+            return public
+        result = task.result if isinstance(task.result, dict) else None
+        public['requested'] = {'video_count': task.payload.get('video_count'),
+                               'round_index': task.payload.get('round_index')}
+        public['result_summary'] = None if result is None else {
+            'result_status': bounded_diagnostic(result.get('status')) or None,
+            **{key: AgentPlatform._result_count(result.get(key)) for key in (
+                'videos_seen', 'topic_matches', 'skipped_videos', 'video_errors',
+                'likes', 'favorites', 'comments_generated', 'comments_sent',
+                'model_attempts', 'model_valid_decisions', 'model_errors')},
+            'stopped_by_user': result.get('stopped_by_user')
+                if type(result.get('stopped_by_user')) is bool else None,
+        }
+        return public
+
+    @staticmethod
+    def _result_count(value):
+        return value if type(value) is int and value >= 0 else None
 
     @staticmethod
     def resolve_devices(snapshot, selected):
@@ -113,12 +133,31 @@ class AgentPlatform:
         raw = args.get('config')
         if not isinstance(raw, dict):
             raise ValueError('请提供任务参数')
+        raw = dict(raw)
         allowed = set(PRESET_FIELDS) | {'device_ids', 'preview_only', 'seed', 'engagement_inspection_enabled', 'inspection_every_rounds', 'inspection_mode'}
         if set(raw) - allowed:
             raise ValueError('任务参数包含不支持的内部字段')
         for key in ('engagement_inspection_enabled', 'preview_only', 'topic_filter_enabled', 'search_trust_results', 'comment_policy_enabled'):
             if key in raw and type(raw[key]) is not bool:
                 raise ValueError('任务开关必须是明确的布尔值')
+        content_mode = str(raw.get('content_mode') or 'general')
+        if content_mode == 'general':
+            raw['content_plan_id'] = None
+            raw['content_plan_revision_id'] = None
+        elif raw.get('content_plan_id') or raw.get('content_plan_revision_id'):
+            if not raw.get('content_plan_id') or not raw.get('content_plan_revision_id'):
+                raise ValueError('内容计划和版本必须同时选择')
+            try:
+                revision = self.store.get_content_plan_revision(str(raw['content_plan_revision_id']))
+            except KeyError as exc:
+                raise ValueError('所选内容计划版本不存在') from exc
+            if revision['plan_id'] != str(raw['content_plan_id']):
+                raise ValueError('内容计划与版本不匹配')
+            themes = enabled_themes(revision['document'])
+            if not themes:
+                raise ValueError('内容计划没有启用主题')
+            raw['topic_prompt'] = themes[0]['topic_prompt']
+            raw['search_query'] = themes[0]['search_query']
         required = {'device_ids', 'video_count', 'round_count', 'content_mode', 'engagement_inspection_enabled'}
         missing = sorted(required - raw.keys())
         if raw.get('content_mode') in {'search', 'hybrid'} and not raw.get('search_query'):

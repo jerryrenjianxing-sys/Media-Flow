@@ -11,16 +11,19 @@ from urllib.parse import urlsplit
 import uuid
 
 from agent_platform import bounded_diagnostic
+from automation_business import ACTIONS as BUSINESS_ACTIONS
+from automation_business import READ_ACTIONS as BUSINESS_READ_ACTIONS
+from automation_business import WRITE_ACTIONS as BUSINESS_WRITE_ACTIONS
 
 READ_ACTIONS = frozenset(('platform_status', 'list_devices', 'list_tasks', 'plan_status',
     'task_evidence', 'incident_evidence', 'request_status', 'virtual_operation_status',
     'memory_list', 'memory_history', 'repair_list', 'repair_status', 'repair_files',
-    'repair_read', 'repair_diff', 'repair_test_status', 'repair_update_status'))
+    'repair_read', 'repair_diff', 'repair_test_status', 'repair_update_status')) | BUSINESS_READ_ACTIONS
 WRITE_ACTIONS = frozenset(('plan_tasks', 'execute_plan', 'resume_plan', 'repreview_plan',
     'pause_batch', 'stop_batch', 'plan_virtual_operation', 'execute_virtual_operation',
     'memory_save', 'memory_restore', 'repair_create', 'repair_test', 'repair_validate',
     'repair_export', 'repair_close', 'repair_cancel', 'repair_prepare_apply', 'repair_apply',
-    'repair_prepare_rollback', 'repair_cancel_update'))
+    'repair_prepare_rollback', 'repair_cancel_update')) | BUSINESS_WRITE_ACTIONS
 
 
 def automation_catalog(connected=lambda action: True):
@@ -160,6 +163,9 @@ class AutomationService:
         host, session = self.host, context['session_id']
         if action == 'request_status':
             return self.receipt(args.get('request_id'))
+        if action in BUSINESS_ACTIONS:
+            from automation_business import dispatch
+            return dispatch(host, action, args)
         if action == 'platform_status':
             snapshot = host.status_reader()
             return {'observed_at': time.time(), 'paused': bool(snapshot.get('paused')),

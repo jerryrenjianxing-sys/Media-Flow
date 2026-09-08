@@ -14,7 +14,9 @@ import urllib.request
 READ_ACTIONS = frozenset(('platform_status', 'list_devices', 'list_tasks', 'plan_status',
     'task_evidence', 'incident_evidence', 'request_status', 'virtual_operation_status',
     'memory_list', 'memory_history', 'repair_list', 'repair_status', 'repair_files',
-    'repair_read', 'repair_diff', 'repair_test_status', 'repair_update_status'))
+    'repair_read', 'repair_diff', 'repair_test_status', 'repair_update_status',
+    'content_plan_list', 'content_plan_get', 'preset_list', 'model_status',
+    'notification_list'))
 
 
 def error(code, message, status='blocked'):
