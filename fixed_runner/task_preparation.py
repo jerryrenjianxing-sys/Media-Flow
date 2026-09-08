@@ -36,6 +36,8 @@ def preparation_presentation(status, message=""):
 
 def task_requirements(config, inspection=False):
     if inspection:
+        if config.get("inspection_workflow_version") == "home_badge" or config.get("inspection_mode") == "home_badge":
+            return ["connection", "display", "application", "home_badge"]
         return ["connection", "display", "application", "engagement_v3"]
     requirements = ["connection", "display", "application", "browse_home"]
     if config.get("content_mode") in {"search", "hybrid", "mixed"}:
@@ -45,8 +47,8 @@ def task_requirements(config, inspection=False):
     return list(dict.fromkeys(requirements))
 
 
-def inspection_suspension_key(device_id):
-    return "inspection-paused:" + device_id
+def inspection_suspension_key(device_id, mode="legacy"):
+    return "inspection-paused:" + ("home_badge:" if mode == "home_badge" else "") + device_id
 
 
 def effective_density(output):
@@ -68,7 +70,7 @@ def record_inspection_outcome(store, task, result):
     if result.get("status") not in {"failed", "degraded"}:
         return
     reason = str(result.get("failure_reason") or (result.get("degraded_reason") or {}).get("code") or "inspection_incomplete")
-    store.save_profile(inspection_suspension_key(task.device_id),
+    store.save_profile(inspection_suspension_key(task.device_id, result.get("workflow_version")),
                        {"suspended": True, "reason": reason, "task_id": task.id, "rule_version": RULE_VERSION})
     if result.get("restored") is not True:
         store.request_stop([task.device_id])
@@ -86,22 +88,27 @@ def prepare_capabilities(device, device_id, requirements, checkpoint):
     from device_profiles import load_device_profile_payloads, merge_device_probe, upsert_device_profile
     from datetime import datetime
 
-    allowed = {"connection", "display", "application", "browse_home", "search_input", "engagement_v3"}
+    allowed = {"connection", "display", "application", "browse_home", "search_input", "engagement_v3", "home_badge"}
     if not set(requirements) <= allowed:
         raise ValueError("未知设备准备能力")
     checkpoint("connection", "正在检查当前连接与画面")
     probe = probe_device(device, device_id)
     image = device.screenshot(format="pillow")
-    source = device.dump_hierarchy(compressed=True, pretty=False)
+    try:
+        source = device.dump_hierarchy(compressed=True, pretty=False)
+    except Exception:
+        if "home_badge" not in requirements:
+            raise
+        source = ""
     display = probe["display"]
     if (display["width"], display["height"], display["density"]) != (900, 1600, 320):
         raise RuntimeError("显示环境不符：需要900×1600、320 DPI，请停止后修复配置")
-    if image.size != (900, 1600) or not source:
+    if image.size != (900, 1600) or (not source and "home_badge" not in requirements):
         raise RuntimeError("无法确认当前画面或控制通道，请重试连接")
     observed = datetime.now().astimezone().isoformat(timespec="milliseconds")
     old = load_device_profile_payloads().get(device_id) or {}
     profile = merge_device_probe(device_id, probe, existing=old, observed_at=observed, portable_virtual=True)
-    profile["capabilities"] = {**old.get("capabilities", {}), "screenshot": True, "ui_tree": True}
+    profile["capabilities"] = {**old.get("capabilities", {}), "screenshot": True, "ui_tree": bool(source)}
     upsert_device_profile(device_id, profile)
     checkpoint("display", "连接、控制读取与标准显示已确认")
     if "application" in requirements:

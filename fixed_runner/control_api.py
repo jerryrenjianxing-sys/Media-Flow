@@ -1726,6 +1726,11 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
             )
         )
         from task_preparation import inspection_suspension_key
+        if (store.get_profile(inspection_suspension_key(adb_endpoint, "home_badge")) or {}).get("suspended"):
+            virtual_device.update(reason_code="home_badge_suspended", issue_status="partially_available",
+                                  blocking_scope="home_badge", user_message="消息提醒检查已暂停；首页安全时视频任务不受影响",
+                                  suggested_action="查看现场后，重新检查消息提醒")
+            virtual_device["available_actions"] = list(dict.fromkeys(virtual_device["available_actions"] + ["recheck_home_badge"]))
         if (store.get_profile(inspection_suspension_key(adb_endpoint)) or {}).get("suspended"):
             virtual_device.update(reason_code="inspection_suspended", issue_status="partially_available",
                                   blocking_scope="engagement_v3", user_message="互动巡检已暂停；安全恢复首页后视频任务可继续",
@@ -1916,6 +1921,8 @@ def _public_task(task, recovery: dict[str, Any] | None = None) -> dict[str, Any]
             if task.task_type == "douyin_engagement_inspection"
             else None
         ),
+        "inspection_mode": task.payload.get("inspection_mode"),
+        "inspection_workflow_version": task.payload.get("inspection_workflow_version"),
         "content_plan": content_plan,
         "parent_task_id": task.payload.get("recovery_parent_task_id"),
         "recovery": (
@@ -1939,6 +1946,23 @@ def _bounded_public_text(value: Any, limit: int = 160) -> str:
     if re.match(r"^(?:[A-Za-z]:[\\/]|/)", text):
         return ""
     return text if len(text) <= limit else f"{text[: limit - 1]}…"
+
+
+def _public_home_badge(raw: dict[str, Any]) -> dict[str, Any]:
+    state = raw.get("state") if raw.get("state") in {"present", "absent", "unknown"} else "unknown"
+    text = str(raw.get("badge_text") or "")
+    text = text if state == "present" and re.fullmatch(r"[1-9]\d{0,5}\+?", text) else None
+    bounds = raw.get("target_bounds")
+    return {
+        "state": state, "badge_text": text,
+        "message_count": int(text) if text and not text.endswith("+") else None,
+        "count_is_lower_bound": bool(text and text.endswith("+")),
+        "message": _bounded_public_text(raw.get("message")),
+        "reason_code": _bounded_public_text(raw.get("reason_code"), 100),
+        "source": "vision" if raw.get("source") == "vision" else "local",
+        "target_bounds": bounds if isinstance(bounds, list) and len(bounds)==4 and all(type(n) is int and 0<=n<=10000 for n in bounds) else None,
+        "evidence_missing": [v for v in raw.get("evidence_missing", []) if v in {"screenshot", "ui_tree"}],
+    }
 
 
 def _public_inspection_result(raw: dict[str, Any]) -> dict[str, Any]:
@@ -2029,8 +2053,10 @@ def _public_inspection_result(raw: dict[str, Any]) -> dict[str, Any]:
         if isinstance(evidence, list)
         else [],
     }
-    if raw.get("workflow_version") in {"v1", "v2", "v3"}:
+    if raw.get("workflow_version") in {"v1", "v2", "v3", "home_badge"}:
         public["workflow_version"] = raw["workflow_version"]
+    if raw.get("workflow_version") == "home_badge" and isinstance(raw.get("home_badge"), dict):
+        public["home_badge"] = _public_home_badge(raw["home_badge"])
     unified = raw.get("unified_activity")
     if raw.get("workflow_version") == "v3" and isinstance(unified, dict):
         public["unified_activity"] = {
@@ -2067,11 +2093,11 @@ def _public_inspection_result(raw: dict[str, Any]) -> dict[str, Any]:
     if isinstance(metadata, dict):
         public["inspection_metadata"] = {
             "workflow_version": metadata.get("workflow_version")
-            if metadata.get("workflow_version") in {"v1", "v2", "v3"}
+            if metadata.get("workflow_version") in {"v1", "v2", "v3", "home_badge"}
             else "v1",
             "alert_sources": [
                 value for value in metadata.get("alert_sources", [])
-                if value in {"private_messages", "received_likes", "comment_danmaku", "profile_visitors"}
+                if value in {"private_messages", "received_likes", "comment_danmaku", "profile_visitors", "home_badge"}
             ][:4],
             "alert_created": bool(metadata.get("alert_created")),
             "visitor_comparison": metadata.get("visitor_comparison")
@@ -2080,6 +2106,12 @@ def _public_inspection_result(raw: dict[str, Any]) -> dict[str, Any]:
             }
             else "not_checked",
         }
+        if raw.get("workflow_version") == "home_badge":
+            public["inspection_metadata"].update(workflow_version="home_badge",
+                inspection_id=_bounded_public_text(metadata.get("inspection_id"), 100),
+                result_kind=metadata.get("result_kind") if metadata.get("result_kind") in {"alert", "clear", "incomplete"} else "incomplete",
+                evidence_count=max(0, int(metadata.get("evidence_count") or 0)),
+                conclusion=_bounded_public_text(metadata.get("conclusion")))
     return public
 
 
@@ -2088,7 +2120,7 @@ def _public_interaction_alert(alert: dict[str, Any]) -> dict[str, Any]:
     profile = profiles.get(str(alert.get("device_id") or ""))
     sources = [
         value for value in alert.get("sources", [])
-        if value in {"private_messages", "received_likes", "comment_danmaku", "profile_visitors"}
+        if value in {"private_messages", "received_likes", "comment_danmaku", "profile_visitors", "home_badge"}
     ]
     summary = alert.get("summary") if isinstance(alert.get("summary"), dict) else {}
     public_sources: dict[str, Any] = {}
@@ -2121,6 +2153,11 @@ def _public_interaction_alert(alert: dict[str, Any]) -> dict[str, Any]:
     }
     if summary.get("inspection_id"):
         public["inspection_id"] = str(summary["inspection_id"])
+    if "home_badge" in sources:
+        public["summary"].update(home_badge=_public_home_badge(summary.get("home_badge") or {}),
+            confirmed=summary.get("confirmed") is True,
+            last_checked_at=_bounded_public_text(summary.get("last_checked_at"), 60),
+            last_check_message=_bounded_public_text(summary.get("last_check_message")))
     if alert.get("viewed_at"):
         public["viewed_at"] = str(alert["viewed_at"])
     return public
@@ -3724,7 +3761,8 @@ class Handler(BaseHTTPRequestHandler):
                                    requirements=["connection", "display", "application"])
                     if body.get("inspection_recheck") is True:
                         options["inspection_recheck"] = True
-                        options["requirements"].append("engagement_v3")
+                        options["inspection_mode"] = "home_badge" if body.get("inspection_mode") == "home_badge" else "legacy"
+                        options["requirements"].append("home_badge" if options["inspection_mode"] == "home_badge" else "engagement_v3")
                 record = self.store.create_initialization(
                     device_id,
                     platform_id="douyin",

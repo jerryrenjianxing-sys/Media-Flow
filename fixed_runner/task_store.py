@@ -1907,8 +1907,8 @@ class TaskStore(AgentQueueMixin):
             if "round_index" in payload:
                 raise ValueError("engagement inspection must not define round_index")
             workflow_version = payload.get("inspection_workflow_version", "v1")
-            if workflow_version not in {"v1", "v2", "v3"}:
-                raise ValueError("inspection_workflow_version must be v1, v2, or v3")
+            if workflow_version not in {"v1", "v2", "v3", "home_badge"}:
+                raise ValueError("invalid inspection_workflow_version")
             if workflow_version in {"v2", "v3"}:
                 from task_preparation import PREPARATION_VERSION, engagement_rule
                 supplied = payload.get("inspection_calibration") or {}
@@ -3126,7 +3126,7 @@ class TaskStore(AgentQueueMixin):
             not inspection_id.strip()
             or not task_id.strip()
             or not device_id.strip()
-            or workflow_version not in {"v1", "v2", "v3"}
+            or workflow_version not in {"v1", "v2", "v3", "home_badge"}
             or status not in {"completed", "degraded", "failed"}
             or result_kind not in {"alert", "clear", "incomplete"}
             or not run_dir.strip()
@@ -3217,6 +3217,58 @@ class TaskStore(AgentQueueMixin):
             "detected_at": row["detected_at"],
             "viewed_at": row["viewed_at"],
         }
+
+    def record_home_badge_observation(self, *, permanent_device_id: str, device_id: str,
+                                     task_id: str, state: str, summary: dict[str, Any]) -> dict[str, Any]:
+        """Atomically persist one observation and its per-device notification episode.
+
+        Platform acknowledgement never resets the episode; only observed absence
+        does. Per-task receipts make even old/replayed calls idempotent.
+        """
+        if state not in {"present", "absent", "unknown"} or not all((permanent_device_id, device_id, task_id)):
+            raise ValueError("invalid home badge observation")
+        key = "home-badge-episode:" + permanent_device_id
+        operation = "home-badge-observation:" + permanent_device_id + ":" + task_id
+        timestamp = now_iso()
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cached = connection.execute("SELECT config_json FROM automation_profiles WHERE name=?", (operation,)).fetchone()
+            if cached:
+                return json.loads(cached["config_json"])
+            row = connection.execute("SELECT config_json FROM automation_profiles WHERE name=?", (key,)).fetchone()
+            episode = json.loads(row["config_json"]) if row else {}
+            active = bool(episode.get("active"))
+            alert_id = episode.get("alert_id")
+            created = state == "present" and not active
+            public = {**summary, "last_checked_at": timestamp, "confirmed": state != "unknown"}
+            if created:
+                alert_id = uuid.uuid4().hex
+                connection.execute("INSERT INTO interaction_alerts "
+                    "(id,task_id,device_id,sources_json,summary_json,fingerprint,status,detected_at,viewed_at) "
+                    "VALUES (?,?,?,?,?,?,'unread',?,NULL)",
+                    (alert_id, task_id, device_id, '["home_badge"]', json.dumps(public, ensure_ascii=False),
+                     "home-badge:" + alert_id, timestamp))
+                active = True
+            elif active and alert_id:
+                if state == "unknown":
+                    previous = connection.execute("SELECT summary_json FROM interaction_alerts WHERE id=?", (alert_id,)).fetchone()
+                    public = {**(json.loads(previous["summary_json"]) if previous else {}),
+                              "last_checked_at": timestamp, "confirmed": False,
+                              "last_check": summary, "last_check_message": "本次检查失败，之前的提醒状态尚未确认"}
+                connection.execute("UPDATE interaction_alerts SET summary_json=?,device_id=? WHERE id=?",
+                                   (json.dumps(public, ensure_ascii=False), device_id, alert_id))
+                if state == "absent":
+                    connection.execute("UPDATE interaction_alerts SET status='viewed',viewed_at=COALESCE(viewed_at,?) WHERE id=?", (timestamp,alert_id))
+                    active = False
+            receipt = {"alert_created": created, "alert_id": alert_id, "episode_active": active}
+            episode.update(active=active, alert_id=alert_id, last_checked_at=timestamp)
+            if state != "unknown":
+                episode["state"] = state
+            for name, value in ((key, episode), (operation, receipt)):
+                connection.execute("INSERT INTO automation_profiles(name,config_json,updated_at) VALUES (?,?,?) "
+                    "ON CONFLICT(name) DO UPDATE SET config_json=excluded.config_json,updated_at=excluded.updated_at",
+                    (name, json.dumps(value, ensure_ascii=False), timestamp))
+        return receipt
 
     def record_interaction_alert(
         self,

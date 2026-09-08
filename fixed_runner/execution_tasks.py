@@ -1674,7 +1674,7 @@ def execute_task(
             raise ValueError("缺少任务库存，无法核对当前MuMu控制对象")
         require_business_instance(task_store, task.device_id)
         if (task.task_type == "douyin_engagement_inspection" and task_store is not None
-                and (task_store.get_profile(inspection_suspension_key(task.device_id)) or {}).get("suspended")):
+                and (task_store.get_profile(inspection_suspension_key(task.device_id, task.payload.get("inspection_workflow_version"))) or {}).get("suspended")):
             result = {"status": "degraded", "skipped": True, "task_id": task.id,
                       "failure_reason": "inspection_suspended", "complete": False,
                       "message": "此前巡检未完成，已跳过后续巡检；请重新检查并恢复"}

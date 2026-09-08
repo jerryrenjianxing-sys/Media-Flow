@@ -146,6 +146,25 @@ class VisionCandidateLocator:
             "When absent or ambiguous return confidence 0. Regions use full screenshot normalized coordinates."
         ), timeout_seconds), semantic_name)
 
+    def read_home_badge(self, image_path: Path, *, timeout_seconds: float = 20.0) -> dict[str, Any]:
+        value = _extract_json(self._request(image_path, (
+            "Observe Douyin HOME only, never the message/conversation page. Locate the visible bottom 消息 tab "
+            "and its red/pink badge. Do not count items or infer hidden content. "
+            'Return {"page_type":"home|unknown","state":"present|absent|unknown",'
+            '"region":[0,0,1,1],"evidence":"visible home and message tab proof","badge_text":null}. '
+            "Region is the normalized visible message tab and badge. badge_text is only clearly legible digits "
+            "including a literal plus (e.g. 99+); a dot or unreadable digits returns null. "
+            "Absence requires an unobscured, fully visible message tab. Overlays, loading and non-home are unknown."
+        ), timeout_seconds))
+        region = value.get("region")
+        if (value.get("page_type") != "home" or value.get("state") not in {"present", "absent", "unknown"}
+                or not isinstance(region, list) or len(region) != 4
+                or not all(isinstance(n, (float, int)) and 0 <= n <= 1 for n in region)
+                or not (region[0] < region[2] and .8 <= region[1] < region[3])
+                or region[2]-region[0] > .4 or not str(value.get("evidence") or "").strip()):
+            raise RuntimeError("visual_home_badge_not_confirmed")
+        return value
+
     def read_activity(self, image_path: Path, *, timeout_seconds: float = 20.0) -> dict[str, Any]:
         value = _extract_json(self._request(image_path, (
             "Read only the unified 互动消息 activity list, NOT the normal 消息 conversation list. "

@@ -2,7 +2,7 @@
 name: mediaflow-platform
 description: Use when a user provides the MediaFlow homepage Skill for first connection, configures MuMu or apps through an installed platform, or asks about device status, tasks, recovery, evidence, preferences, or project repair.
 metadata:
-  version: "33"
+  version: "34"
 ---
 
 # MediaFlow 平台操作
@@ -78,7 +78,9 @@ metadata:
 
 视频采用固定识别优先、已配置视觉导航兜底、动作后复核。正常搜索流、评论面板和互动列表不是异常；需要恢复起点时使用现有有界大退（强停抖音、冷启动并验证，不清数据）。搜索恢复保留原词、目标流和已完成计数。不要用另一个Agent点击循环取代固定执行器。
 
-巡检v3：消息 → 识别互动消息入口 → 聚合列表。首屏截图/UI树，有已读边界就结束；否则逐屏留证分类去重，直到已读、明确空列表或末尾。最多12次有效上滑、列表45秒、全程120秒；停滞不能当作无互动。不要进入普通私信或具体用户主页。访客记录是提醒，不是资格；明确关闭仅标访客结果不完整。有新互动每台一次聚合通知，确认成功横幅才消失。最后恢复安全主页；巡检失败但恢复成功只暂停巡检，不牵连视频；恢复失败/断连/登录则暂停该设备业务。
+默认“消息提醒检查”：设置 `engagement_inspection_enabled=true`、`inspection_mode="home_badge"` 和 `inspection_every_rounds`，由固定执行器在轮次结束后确认首页、截图、判断底部消息角标，不点击消息、不进入任何列表。正常状态为“有消息／无消息”；数字清楚时记录原文（5条、99+条），只有红点或数字不清只记有消息。99+不是精确99条，连续检查数量不能相加当新增消息；截图失败/遮挡/页面不明是检查失败，不记零。无需访客确认、v3校准或输入法准备。第一次出现提醒通知一次，持续存在不反复弹；平台确认不等于抖音已读，角标消失后再次出现才新通知。
+
+旧版详细巡检仅在用户明确需要时设置 `inspection_mode="legacy"`，入口在任务台“高级设置 → 旧版详细巡检”；历史回执保留。旧v3才进入互动聚合列表，边界、12次滚动和45/120秒上限仍适用，不能用于用户明确要求“不要点进去”的首页检查。新版与旧版失败均保留现场；首页已确认安全时仅暂停对应检查，恢复失败/断连/登录则暂停该设备业务。操作和恢复入口见[任务流程](references/workflows.md)。
 
 ## 复盘与修复
 

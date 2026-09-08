@@ -57,6 +57,24 @@ from virtual_devices import STANDARD_RECIPE
 
 
 class ControlApiTest(unittest.TestCase):
+    def test_home_badge_public_result_and_unknown_alert_keep_mode_and_count(self):
+        badge={'state':'present','badge_text':'99+','message':'有消息，99+条','target_bounds':[600,1400,700,1500],
+               'evidence_missing':[],'source':'local','reason_code':'visible_message_badge','secret':'never-public'}
+        value=_public_inspection_result({'workflow_version':'home_badge','status':'completed','home_badge':badge,
+                  'inspection_metadata':{'workflow_version':'home_badge','inspection_id':'receipt','result_kind':'alert'}})
+        self.assertEqual(value['workflow_version'],'home_badge')
+        self.assertEqual(value['home_badge']['badge_text'],'99+')
+        self.assertIsNone(value['home_badge']['message_count'])
+        self.assertNotIn('secret',value['home_badge'])
+        with patch('control_api.load_device_profiles',return_value={}):
+            alert=_public_interaction_alert({'id':'alert','device_id':'vm','sources':['home_badge'],
+                'summary':{'home_badge':badge,'confirmed':False,'last_checked_at':'now',
+                           'last_check_message':'本次未确认','inspection_id':'receipt'}})
+        self.assertEqual(alert['sources'],['home_badge'])
+        self.assertFalse(alert['summary']['confirmed'])
+        self.assertEqual(alert['summary']['last_check_message'],'本次未确认')
+        self.assertEqual(alert['summary']['home_badge']['badge_text'],'99+')
+
     def test_management_and_chat_origins_can_read_api_and_preflight(self) -> None:
         class ProbeHandler(Handler):
             def do_GET(self):
@@ -193,6 +211,7 @@ class ControlApiTest(unittest.TestCase):
     def test_scheduled_plan_freezes_v2_only_for_calibrated_device(self) -> None:
         config = {
             **DEFAULT_CONFIG,
+            "inspection_mode": "legacy",
             "device_ids": ["douyin5", "douyin1"],
             "round_count": 6,
             "engagement_inspection_enabled": True,
@@ -238,6 +257,7 @@ class ControlApiTest(unittest.TestCase):
     def test_scheduled_plan_rejects_unstable_v2_calibration(self) -> None:
         config = {
             **DEFAULT_CONFIG,
+            "inspection_mode": "legacy",
             "device_ids": ["douyin1"],
             "round_count": 5,
             "engagement_inspection_enabled": True,
@@ -266,6 +286,7 @@ class ControlApiTest(unittest.TestCase):
     def test_scheduled_plan_freezes_v3_for_standard_virtual_device(self) -> None:
         config = {
             **DEFAULT_CONFIG,
+            "inspection_mode": "legacy",
             "device_ids": ["127.0.0.1:16416"],
             "round_count": 5,
             "engagement_inspection_enabled": True,
@@ -306,6 +327,7 @@ class ControlApiTest(unittest.TestCase):
     def test_scheduled_plan_does_not_fall_back_for_standard_virtual_device(self) -> None:
         config = {
             **DEFAULT_CONFIG,
+            "inspection_mode": "legacy",
             "device_ids": ["127.0.0.1:16416"],
             "round_count": 5,
             "engagement_inspection_enabled": True,

@@ -8,7 +8,13 @@ plan_tasks的config必需device_ids、video_count、round_count、content_mode�
 
 普通业务队列paused=true时，execute_plan只放行本次计划，其他等待任务继续暂停；无需先解除全局暂停。明确“停止全部自动操作”和设备安全停止则按回执处理。暂停/停止只传原plan_id。继续先查plan_status：已提交则用原plan_id恢复；过期且未提交才repreview_plan得到新plan_id。用户要求恢复任务安全停止才传resume_stopped_devices=true。不会恢复全局队列或其他批次，不能覆盖任务失败终态。
 
-视频和巡检遵守SKILL.md现行固定流程：固定识别、视觉兜底、动作后复核；搜索有界恢复保留词/计数；巡检仅互动聚合列表，最多12次有效上滑、列表45秒/全程120秒。不能以终端ADB点击循环、普通私信扫描或另一个Agent执行器替代Worker。
+视频和检查遵守SKILL.md现行固定流程：固定识别、已有视觉兜底、动作后复核；搜索有界恢复保留词/计数。新计划的消息检查使用 `inspection_mode="home_badge"`，只看首页角标。例：六轮、每三轮检查，config设置 `round_count=6,engagement_inspection_enabled=true,inspection_every_rounds=3,inspection_mode="home_badge"`；第3/6轮结束各检查一次。用户只要计划时停在plan_tasks，不执行execute_plan。
+
+结果 `workflow_version="home_badge"`，`home_badge.state`为present/absent，unknown表示检查失败而非“无消息”。`badge_text`保留清晰数字或99+，`message_count`仅精确数字时有值，99+的`count_is_lower_bound=true`。纯红点/数字不清不要求补点消息页面，直接记录有消息。提醒连续存在不重复通知，确认平台通知不清除抖音角标；unknown不改变上一轮提醒状态，不把连续数量相加。回执和截图通过原task_evidence读取。
+
+检查失败后用户要求重新检查：设备页“重新检查消息提醒”，或已核实设备地址的 `POST /api/devices/{URL编码ADB地址}/initializations`，JSON `{"inspection_recheck":true,"inspection_mode":"home_badge"}`。该传统维护入口无request_id去重，提交一次保存返回、超时先查询同设备initialization，不能重发。只读首页检查通过才恢复后续检查，不重放旧失败任务。
+
+旧版详细巡检设置 `inspection_mode="legacy"`，任务台高级设置保留；历史任务或已保存配置缺少 `inspection_mode` 时仍按旧版解释，不自动改写、迁移或补跑。只有旧版进入互动聚合列表，最多12次有效上滑、列表45秒/全程120秒。不能以终端ADB点击循环、普通私信扫描或另一个Agent执行器替代Worker。
 
 修复：task_evidence/incident_evidence→repair_create→宿主文件工具在返回workspace_path读取修改→repair_test/repair_validate→repair_diff→repair_prepare_apply→repair_apply。先失败回归再最小修复；完整测试通过且匹配补丁哈希才准备应用。用户只要求诊断则不修改，只要求改代码则留候选，目标包含生效才调用可回退更新。候选不能覆盖正式目录。更新等待空闲，检查基准提交、补丁哈希、测试回执、设备锁，保留旧版本与数据。
 

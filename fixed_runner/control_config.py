@@ -24,6 +24,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "round_interval_minutes": 0,
     "engagement_inspection_enabled": False,
     "inspection_every_rounds": 5,
+    "inspection_mode": "home_badge",
     "dwell_min": 6.0,
     "dwell_max": 15.0,
     "like_probability": 0.20,
@@ -311,6 +312,10 @@ class SubmissionResult(list[str]):
 
 def normalized_config(raw: dict[str, Any]) -> dict[str, Any]:
     config = {**DEFAULT_CONFIG, **raw}
+    # Missing mode on an existing saved configuration means the original flow.
+    config["inspection_mode"] = raw.get("inspection_mode", "legacy" if raw else "home_badge")
+    if config["inspection_mode"] not in {"home_badge", "legacy"}:
+        raise ValueError("未知消息检查模式")
     raw_device_ids = raw.get("device_ids")
     if not isinstance(raw_device_ids, list):
         raw_device_id = str(raw.get("device_id") or "").strip()
@@ -542,9 +547,10 @@ def build_scheduled_plan(
                     or ("v3" if standard_virtual else "v1")
                 )
                 inspection_config["inspection_workflow_version"] = (
-                    workflow if workflow in {"v1", "v2", "v3"} else "v1"
+                    "home_badge" if config.get("inspection_mode") == "home_badge"
+                    else workflow if workflow in {"v1", "v2", "v3"} else "v1"
                 )
-                if standard_virtual and inspection_config["inspection_workflow_version"] != "v3":
+                if standard_virtual and inspection_config["inspection_workflow_version"] not in {"v3", "home_badge"}:
                     raise ValueError(
                         f"device {device_id} requires a stable v3 calibration"
                     )
@@ -608,6 +614,9 @@ def build_scheduled_plan(
                     if on_demand:
                         inspection_config.update(preparation_version=PREPARATION_VERSION,
                                                  preparation_requirements=task_requirements(config, inspection=True))
+                if inspection_config["inspection_workflow_version"] == "home_badge":
+                    inspection_config.update(preparation_version=PREPARATION_VERSION,
+                                             preparation_requirements=task_requirements(inspection_config, inspection=True))
                 inspection_config.pop("round_index", None)
                 inspection_not_before = (
                     base_time

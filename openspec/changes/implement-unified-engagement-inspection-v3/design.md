@@ -18,6 +18,10 @@
 
 ## Decisions
 
+- **dev.34默认首页检查。** 新建配置显式 `inspection_mode=home_badge`，已有保存配置未带该字段时保留legacy含义；任务冻结 `inspection_workflow_version=home_badge`，旧任务负载不改。独立小模块负责首页定位及本地截图角标判断，固定执行器仍持有设备。结果 `home_badge.state` 为present/absent/unknown，包含reason_code、message、source、target_bounds、evidence_missing；不生成详细分类。复用首页恢复，有界一次大退，无消息入口点击。UI树只作为定位/核对辅助，缺失时仅在已验证画面规则或可用视觉明确确认时继续，否则unknown。
+- **提醒周期。** 在现有TaskStore事务内按永久MuMu设备ID维护周期和最近观察；present新周期创建一次原生interaction_alert，后续更新证据不重新未读；absent结束周期并收起当前提醒，unknown保留前态及待确认标记。确认平台通知不清抖音角标。只读检查失败沿用巡检/设备暂停分离，home_badge与旧版暂停不互相误拦。
+- **数量是可选附加信息。** 正常状态只有有消息/无消息，unknown是检查失败而非第三种业务状态。`badge_text`保存清晰原文，`message_count`只保存精确数字，`99+`保留原文并标记`count_is_lower_bound=true`，不换算精确99。纯红点或数字不清只显示有消息。数量来自配对UI语义或已启用视觉的明确读数，不为补数量进入消息页面；视觉不可用不撤销已确定的有消息判断。
+
 - **dev.10双服务商配置边界。** `model_providers`负责独立DPAPI候选、全平台配置版本、测试/启用门禁与请求租约；`model_budget`复用既有HTTP边界分派OpenRouter美元预留和Token Plan请求计数。每个业务入口解析同一有效配置，不通过修改全局进程环境切换凭证。配置启用和请求准入由SQLite事务互斥，队列暂停且任务、初始化、分析均空闲才能切换。新候选失败不覆盖旧有效Key。
 - **实验性验收。** Token Plan个人FAQ限制后台自动化且说明输入输出的数据用途；页面明确提醒，用户确认后才发送测试图/授权应用截图。一个随机图片读数、颜色与JSON文本探针不是业务成功证明。千问最多10次，失败/未知结果不退款、不自动重放；已退出进程的请求结束为中断，仍占次数。原5美元OpenRouter账本不改。未提供Key/确认时只交付接入并保持原有效模型。
 

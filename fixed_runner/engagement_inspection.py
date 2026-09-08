@@ -985,6 +985,9 @@ class EngagementInspector:
         workflow_version = str(
             (policy or {}).get("inspection_workflow_version", "v1")
         )
+        if workflow_version == "home_badge":
+            from home_badge import inspect_home_badge
+            return inspect_home_badge(self, policy or {})
         if workflow_version == "v3":
             return self._inspect_v3(policy or {})
         if workflow_version == "v2":

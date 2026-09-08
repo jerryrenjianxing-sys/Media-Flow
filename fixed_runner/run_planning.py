@@ -118,7 +118,7 @@ def _device_preview(
             probabilities = _action_probabilities(config)
             if mode in {"search", "mixed", "hybrid"}:
                 required.append("search_input")
-            if config.get("engagement_inspection_enabled"):
+            if config.get("engagement_inspection_enabled") and config.get("inspection_mode") != "home_badge":
                 required.append("engagement_v3")
             if mode != "general" or bool(config.get("topic_filter_enabled")):
                 required.append("topic_analysis")
@@ -202,7 +202,7 @@ def build_preview(
     if model_required and model_status is not None and not bool(model_status.get("model_ready")):
         blockers.append("当前内容模式需要视觉模型，请在模型设置中测试并启用当前服务商")
     inspection_profiles = inspection_profiles_for_store(store)
-    if config.get("engagement_inspection_enabled") and eligible_ids:
+    if config.get("engagement_inspection_enabled") and config.get("inspection_mode") != "home_badge" and eligible_ids:
         unsupported = [
             device_id
             for device_id in eligible_ids

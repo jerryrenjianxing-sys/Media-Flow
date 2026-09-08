@@ -124,6 +124,7 @@ def qualify_virtual_device(
     comment_panel_ready = browse_ready and was_verified("comment")
     capabilities = {
         "adb_view": capability(base_ready, "ADB尚未连接", "connect_adb"),
+        "home_badge": capability(base_ready and env_ready, "需要连接与标准显示环境；执行时确认首页", "connect_adb"),
         "browse_home": capability(
             browse_ready,
             "需要连接、标准显示环境和一次首页只读复验",

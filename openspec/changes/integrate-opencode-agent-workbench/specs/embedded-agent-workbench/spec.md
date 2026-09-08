@@ -4,6 +4,13 @@
 
 ## ADDED Requirements
 
+### Requirement: Skill区分首页提醒与旧详细巡检
+Skill SHALL 将新建检查计划明确设置为home_badge，不以旧版聚合列表替代用户要求的首页观察。可见数字原样解释，99+不得解释为精确数量；unknown表示检查失败，不表示无消息。旧版 SHALL 仅通过显式legacy模式或高级入口选择；咨询不提交执行，原计划与历史任务不改写。
+
+#### Scenario: 只要求首页红点且只准备计划
+- **WHEN** 用户要求六轮视频、每三轮看首页角标、不要进入且先不启动
+- **THEN** Agent生成inspection_mode=home_badge及inspection_every_rounds=3的计划，停在计划回执，不执行任务也不选legacy
+
 ### Requirement: Skill首次只读接入
 系统 SHALL 在首页复制材料和下载入口中明确首次只读检查请求；Windows检查 MUST 不依赖系统Python，不自动启动平台、ADB、虚拟机或任务。GET automation SHALL 返回只读登记快照、最近检测时间及客户端运行环境，不构造会恢复操作的业务服务；历史在线状态不得作为当前在线证明。
 

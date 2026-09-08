@@ -33,6 +33,17 @@ class AgentPlatformTests(unittest.TestCase):
     def planned(self):
         return self.platform.tools('plan_tasks', {'config': self.config}, self.context)
 
+    def test_new_agent_inspection_defaults_home_badge_and_accepts_explicit_mode(self):
+        self.config.update(engagement_inspection_enabled=True,inspection_every_rounds=1)
+        plan=self.planned()
+        receipt=self.confirm(plan)
+        checks=[self.store.get(id) for id in receipt['task_ids'] if self.store.get(id).task_type=='douyin_engagement_inspection']
+        self.assertTrue(checks)
+        self.assertTrue(all(task.payload['inspection_workflow_version']=='home_badge' for task in checks))
+        self.config['inspection_mode']='home_badge'
+        self.context['call_id']='another'
+        self.assertIn('plan_id',self.planned())
+
     def confirm(self, plan):
         return self.platform.confirm(plan['plan_id'], 'ses_one', {'confirmed': True, 'plan_hash': plan['preview']['plan_hash']})
 

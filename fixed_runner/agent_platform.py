@@ -113,7 +113,7 @@ class AgentPlatform:
         raw = args.get('config')
         if not isinstance(raw, dict):
             raise ValueError('请提供任务参数')
-        allowed = set(PRESET_FIELDS) | {'device_ids', 'preview_only', 'seed', 'engagement_inspection_enabled', 'inspection_every_rounds'}
+        allowed = set(PRESET_FIELDS) | {'device_ids', 'preview_only', 'seed', 'engagement_inspection_enabled', 'inspection_every_rounds', 'inspection_mode'}
         if set(raw) - allowed:
             raise ValueError('任务参数包含不支持的内部字段')
         for key in ('engagement_inspection_enabled', 'preview_only', 'topic_filter_enabled', 'search_trust_results', 'comment_policy_enabled'):
@@ -133,7 +133,7 @@ class AgentPlatform:
         # Do not inherit the user's old high-write draft or hidden write defaults.
         defaults = {key: 0 for key in ('like_probability', 'favorite_probability', 'comment_probability',
                                        'matched_like_probability', 'matched_favorite_probability', 'matched_comment_probability')}
-        config = normalized_config({**defaults, 'preview_only': True, **raw})
+        config = normalized_config({**defaults, 'preview_only': True, 'inspection_mode': 'home_badge', **raw})
         selected = config['device_ids']
         if not selected:
             raise ValueError('请选择要运行的虚拟机')

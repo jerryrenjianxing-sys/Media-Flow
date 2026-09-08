@@ -366,19 +366,21 @@ def execute_initialization(
             if record.options.get("inspection_recheck"):
                 from engagement_inspection import EngagementInspector
                 from task_preparation import engagement_rule, inspection_suspension_key
-                checkpoint("engagement_v3", 4, "正在只读检查互动消息；不会发送互动")
+                home_badge = record.options.get("inspection_mode") == "home_badge"
+                checkpoint("home_badge" if home_badge else "engagement_v3", 4,
+                           "正在检查首页消息角标，不进入消息页" if home_badge else "正在只读检查互动消息；不会发送互动")
                 inspected = EngagementInspector(
                     device, recorder, store=store, device_id=record.device_id, task_id=record.id,
                     incident_sink=lambda incident: store.record_incident(task_id=record.id, device_id=record.device_id, **incident),
-                ).inspect({"inspection_workflow_version": "v3", "preparation_version": PREPARATION_VERSION,
+                ).inspect({"inspection_workflow_version": "home_badge" if home_badge else "v3", "preparation_version": PREPARATION_VERSION,
                            "inspection_calibration": engagement_rule(), "expected_display_signature": "900x1600x320x0xunknown",
                            "max_items_per_section": 100})
                 result["inspection"] = inspected
                 if inspected.get("restored") is not True:
                     store.request_stop([record.device_id])
-                if inspected.get("status") != "completed" or not (inspected.get("unified_activity") or {}).get("complete"):
+                if inspected.get("status") != "completed" or (not home_badge and not (inspected.get("unified_activity") or {}).get("complete")):
                     raise InitializationWaitingForUser("巡检仍未完整完成，现场已保存；可人工查看后再检查")
-                store.save_profile(inspection_suspension_key(record.device_id), {"suspended": False, "last_check_id": record.id})
+                store.save_profile(inspection_suspension_key(record.device_id, "home_badge" if home_badge else "legacy"), {"suspended": False, "last_check_id": record.id})
             result.update(prepared, status="ready")
             report_path = _report(record, recorder, result)
             store.finish_initialization(record.id, status="ready", stage="ready",
