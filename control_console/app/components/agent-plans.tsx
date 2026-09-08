@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { agentRequest } from "../lib/agent-api";
+import { inspectionTaskLabel } from "../lib/inspection-display.mjs";
 
 export type AgentPlan = {
   plan_id: string; state: string; deadline: number; message: string;
-  config: { device_ids: string[]; video_count: number; round_count: number; content_mode: string; search_query?: string; inspection_every_rounds: number; engagement_inspection_enabled: boolean };
+  config: { device_ids: string[]; video_count: number; round_count: number; content_mode: string; search_query?: string; inspection_every_rounds: number; engagement_inspection_enabled: boolean; inspection_mode?: "home_badge" | "legacy"; inspection_workflow_version?: "home_badge" | "v1" | "v2" | "v3" };
   preview: { plan_hash: string; total_task_count: number; write_actions: string[]; requires_confirmation: boolean; warnings: string[]; blockers: string[]; probabilities: Record<string, number>; comment_mode: string };
   result?: { tasks: { id: string; status: string }[]; state: string };
   execution?: {message:string;reason_code:string;updated_at:number};
@@ -42,7 +43,7 @@ export default function AgentPlans({ plans, sessionId, onChanged, onNotice }: { 
       {plan.authorization?.source==="user_chat"&&<p>授权来源：本会话中的执行要求 · 无需再点确认卡</p>}
       <p>{plan.config.device_ids.length}台设备 · 每轮{plan.config.video_count}条视频 · {plan.config.round_count}轮 · {plan.preview.total_task_count}个任务</p>
       <p>入口：{({ general: "首页", search: "搜索", mixed: "混合", hybrid: "搜索与首页交替" } as Record<string, string>)[plan.config.content_mode]}{plan.config.search_query && ` · 搜索“${plan.config.search_query}”`}</p>
-      <p>互动巡检：{plan.config.engagement_inspection_enabled ? `每${plan.config.inspection_every_rounds}轮一次` : "关闭"} · 评论：{plan.preview.comment_mode}</p>
+      <p>{plan.config.engagement_inspection_enabled ? `${inspectionTaskLabel(plan.config)}：每${plan.config.inspection_every_rounds}轮一次` : "消息提醒检查：关闭"} · 评论：{plan.preview.comment_mode}</p>
       <p>点赞{Math.round((plan.preview.probabilities.like || 0) * 100)}% · 收藏{Math.round((plan.preview.probabilities.favorite || 0) * 100)}% · 评论{Math.round((plan.preview.probabilities.comment || 0) * 100)}%</p>
       <details><summary>设备、提醒与参数</summary><p>{plan.config.device_ids.join("、")}</p>{plan.preview.warnings.map((x, i) => <p key={i}>{x}</p>)}</details>
       {plan.preview.blockers.map((x, i) => <p key={i} role="alert">{x}</p>)}

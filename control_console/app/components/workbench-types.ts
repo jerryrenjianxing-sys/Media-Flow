@@ -8,7 +8,7 @@ export type WorkbenchConfig = {
   video_count: number; round_count: number; round_interval_minutes: number; dwell_min: number; dwell_max: number;
   like_probability: number; favorite_probability: number; comment_probability: number;
   matched_like_probability: number; matched_favorite_probability: number; matched_comment_probability: number;
-  preview_only: boolean; engagement_inspection_enabled: boolean; inspection_every_rounds: number;
+  preview_only: boolean; engagement_inspection_enabled: boolean; inspection_every_rounds: number; inspection_mode?: "home_badge" | "legacy";
   comment_policy_enabled: boolean; comment_policy_prompt: string; max_gate_skips: number; seed: number; [key: string]: unknown;
 };
 export type RunDraft = { name: string; revision: number; config: WorkbenchConfig; updated_at: string };

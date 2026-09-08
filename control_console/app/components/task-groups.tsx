@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { fetchLocalApi } from "../lib/local-api";
 import { navigationReason } from "../lib/navigation-feedback";
+import { homeBadgePresentation, inspectionTaskLabel, type HomeBadge } from "../lib/inspection-display.mjs";
 
 const API = "http://127.0.0.1:48138";
 
@@ -21,6 +22,8 @@ export type TaskRound = {
   inspection_index?: number | null;
   after_round_index?: number | null;
   inspection_every_rounds?: number | null;
+  inspection_mode?: "home_badge" | "legacy";
+  inspection_workflow_version?: "home_badge" | "v1" | "v2" | "v3";
   content_plan?: { revision_number?: number; plan_name?: string; theme_name?: string; theme_queue_index?: number; theme_queue_size?: number; search_query?: string } | null;
   parent_task_id?: string | null;
   recovery?: { status?: "queued" | "running" | "ready" | "waiting_user" | "failed"; progress_current?: number; progress_total?: number; message?: string; replacement_task_id?: string | null; expected?: { app_version?: string; display_signature?: string }; actual?: { app_version?: string; display_signature?: string }; error?: string | null } | null;
@@ -93,7 +96,7 @@ type TaskIncident = {
 type TaskDetailRound = TaskRound & { images: EvidenceImage[]; evidence_groups: EvidenceGroups; action_routing: ActionRouting; incidents: TaskIncident[]; incident_evidence_status?: "available" | "not_captured_historical" | "not_required" };
 type InspectionEntry = { display_name?: string; time?: string; preview?: string; summary?: string; unread_count?: number | null };
 type InspectionSection = { status: "available" | "unavailable" | "failed"; count?: number | null; unread_count?: number | null; entries?: InspectionEntry[]; truncated?: boolean; reason?: string | null; scroll_count?: number; complete?: boolean; baseline_status?: string; entry_badge?: { has_unread?: boolean; unread_count?: number | null; indicator?: "number" | "dot" | "none" } };
-type InspectionResult = { status?: "completed" | "degraded" | "failed"; workflow_version?: "v1" | "v2" | "v3"; restored?: boolean; failure_reason?: string | null; failure_class?: "recoverable_precondition"; expected_app_version?: string; actual_app_version?: string; expected_display_signature?: string; actual_display_signature?: string; side_effect_notice?: string; unified_activity?: { complete?: boolean; read_boundary?: string | null; scroll_count?: number; unread_item_count?: number | null; reason_code?: string | null }; sections?: Record<string, InspectionSection> };
+type InspectionResult = { status?: "completed" | "degraded" | "failed"; workflow_version?: "home_badge" | "v1" | "v2" | "v3"; restored?: boolean; failure_reason?: string | null; failure_class?: "recoverable_precondition"; expected_app_version?: string; actual_app_version?: string; expected_display_signature?: string; actual_display_signature?: string; side_effect_notice?: string; home_badge?: HomeBadge; unified_activity?: { complete?: boolean; read_boundary?: string | null; scroll_count?: number; unread_item_count?: number | null; reason_code?: string | null }; sections?: Record<string, InspectionSection> };
 type PhaseSummary = { label?: string; videos?: number; model_attempts?: number; model_valid_decisions?: number; topic_exact?: number; likes?: number; favorites?: number; comments_sent?: number; known_safe_skips?: number; unknown_blocked_pages?: number; incidents?: number; recoveries?: number };
 
 const evidenceKinds: { kind: EvidenceKind; label: string; resultKey: string }[] = [
@@ -156,6 +159,9 @@ export function TaskGroupList({ groups, now, onOpen }: { groups: TaskGroup[]; no
 
 function InspectionCard({ inspection, onRecover, recoveryBusy }: { inspection: TaskDetailRound; onRecover: (inspection: TaskDetailRound) => void; recoveryBusy: boolean }) {
   const result = (inspection.result || {}) as InspectionResult;
+  const homeBadge = result.home_badge;
+  const homeBadgeDisplay = homeBadgePresentation(homeBadge);
+  const isHomeBadge = result.workflow_version === "home_badge";
   const sections = result.sections || {};
   const definitions = result.workflow_version === "v3" ? [
     { key: "received_likes", label: "点赞与收藏" },
@@ -168,18 +174,19 @@ function InspectionCard({ inspection, onRecover, recoveryBusy }: { inspection: T
     { key: "profile_visitors", label: "主页访客" },
   ];
   return <article className={`inspection-card ${inspection.status}`}>
-    <div className="inspection-card-heading"><div><span>第 {inspection.inspection_index || "-"} 次互动消息检查</span><small>完成第 {inspection.after_round_index || "-"} 轮后 · {formatDuration(inspection.started_at, inspection.finished_at)}</small></div><b className={`task-status ${inspection.status}`}>{inspectionTaskStatusText(inspection.status)}</b></div>
-    <p className="inspection-card-notice">{result.workflow_version === "v3" ? "只读取互动消息聚合页；不会进入普通私信、具体互动或用户主页，也不会回复、回赞或关注。" : "打开列表可能改变未读角标；本次巡检不打开具体会话，不回复、回赞或关注。"}</p>
+    <div className="inspection-card-heading"><div><span>第 {inspection.inspection_index || "-"} 次{inspectionTaskLabel(inspection)}</span><small>完成第 {inspection.after_round_index || "-"} 轮后 · {formatDuration(inspection.started_at, inspection.finished_at)}</small></div><b className={`task-status ${inspection.status}`}>{inspectionTaskStatusText(inspection.status)}</b></div>
+    <p className="inspection-card-notice">{isHomeBadge ? "只检查抖音首页的消息提醒，不进入消息，也不把平台确认当成抖音已读。" : result.workflow_version === "v3" ? "只读取互动消息聚合页；不会进入普通私信、具体互动或用户主页，也不会回复、回赞或关注。" : "打开列表可能改变未读角标；本次巡检不打开具体会话，不回复、回赞或关注。"}</p>
+    {isHomeBadge && <div className={`inspection-recovery ${homeBadgeDisplay.kind === "clear" ? "ready" : homeBadgeDisplay.kind === "incomplete" ? "failed" : ""}`}><strong>{homeBadgeDisplay.label}</strong><span>{homeBadgeDisplay.message}</span>{homeBadge?.badge_text ? <small>首页角标 {homeBadge.badge_text}{homeBadge.count_is_lower_bound ? "（至少）" : ""}</small> : null}<small>{homeBadge?.source === "vision" ? "视觉辅助判断" : "本地截图判断"}</small>{homeBadge?.evidence_missing?.length ? <small>未能取得：{homeBadge.evidence_missing.join("、")}</small> : null}</div>}
     {result.workflow_version === "v3" && result.unified_activity && <div className={`inspection-recovery ${result.unified_activity.complete ? "ready" : "failed"}`}><strong>{result.unified_activity.complete ? "统一互动列表已完成" : "统一互动列表未完整完成"}</strong><span>{result.unified_activity.complete ? `${result.unified_activity.read_boundary === "first_screen" ? "首屏发现已读" : result.unified_activity.read_boundary === "after_scroll" ? "滑动后发现已读" : "列表结束"} · 滑动 ${result.unified_activity.scroll_count || 0} 次${typeof result.unified_activity.unread_item_count === "number" ? ` · 边界上方 ${result.unified_activity.unread_item_count} 条` : ""}` : inspectionReasonText(result.unified_activity.reason_code)}</span></div>}
     {inspection.parent_task_id && <div className="inspection-recovery ready"><strong>这是自动复验后的关联补跑</strong><span>原任务 {inspection.parent_task_id.slice(0, 8)} 保留原失败记录，本任务使用新档案执行。</span></div>}
     {inspection.recovery && <div className={`inspection-recovery ${inspection.recovery.status || "queued"}`}><strong>{inspection.recovery.status === "ready" ? "前置条件已自动复验" : inspection.recovery.status === "waiting_user" ? "等待你处理" : inspection.recovery.status === "failed" ? "自动复验失败" : "正在自动复验"}</strong><span>{inspection.recovery.message || `复验进度 ${inspection.recovery.progress_current || 0}/${inspection.recovery.progress_total || 3}`}</span>{inspection.recovery.expected?.app_version && <small>抖音 {inspection.recovery.expected.app_version} → {inspection.recovery.actual?.app_version || "未知"}{inspection.recovery.replacement_task_id ? ` · 替代任务 ${inspection.recovery.replacement_task_id.slice(0, 8)}` : ""}</small>}{inspection.recovery.status === "waiting_user" && <button type="button" className="secondary" disabled={recoveryBusy} onClick={() => onRecover(inspection)}>{recoveryBusy ? "正在继续…" : "处理后继续复验"}</button>}</div>}
-    <div className="inspection-section-grid">{definitions.map(({ key, label }) => {
+    {!isHomeBadge && <div className="inspection-section-grid">{definitions.map(({ key, label }) => {
       const section = sections[key];
       const badge = section?.entry_badge;
       const countText = section?.status === "available" ? typeof section.count === "number" ? `${section.count} 条可见记录` : section.complete === false ? "列表未完整清查" : "列表检查完成" : inspectionReasonText(section?.reason);
       const unreadText = badge?.indicator === "dot" ? "进入前有未读提示，页面未显示具体数量" : badge?.indicator === "number" ? `进入前显示 ${badge.unread_count || 0} 条未读提示` : "";
       return <section key={key} className={`inspection-section ${section?.status || "failed"}`}><div><strong>{label}</strong><b>{inspectionSectionStatusText(section)}</b></div><p>{countText}</p>{unreadText && <small>{unreadText}</small>}{Array.isArray(section?.entries) && section.entries.length > 0 && <ul>{section.entries.map((entry, index) => <li key={`${entry.display_name || "entry"}-${index}`}><b>{entry.display_name || "未显示名称"}</b><span>{entry.time || entry.summary || entry.preview || "当前列表可见"}</span></li>)}</ul>}{section?.truncated && <small>只显示本地有限摘要，其余已截断。</small>}</section>;
-    })}</div>
+    })}</div>}
     {result.status === "failed" && <div className="task-round-error"><strong>{result.failure_class === "recoverable_precondition" ? "可恢复前置条件" : "未完成原因"}</strong><p>{inspectionReasonText(result.failure_reason)}</p>{result.expected_app_version && <small>抖音 {result.expected_app_version} → {result.actual_app_version || "未知"}</small>}{result.failure_class === "recoverable_precondition" && !inspection.recovery && <button type="button" className="secondary" disabled={recoveryBusy} onClick={() => onRecover(inspection)}>{recoveryBusy ? "正在安排…" : "开始只读自动复验"}</button>}</div>}
     {inspection.incidents.length > 0 && <div className="task-round-incidents"><strong>纠错记录与异常现场</strong>{inspection.incidents.map((incident) => <div key={incident.id}><span>{incident.stage} · {incidentStatusText(incident)}</span><p>{incident.error_type}: {incident.error_message}</p>{incident.analysis?.summary && <small>只读建议：{incident.analysis.summary}</small>}{incident.analysis?.suggested_rule && <small>候选规则：{incident.analysis.suggested_rule}</small>}{incident.has_ui_tree && <small>UI结构已配对保存</small>}{incident.has_screenshot && <a href={`${API}/api/incident-image?id=${encodeURIComponent(incident.id)}`} target="_blank" rel="noreferrer">查看异常现场</a>}</div>)}</div>}
     {inspection.incident_evidence_status === "not_captured_historical" && <div className="task-round-error"><strong>历史证据说明</strong><p>该历史运行未保存异常现场；系统不会补造截图或UI结构。</p></div>}

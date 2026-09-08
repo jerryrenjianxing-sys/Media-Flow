@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchLocalApi } from "../lib/local-api";
 import { navigationReason } from "../lib/navigation-feedback";
+import { homeBadgePresentation, inspectionReceiptPresentation, type HomeBadge } from "../lib/inspection-display.mjs";
 
 const API = "http://127.0.0.1:48138";
 const sectionLabels: Record<string, string> = {
@@ -14,6 +15,7 @@ const sectionLabels: Record<string, string> = {
   profile_visitors: "主页访客",
 };
 const resultLabels = { alert: "发现新互动", clear: "无新互动", incomplete: "检查未完成" } as const;
+const filterLabels = { all: "全部", alert: "有消息 / 新互动", clear: "无消息 / 无新互动", incomplete: "检查失败 / 未完成" } as const;
 const reasonLabels: Record<string, string> = {
   not_checked: "该分区尚未检查",
   list_incomplete: "列表未能完整检查",
@@ -38,11 +40,11 @@ type Inspection = {
   id: string; device_name: string; device_id: string; workflow_version: string; status: string;
   result_kind: "alert" | "clear" | "incomplete"; restored: boolean; started_at: string; finished_at: string;
   evidence_count: number; evidence?: Evidence[]; failure_reason?: string;
-  summary: { conclusion: string; evidence_count?: number; sections?: Record<string, Section>; visitor_change?: Record<string, unknown>; unified_activity?: { complete?: boolean; read_boundary?: string | null; scroll_count?: number; unread_item_count?: number | null; categories?: string[]; reason_code?: string | null } };
+  summary: { conclusion: string; evidence_count?: number; home_badge?: HomeBadge; sections?: Record<string, Section>; visitor_change?: Record<string, unknown>; unified_activity?: { complete?: boolean; read_boundary?: string | null; scroll_count?: number; unread_item_count?: number | null; categories?: string[]; reason_code?: string | null } };
 };
 type Alert = {
   id: string; inspection_id?: string; device_name: string; sources: string[]; status: "unread" | "viewed"; detected_at: string;
-  summary: { conclusion?: string; source_count: number; evidence_count?: number; sources: Record<string, { unread_count?: number; items?: Entry[] }> };
+  summary: { conclusion?: string; source_count: number; evidence_count?: number; home_badge?: HomeBadge; sources: Record<string, { unread_count?: number; items?: Entry[] }> };
 };
 
 function formatTime(value: string) {
@@ -50,11 +52,16 @@ function formatTime(value: string) {
 }
 function reasonText(value?: string | null) { return value ? navigationReason(value) || reasonLabels[value] || "页面检查未完成，请查看异常现场" : ""; }
 function receiptState(item: Inspection) {
+  if (item.workflow_version === "home_badge" || item.summary.home_badge) return inspectionReceiptPresentation(item).label;
   if (item.status === "completed") return resultLabels[item.result_kind];
   return item.result_kind === "alert" ? "发现互动 · 检查未完成" : "检查未完成";
 }
 function overviewState(item?: Inspection) {
   if (!item) return { label: "尚未巡检", kind: "empty" };
+  if (item.workflow_version === "home_badge" || item.summary.home_badge) {
+    const display = inspectionReceiptPresentation(item);
+    return { label: display.label, kind: display.kind };
+  }
   const diagnostic = `${item.failure_reason || ""} ${item.summary?.conclusion || ""}`.toLowerCase();
   if (diagnostic.includes("calibrat") || diagnostic.includes("校准") || diagnostic.includes("signature") || diagnostic.includes("version")) {
     return { label: "校准异常", kind: "calibration" };
@@ -112,6 +119,7 @@ export default function InteractionsPage() {
     return result;
   }, [inspections]);
   const inspectionDevices = useMemo(() => Array.from(latestByDevice.values()).map((item) => ({ id: item.device_id, name: item.device_name })), [latestByDevice]);
+  const latestDisplay = inspectionReceiptPresentation(latest);
 
   async function openInspection(id: string) {
     const response = await fetchLocalApi(`${API}/api/interaction-inspections/${encodeURIComponent(id)}`, { cache: "no-store" });
@@ -125,7 +133,7 @@ export default function InteractionsPage() {
 
   return <main className="app-shell interactions-page">
     <div className="page-shell interaction-shell">
-      <section className="records-hero interaction-hero"><div><span className="eyebrow">RESULT CENTER · RECEIPTS</span><h1>互动凭证</h1><p>{notice}</p></div><div className="interaction-filter" role="group" aria-label="巡检筛选">{(["all", "alert", "clear", "incomplete"] as const).map((value) => <button key={value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{value === "all" ? "全部" : resultLabels[value]}</button>)}</div></section>
+      <section className="records-hero interaction-hero"><div><span className="eyebrow">RESULT CENTER · RECEIPTS</span><h1>消息与互动凭证</h1><p>{notice}</p></div><div className="interaction-filter" role="group" aria-label="巡检筛选">{(["all", "alert", "clear", "incomplete"] as const).map((value) => <button key={value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{filterLabels[value]}</button>)}</div></section>
       <nav className="workspace-tabs result-tabs" aria-label="结果分类"><a href="/records#tasks">任务</a><a href="/records#incidents">纠错记录</a><a className="active" href="/interactions">互动凭证</a></nav>
 
       <section className="interaction-device-overview" aria-label="各设备最近巡检">
@@ -135,17 +143,18 @@ export default function InteractionsPage() {
           const state = overviewState(inspection);
           return <button key={device.id} type="button" className={`interaction-device-card ${state.kind}`} disabled={!inspection} onClick={() => inspection ? void openInspection(inspection.id) : undefined}>
             <span>{device.name}</span><strong>{state.label}</strong>
-            {inspection ? <small>{inspection.evidence_count > 0 ? `${inspection.evidence_count} 份证据` : "简明回执"} · {formatTime(inspection.finished_at)}</small> : <small>等待首次 v3 验收</small>}
+            {inspection ? <small>{inspection.evidence_count > 0 ? `${inspection.evidence_count} 份证据` : "简明回执"} · {formatTime(inspection.finished_at)}</small> : <small>等待首次检查</small>}
           </button>;
         })}{!inspectionDevices.length ? <p className="interaction-empty">尚无标准虚拟机巡检回执</p> : null}</div>
       </section>
 
-      {latest ? <section className={`interaction-latest ${latest.status === "completed" ? latest.result_kind : "incomplete"}`}><div><span>最近一次巡检</span><strong>{latest.status === "completed" ? latest.summary.conclusion : latest.result_kind === "alert" ? "检查未完成，已发现互动" : "检查未完成"}</strong><small>{latest.device_name} · {formatTime(latest.finished_at)}</small></div><button type="button" onClick={() => void openInspection(latest.id)}>查看 {latest.evidence_count} 份证据</button></section> : <section className="interaction-latest incomplete"><div><span>最近一次巡检</span><strong>尚无新版巡检回执</strong></div></section>}
+      {latest ? <section className={`interaction-latest ${latestDisplay.kind}`}><div><span>最近一次巡检</span><strong>{latest.workflow_version === "home_badge" || latest.summary.home_badge ? latestDisplay.message || latestDisplay.label : latest.status === "completed" ? latest.summary.conclusion : latest.result_kind === "alert" ? "检查未完成，已发现互动" : "检查未完成"}</strong><small>{latest.device_name} · {formatTime(latest.finished_at)}</small></div><button type="button" onClick={() => void openInspection(latest.id)}>查看 {latest.evidence_count} 份证据</button></section> : <section className="interaction-latest incomplete"><div><span>最近一次巡检</span><strong>尚无巡检回执</strong></div></section>}
 
       <section className="interaction-receipts" aria-live="polite">
-        {inspections.map((inspection) => <article key={inspection.id} className={`interaction-receipt ${inspection.result_kind} ${focusedInspectionIds.has(inspection.id) ? "focused" : ""}`}>
+        {inspections.map((inspection) => <article key={inspection.id} className={`interaction-receipt ${inspectionReceiptPresentation(inspection).kind} ${focusedInspectionIds.has(inspection.id) ? "focused" : ""}`}>
           <div className="interaction-card-head"><div><strong>{inspection.device_name}</strong><span>{receiptState(inspection)}</span></div><time>{formatTime(inspection.finished_at)}</time></div>
-          <h2>{inspection.summary.conclusion}</h2>
+          <h2>{inspection.workflow_version === "home_badge" || inspection.summary.home_badge ? inspectionReceiptPresentation(inspection).label : inspection.summary.conclusion}</h2>
+          {inspection.summary.home_badge ? <div className="interaction-home-badge"><p>{homeBadgePresentation(inspection.summary.home_badge).message}</p><div className="interaction-metrics">{inspection.summary.home_badge.badge_text ? <b>首页角标 {inspection.summary.home_badge.badge_text}{inspection.summary.home_badge.count_is_lower_bound ? "（至少）" : ""}</b> : null}<b>{inspection.summary.home_badge.source === "vision" ? "视觉辅助判断" : "本地截图判断"}</b></div>{inspection.summary.home_badge.state === "unknown" ? <small>未能确认，本次不记为无消息。</small> : null}</div> : null}
           {inspection.workflow_version === "v3" && inspection.summary.unified_activity ? <div className="interaction-metrics"><b>{inspection.summary.unified_activity.complete ? "边界已确认" : "扫描未完成"}</b><b>滑动 {inspection.summary.unified_activity.scroll_count || 0} 次</b>{typeof inspection.summary.unified_activity.unread_item_count === "number" ? <b>边界上方 {inspection.summary.unified_activity.unread_item_count} 条</b> : null}</div> : null}
           <div className="interaction-section-grid">{Object.entries(inspection.summary.sections || {}).map(([name, section]) => <section key={name} className={!section.complete ? "incomplete" : ""}>
             <header><strong>{sectionLabels[name] || name}</strong><span>{section.complete ? "已检查" : "未完成"}</span></header>
@@ -160,10 +169,11 @@ export default function InteractionsPage() {
 
       {legacyAlerts.length ? <section className="legacy-alerts"><h2>旧版提醒</h2><p>旧记录只显示当时保存的摘要，已经删除的截图不会补造。</p>{legacyAlerts.map((alert) => <article key={alert.id} className={focusIds.has(alert.id) ? "focused" : ""}><strong>{alert.device_name} · {alert.summary.conclusion || "检测到新互动"}</strong><time>{formatTime(alert.detected_at)}</time><div>{alert.sources.map((source) => <span key={source}>{sectionLabels[source] || source}</span>)}</div></article>)}</section> : null}
 
-      {selected ? <div className="interaction-detail-backdrop" role="button" tabIndex={0} aria-label="关闭巡检证据详情" onClick={(event) => { if (event.target === event.currentTarget) setSelected(null); }} onKeyDown={(event) => { if (event.key === "Escape" || event.key === "Enter") setSelected(null); }}><section className="interaction-detail" role="dialog" aria-modal="true" aria-label="巡检证据详情"><header><div><span>{selected.device_name}</span><h2>{selected.summary.conclusion}</h2><small>{formatTime(selected.finished_at)}</small></div><button type="button" onClick={() => setSelected(null)}>关闭</button></header>
+      {selected ? <div className="interaction-detail-backdrop" role="button" tabIndex={0} aria-label="关闭巡检证据详情" onClick={(event) => { if (event.target === event.currentTarget) setSelected(null); }} onKeyDown={(event) => { if (event.key === "Escape" || event.key === "Enter") setSelected(null); }}><section className="interaction-detail" role="dialog" aria-modal="true" aria-label="巡检证据详情"><header><div><span>{selected.device_name}</span><h2>{selected.workflow_version === "home_badge" || selected.summary.home_badge ? inspectionReceiptPresentation(selected).label : selected.summary.conclusion}</h2><small>{formatTime(selected.finished_at)}</small></div><button type="button" onClick={() => setSelected(null)}>关闭</button></header>
+        {selected.summary.home_badge ? <div className="interaction-detail-sections"><section><h3>首页消息提醒</h3><p>{homeBadgePresentation(selected.summary.home_badge).message}</p>{selected.summary.home_badge.badge_text ? <small>记录到角标 {selected.summary.home_badge.badge_text}{selected.summary.home_badge.count_is_lower_bound ? "（至少）" : ""}；没有进入消息核对。</small> : <small>画面没有可可靠记录的数字；没有进入消息，也没有推测数量。</small>}</section></div> : null}
         {selected.workflow_version === "v3" && selected.summary.unified_activity ? <div className="interaction-detail-sections"><section><h3>统一互动列表</h3><p>{selected.summary.unified_activity.complete ? `已确认边界 · ${selected.summary.unified_activity.read_boundary === "first_screen" ? "首屏发现已读" : selected.summary.unified_activity.read_boundary === "after_scroll" ? "滑动后发现已读" : "列表已结束"}` : reasonText(selected.summary.unified_activity.reason_code) || "扫描未完整完成"}</p></section></div> : null}
         <div className="interaction-detail-sections">{Object.entries(selected.summary.sections || {}).map(([name, section]) => <section key={name}><h3>{sectionLabels[name] || name}</h3>{section.items?.length ? <ul>{section.items.map((item, index) => <li key={`${item.content || item.display_name}-${index}`}>{item.display_name ? <strong>{item.display_name}</strong> : null}{item.content ? <span>{item.content}</span> : null}{item.time ? <time>{item.time}</time> : null}{typeof item.unread_count === "number" ? <em>{item.unread_count} 条未读</em> : null}</li>)}</ul> : <p>{section.complete ? "已检查，没有额外可读条目" : reasonText(section.reason) || "该分区未完成"}</p>}</section>)}</div>
-        {selected.evidence?.length ? <div className="interaction-evidence-gallery">{selected.evidence.map((item) => <figure key={item.id}>{item.image_url ? <img src={`${API}${item.image_url}`} alt={`${sectionLabels[item.section] || item.section}：${item.label}`} loading="lazy"/> : null}<figcaption><strong>{item.label}</strong><span>{sectionLabels[item.section] || item.section}</span><time>{formatTime(item.captured_at)}</time></figcaption></figure>)}</div> : <p className="interaction-no-evidence">这条旧回执没有可恢复的截图证据。</p>}
+        {selected.evidence?.length ? <div className="interaction-evidence-gallery">{selected.evidence.map((item) => <figure key={item.id}>{item.image_url ? <img src={`${API}${item.image_url}`} alt={`${sectionLabels[item.section] || item.section}：${item.label}`} loading="lazy"/> : null}<figcaption><strong>{item.label}</strong><span>{sectionLabels[item.section] || item.section}</span><time>{formatTime(item.captured_at)}</time></figcaption></figure>)}</div> : <p className="interaction-no-evidence">{selected.workflow_version === "home_badge" ? "本次没有可显示的截图证据。" : "这条旧回执没有可恢复的截图证据。"}</p>}
       </section></div> : null}
     </div>
   </main>;

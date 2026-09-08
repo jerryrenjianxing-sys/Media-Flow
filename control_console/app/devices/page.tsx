@@ -42,6 +42,7 @@ const initializationLabels: Record<string, string> = {
 const capabilityLabels: Record<string, string> = {
   adb_view: "ADB与看屏",
   browse_home: "首页浏览",
+  home_badge: "消息提醒检查",
   search_input: "搜索与中文输入",
   engagement_v3: "互动消息巡检",
   topic_analysis: "主题识别",
@@ -317,7 +318,7 @@ export default function DevicesPage() {
     finally { setVirtualBusy((current) => { const next = new Set(current); next.delete(virtualDevice.virtual_device_id); return next; }); }
   };
 
-  const initializationRequest = async (deviceId: string, action: "start" | "continue" | "cancel", inspectionRecheck = false) => {
+  const initializationRequest = async (deviceId: string, action: "start" | "continue" | "cancel", inspectionMode?: "home_badge" | "legacy") => {
     setInitializing((current) => new Set(current).add(deviceId));
     try {
       const write = Boolean(writeAcceptance[deviceId]);
@@ -327,7 +328,8 @@ export default function DevicesPage() {
       const body = action === "start" ? {
         search_query: String(config?.search_query || config?.topic_prompt || "人工智能").slice(0, 80),
         write_acceptance: write,
-        inspection_recheck: inspectionRecheck,
+        inspection_recheck: Boolean(inspectionMode),
+        inspection_mode: inspectionMode,
         ...(write ? { confirmation: "ENABLE_WRITE_ACCEPTANCE" } : {}),
       } : {};
       const response = await fetchLocalApi(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, 20_000);
@@ -448,7 +450,8 @@ export default function DevicesPage() {
             {onlineDevice && <div className="virtual-inventory-actions">
               {virtualDevice.available_actions?.includes("cancel_initialization") && <button type="button" className="secondary" disabled={busy} onClick={() => void initializationRequest(onlineDevice.device_id, "cancel")}>安全取消设备准备</button>}
               {virtualDevice.task_ready && <a className="primary" href="/workbench">选择任务</a>}
-              {virtualDevice.available_actions?.includes("recheck_inspection") && <button type="button" className="secondary" disabled={busy || onlineDevice.initialization?.status === "running"} onClick={() => void initializationRequest(onlineDevice.device_id, "start", true)}>重新检查并恢复巡检</button>}
+              {virtualDevice.available_actions?.includes("recheck_home_badge") && <button type="button" className="secondary" disabled={busy || onlineDevice.initialization?.status === "running"} onClick={() => void initializationRequest(onlineDevice.device_id, "start", "home_badge")}>重新检查消息提醒</button>}
+              {virtualDevice.available_actions?.includes("recheck_inspection") && <button type="button" className="secondary" disabled={busy || onlineDevice.initialization?.status === "running"} onClick={() => void initializationRequest(onlineDevice.device_id, "start", "legacy")}>重新检查并恢复旧版巡检</button>}
             </div>}
             <div className="virtual-inventory-actions">{onlineDevice ? <><button type="button" className="primary" onClick={() => setFocused({ device: onlineDevice, mode: "read_only" })}>打开画面</button>{virtualDevice.available_actions?.includes("continue_onboarding") && <button type="button" className="primary" disabled={busy} onClick={() => void continueVirtualOnboarding(virtualDevice)}>安装完成，继续检查</button>}{virtualDevice.available_actions?.includes("continue_initialization") && <button type="button" className="primary" disabled={busy} onClick={() => void initializationRequest(onlineDevice.device_id, onlineDevice.initialization?.status === "waiting_user" ? "continue" : "start")}>继续复验</button>}<button type="button" className="secondary" disabled={!canControl} title={canControl ? "取得设备独占锁后操作" : "任务或初始化期间只能观看"} onClick={() => setFocused({ device: onlineDevice, mode: "control" })}>{canControl ? "人工接管" : "当前只能观看"}</button>{virtualDevice.available_actions?.includes("configure_model") && <a className="secondary" href="/content#model-settings">前往配置模型</a>}</> : <button type="button" className="primary" disabled={busy || unavailable || virtualDevice.can_start === false} onClick={() => void startVirtual(virtualDevice)}>{busy ? `${virtualOperationStageLabel(virtualDevice.active_operation?.stage)}…` : ["running", "starting", "adb_ready", "waiting_app"].includes(virtualDevice.state) ? "重试连接" : virtualDevice.profile_status === "ready" ? "启动" : "启动并接入"}</button>}</div>
             {!!virtualDevice.readiness_steps?.length && <details className="virtual-readiness"><summary>查看连接与能力诊断（无需逐项校准）</summary><ol>{virtualDevice.readiness_steps.map((step) => <li className={step.status} key={step.id}><span>{step.status === "ready" ? "✓" : step.status === "blocked" ? "!" : "·"}</span><p><strong>{step.label}</strong><small>{step.message}</small></p></li>)}</ol><footer>诊断编号 {virtualDevice.diagnostic_id || "—"}</footer></details>}
