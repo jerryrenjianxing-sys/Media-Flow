@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+import sys
 import time
 from urllib.parse import urlsplit
 import uuid
@@ -288,7 +289,20 @@ def handle_automation_http(handler, method, path, body=None):
         return
     service = AutomationService(handler.automation_context())
     if method == 'GET':
-        handler._json(service.catalog())
+        from runtime_layout import BUNDLED_PYTHON, IS_DISTRIBUTION
+        python = BUNDLED_PYTHON if IS_DISTRIBUTION else Path(sys.executable)
+        if python.name.lower() == 'pythonw.exe':
+            python = python.with_name('python.exe')
+        available = python.is_file()
+        handler._json({**service.catalog(), 'client_runtime': {
+            'api_url': 'http://' + host,
+            'management_url': 'http://127.0.0.1:3001',
+            'mode': 'installed' if IS_DISTRIBUTION else 'development',
+            'python': str(python.resolve()) if available else None,
+            'available': available,
+            'reason_code': 'ready' if available else 'runtime_missing',
+            'user_message': '可使用平台运行环境' if available else '平台运行环境缺失，请修复MediaFlow安装',
+        }})
     else:
         response = service.call(body)
         code = 409 if response['reason_code'] == 'request_id_conflict' else (200 if response['ok'] else 400)

@@ -20,6 +20,18 @@ from task_store import TaskStore
 
 
 class SkillBundleTests(unittest.TestCase):
+    def test_missing_setup_reference_blocks_both_delivery_formats(self):
+        from skill_bundle import SKILL_SOURCE, build_skill_bundle, build_skill_markdown
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)/'source'
+            shutil.copytree(SKILL_SOURCE, source)
+            (source/'references/setup.md').unlink()
+            with self.assertRaisesRegex(ValueError, 'incomplete'):
+                build_skill_bundle(Path(temporary)/'result.zip', source=source)
+            with self.assertRaisesRegex(ValueError, 'incomplete'):
+                build_skill_markdown(source=source)
+            self.assertFalse((Path(temporary)/'result.zip').exists())
+
     def test_builder_creates_deterministic_allowlisted_archive(self):
         spec = importlib.util.find_spec('skill_bundle')
         self.assertIsNotNone(spec, 'skill_bundle module is missing')
@@ -43,6 +55,7 @@ class SkillBundleTests(unittest.TestCase):
                     'mediaflow-platform/examples/plan-arguments.json',
                     'mediaflow-platform/examples/request-status-arguments.json',
                     'mediaflow-platform/references/api.md',
+                    'mediaflow-platform/references/setup.md',
                     'mediaflow-platform/references/troubleshooting.md',
                     'mediaflow-platform/references/workflows.md',
                     'mediaflow-platform/scripts/_common.py',
@@ -134,6 +147,21 @@ class ExtractedSkillCliTests(unittest.TestCase):
         outer = self
 
         class Endpoint(BaseHTTPRequestHandler):
+            def do_GET(self):
+                from automation import handle_automation_http
+                handle_automation_http(self, 'GET', self.path)
+
+            def automation_context(self):
+                return outer.host
+
+            def _json(self, body, status=200):
+                payload = json.dumps(body).encode()
+                self.send_response(status)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
             def do_POST(self):
                 from automation import AutomationService
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
@@ -246,6 +274,93 @@ class ExtractedSkillCliTests(unittest.TestCase):
             str(launcher), 'list_tasks'], env=configured_env, capture_output=True, text=True,
             encoding='utf-8', timeout=15)
         self.assertEqual(configured.returncode, 0, configured.stderr)
+
+    def test_powershell_bootstraps_platform_python_without_path_or_user_config(self):
+        powershell = shutil.which('pwsh') or shutil.which('powershell')
+        if not powershell:
+            self.skipTest('PowerShell is unavailable')
+        env = {key: value for key, value in os.environ.items()
+               if key not in ('MEDIAFLOW_PYTHON', 'MEDIAFLOW_SKILL_CONFIG')}
+        env.update(PATH='', MEDIAFLOW_API_URL='http://127.0.0.1:%s' % self.server.server_port)
+        result = subprocess.run([powershell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+            str(self.skill/'scripts/mediaflow.ps1'), 'list_tasks'], env=env,
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['result']['tasks'], [])
+        self.assertFalse((self.skill/'config.json').exists())
+        self.assertEqual(self.launches, [])
+
+    def test_bootstrap_rejects_nonlocal_url_without_sending_a_task(self):
+        powershell = shutil.which('pwsh') or shutil.which('powershell')
+        if not powershell:
+            self.skipTest('PowerShell is unavailable')
+        env = {key: value for key, value in os.environ.items()
+               if key not in ('MEDIAFLOW_PYTHON', 'MEDIAFLOW_SKILL_CONFIG')}
+        env.update(PATH='', MEDIAFLOW_API_URL='https://example.invalid')
+        result = subprocess.run([powershell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+            str(self.skill/'scripts/mediaflow.ps1'), 'list_tasks'], env=env,
+            capture_output=True, text=True, errors='replace', timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.hits, [])
+
+    def test_copied_example_and_explicit_config_bootstrap_without_system_python(self):
+        powershell = shutil.which('pwsh') or shutil.which('powershell')
+        if not powershell:
+            self.skipTest('PowerShell is unavailable')
+        env = {key: value for key, value in os.environ.items()
+               if key not in ('MEDIAFLOW_PYTHON', 'MEDIAFLOW_SKILL_CONFIG', 'MEDIAFLOW_API_URL')}
+        env['PATH'] = ''
+        config = json.loads((self.skill/'config.example.json').read_text(encoding='utf-8-sig'))
+        config['api_url'] = 'http://127.0.0.1:%s' % self.server.server_port
+        for name, args in [('config.json', []), ('selected.json', ['--config'])]:
+            with self.subTest(config=name):
+                path = self.skill/name
+                path.write_text(json.dumps(config), encoding='utf-8')
+                if args:
+                    (self.skill/'config.json').unlink()
+                result = subprocess.run([powershell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                    str(self.skill/'scripts/mediaflow.ps1'), 'list_tasks', *(args + [str(path)] if args else [])],
+                    env=env, capture_output=True, text=True, errors='replace', timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)['result']['tasks'], [])
+
+    def test_unreachable_platform_does_not_fall_back_to_system_python(self):
+        powershell = shutil.which('pwsh') or shutil.which('powershell')
+        if not powershell:
+            self.skipTest('PowerShell is unavailable')
+        env = {key: value for key, value in os.environ.items()
+               if key not in ('MEDIAFLOW_PYTHON', 'MEDIAFLOW_SKILL_CONFIG')}
+        env.update(PATH='', MEDIAFLOW_API_URL='http://127.0.0.1:0')
+        result = subprocess.run([powershell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+            str(self.skill/'scripts/mediaflow.ps1'), 'list_tasks'], env=env,
+            capture_output=True, text=True, errors='replace', timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Start MediaFlow', result.stderr)
+        self.assertEqual(self.hits, [])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows portable runtime')
+    def test_relocated_installed_runtime_executes_extracted_skill_without_developer_paths(self):
+        powershell = shutil.which('pwsh') or shutil.which('powershell')
+        if not powershell:
+            self.skipTest('PowerShell is unavailable')
+        source = Path(sys.base_prefix)
+        runtime = self.root/'installed software'/'runtime'/'python'
+        runtime.mkdir(parents=True)
+        for file in [source/'python.exe', *source.glob('*.dll')]:
+            shutil.copy2(file, runtime/file.name)
+        shutil.copytree(source/'Lib', runtime/'Lib', ignore=shutil.ignore_patterns(
+            'site-packages', '__pycache__', 'test', 'tests', 'idlelib', 'tkinter', 'ensurepip'))
+        shutil.copytree(source/'DLLs', runtime/'DLLs')
+        env = {key: value for key, value in os.environ.items() if key.upper() not in
+               ('MEDIAFLOW_PYTHON', 'MEDIAFLOW_SKILL_CONFIG', 'PYTHONHOME', 'PYTHONPATH')}
+        env.update(PATH='', MEDIAFLOW_API_URL='http://127.0.0.1:%s' % self.server.server_port)
+        with patch('runtime_layout.IS_DISTRIBUTION', True), patch('runtime_layout.BUNDLED_PYTHON', runtime/'python.exe'):
+            result = subprocess.run([powershell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                str(self.skill/'scripts/mediaflow.ps1'), 'list_tasks'], env=env,
+                capture_output=True, text=True, errors='replace', timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['result']['tasks'], [])
+        self.assertEqual(self.launches, [])
 
 
 if __name__ == '__main__':

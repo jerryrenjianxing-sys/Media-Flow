@@ -24,6 +24,7 @@ EXPECTED_FILES = [
     "mediaflow-platform/examples/plan-arguments.json",
     "mediaflow-platform/examples/request-status-arguments.json",
     "mediaflow-platform/references/api.md",
+    "mediaflow-platform/references/setup.md",
     "mediaflow-platform/references/troubleshooting.md",
     "mediaflow-platform/references/workflows.md",
     "mediaflow-platform/scripts/_common.py",
@@ -152,7 +153,7 @@ class PlatformSkillDownloadTests(unittest.TestCase):
                     self.assertEqual(payload, first_payload)
                 with zipfile.ZipFile(BytesIO(first_payload)) as archive:
                     self.assertEqual(archive.namelist(), EXPECTED_FILES)
-                    self.assertEqual(len(archive.namelist()), 13)
+                    self.assertEqual(len(archive.namelist()), 14)
                     for name in EXPECTED_FILES:
                         archive.read(name).decode("utf-8-sig")
                 self.assertEqual(list(temporary_root.iterdir()), [])

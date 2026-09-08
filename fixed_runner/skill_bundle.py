@@ -14,6 +14,7 @@ SKILL_FILES = (
     'examples/plan-arguments.json',
     'examples/request-status-arguments.json',
     'references/api.md',
+    'references/setup.md',
     'references/troubleshooting.md',
     'references/workflows.md',
     'scripts/_common.py',

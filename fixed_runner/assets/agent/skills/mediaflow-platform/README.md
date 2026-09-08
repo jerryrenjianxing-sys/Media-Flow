@@ -7,6 +7,10 @@ addresses only.
 
 ## Install
 
+MediaFlow is already installed before this Skill is obtained from its homepage.
+For MuMu, display, apps and input preparation, follow [配置引导](references/setup.md).
+This section installs the Skill into an external agent, not MediaFlow itself.
+
 1. Extract the archive so the `mediaflow-platform` directory remains intact.
 2. Copy or link that directory into your agent host's skills directory. Consult the
    host's documentation for its skill discovery location.
@@ -29,9 +33,12 @@ PowerShell launcher. Environment variables take precedence:
 | `MEDIAFLOW_RECEIPT_DB` | Store durable client write receipts outside the package |
 
 On Windows, invoke `scripts/mediaflow.ps1`; it resolves Python in this order:
-`MEDIAFLOW_PYTHON`, the `python` value in local config, then `python3` or `python`
-from `PATH`. Any host may invoke `scripts/mediaflow.py` with its configured Python
-3 runtime directly.
+`MEDIAFLOW_PYTHON`, the `python` value in local config, then the running platform's
+`GET /api/automation` client_runtime. No system Python or developer tools are needed.
+Discovery uses loopback HTTP without redirects or proxies. Start MediaFlow and retry
+if disconnected; update an older platform lacking discovery or retain an explicitly
+configured Python. The launcher does not overwrite config. Any host may still invoke
+`scripts/mediaflow.py` directly with its configured Python 3 runtime.
 
 ```powershell
 ./scripts/mediaflow.ps1 platform_status

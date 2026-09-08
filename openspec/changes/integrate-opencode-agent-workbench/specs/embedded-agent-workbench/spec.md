@@ -190,6 +190,14 @@ Agent SHALL 能在独立修复工作区读取版本化代码与故障材料、�
 ### Requirement: Skill驱动的完整平台操作
 系统 SHALL 随程序提供原生 `mediaflow-platform` Skill及参考文档和标准库HTTP脚本，说明工具位置、任务参数、执行、恢复和复盘。所有会话 SHALL 默认可通过原生命令工具调用MediaFlow操作、维护及项目修复接口，不要求权限等级、固定授权口令或逐消息百分比正则许可。平台 MUST 持久化请求及业务回执，保留设备独占与未知结果不重放；会话仅用于关联，不要求存在MediaFlow自建sessions或turn记录。
 
+#### Scenario: 从已安装平台取得配置 Skill
+- **WHEN** 用户从 Windows 平台首页复制或下载 Skill 后要求准备 MuMu
+- **THEN** 两种材料均包含配置参考；Windows客户端保留显式运行时配置，否则通过本机GET automation发现平台Python，不要求系统Python或开发目录；断连给出启动/修复平台入口
+
+#### Scenario: 运行信息与通用材料分离
+- **WHEN** 本机GET automation返回client_runtime
+- **THEN** 返回实际运行模式、API和管理地址、可用Python及失败原因，不返回凭据；这些本机路径不进入通用下载/复制材料，安装版使用包内运行时而非构建目录
+
 #### Scenario: 两套比例和多轮继续
 - **WHEN** 用户给出主页30/20/10及匹配60/50/40并继续同一目标
 - **THEN** Agent保留完整目标参数，计划可直接执行，不因只取第一个百分比或最新短句丢失旧上下文而拒绝；重复执行返回同一批次

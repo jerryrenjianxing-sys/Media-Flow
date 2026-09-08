@@ -137,6 +137,23 @@ class AutomationTests(unittest.TestCase):
         except urllib.error.HTTPError as exc:
             self.fail('Automation route must be registered: HTTP %s' % exc.code)
         self.assertEqual(catalog['api_version'], '1')
+        self.assertIn('client_runtime', catalog)
+        self.assertEqual(catalog['client_runtime']['api_url'], url.removesuffix('/api/automation'))
+        self.assertTrue(catalog['client_runtime']['available'])
+        self.assertTrue(Path(catalog['client_runtime']['python']).is_file())
+        self.assertIn(catalog['client_runtime']['mode'], ('development', 'installed'))
+        runtime = self.root/'relocated package'/'runtime'/'python'/'python.exe'
+        runtime.parent.mkdir(parents=True)
+        runtime.write_bytes(b'fixture-runtime-identity')
+        with patch('runtime_layout.IS_DISTRIBUTION', True), patch('runtime_layout.BUNDLED_PYTHON', runtime):
+            installed = json.load(urllib.request.urlopen(url))['client_runtime']
+            self.assertEqual(installed['mode'], 'installed')
+            self.assertEqual(installed['python'], str(runtime.resolve()))
+            runtime.unlink()
+            missing = json.load(urllib.request.urlopen(url))['client_runtime']
+            self.assertFalse(missing['available'])
+            self.assertIsNone(missing['python'])
+            self.assertEqual(missing['reason_code'], 'runtime_missing')
         self.assertTrue(any(a['action'] == 'execute_plan' and a['mutates'] for a in catalog['actions']))
         for headers, expected in [({'Origin': 'https://evil.example', 'Content-Type': 'application/json'}, 403),
                                   ({'Content-Type': 'text/plain'}, 415)]:

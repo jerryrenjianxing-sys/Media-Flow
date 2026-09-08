@@ -1,8 +1,8 @@
 ---
 name: mediaflow-platform
-description: Use when a user asks about or operates a local MediaFlow platform, including device status, task planning, execution, recovery, evidence, preferences, or project repair.
+description: Use when a user configures MuMu or apps through an installed MediaFlow platform, or asks about device status, task planning, execution, recovery, evidence, preferences, or project repair.
 metadata:
-  version: "30"
+  version: "32"
 ---
 
 # MediaFlow 平台操作
@@ -11,11 +11,15 @@ metadata:
 
 ## 去哪里做
 
-使用本Skill目录的 `scripts/mediaflow.py` 直接访问本机 `/api/automation`。不需要特定Agent、模型服务商、MCP工具或MediaFlow自建会话、回合、权限等级。按实际命令工具的Shell选择调用方法，不按操作系统猜测：PowerShell使用 `scripts/mediaflow.ps1`；Bash（包括Windows上的Bash工具）在Skill目录运行 `"$MEDIAFLOW_PYTHON" scripts/mediaflow.py platform_status`，不直接执行 `.ps1`。内置Agent已经设置MEDIAFLOW_PYTHON；外部宿主未设置时按 [README](README.md) 配置现有Python。config.json是可选项，环境变量已提供时不需要它。不要下载另一套Python或猜产品专用运行时路径。
+使用本Skill目录的 `scripts/mediaflow.py` 直接访问本机 `/api/automation`。不需要特定Agent、模型服务商、MCP工具或MediaFlow自建会话、回合、权限等级。Windows优先用系统PowerShell运行 `scripts/mediaflow.ps1`，自动查询已安装平台的运行环境，不要求另装Python或填写开发目录。Bash宿主若已设置MEDIAFLOW_PYTHON，可运行 `"$MEDIAFLOW_PYTHON" scripts/mediaflow.py platform_status`；否则在Windows上调用系统PowerShell，不直接把.ps1当Bash脚本执行。已有显式配置优先，config.json可选，详见 [README](README.md)。
+
+用户从平台首页取得本Skill，MediaFlow已经安装。需要安装应用、配置标准虚拟机时先读 [配置引导](references/setup.md)：复用已有实例，空白实例通过MuMu创建，不误用模板接口；只补本次缺项，登录交给用户。读取Skill本身不是启动业务的指令。
 
 先按需读取 [API和命令参数](references/api.md)、[任务与修复流程](references/workflows.md)、[故障排查](references/troubleshooting.md)。用 `MEDIAFLOW_API_URL` 或本Skill的 `config.json` 配置地址，默认 `http://127.0.0.1:48138`，只接受回环地址。脚本只用标准库。
 
 命令形态：`mediaflow.py <action> --arguments-file <JSON文件> --request-id <唯一ID> --session-id <宿主会话ID>`。纯读不需要request-id；session-id可省略，默认skill-local，只用于关联。所有写操作（包括计划/记忆）使用稳定唯一编号并保留原回执；同编号重复调用不执行新操作。模型回答、计划生成和任务执行是三个不同结果，按结构化JSON回执报告，退出码非零表示尚未完成。
+
+上述编号保证针对automation客户端。配置引导另列的传统维护REST接口没有这项去重保证：按参考保存返回，超时先查询状态，不自动重复提交。
 
 | 目的 | 工具路线 |
 | --- | --- |

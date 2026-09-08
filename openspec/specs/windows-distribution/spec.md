@@ -5,6 +5,17 @@ TBD - created by archiving change package-windows-installer. Update Purpose afte
 
 ## Requirements
 
+### Requirement: 平台携带标准虚拟机配置 Skill
+Windows软件 SHALL 携带平台运行环境、控制组件及完整mediaflow-platform Skill；巨大虚拟机镜像 MUST NOT 成为获取Skill和配置空白MuMu的前提。首页下载和复制 SHALL 使用同源材料，包含配置引导和客户端。新建空白实例暂无平台接口时 SHALL 如实引导MuMu界面，不调用模板创建冒充空白创建。
+
+#### Scenario: 无系统Python的外部Agent接入
+- **WHEN** 已安装平台的用户从首页取得Skill并调用Windows客户端
+- **THEN** 客户端保留显式配置，否则从本机GET automation取得运行环境并调用包内Python；旧平台或后台断开给出启动/修复入口，不要求安装开发工具；本机路径和凭据不进入通用材料
+
+#### Scenario: 仅补本次必要条件
+- **WHEN** 标准实例已安装抖音但未登录、中文输入尚未验证
+- **THEN** 配置引导复用实例，不阻断管理和浏览准备；用户手工登录，搜索或评论才要求实际中文输入验证，不以输入法启用代替实测，不强制整套初始化或逐机三次校准
+
 ### Requirement: 自包含 Windows 发布目录
 系统 SHALL 能生成不依赖 Codex、项目虚拟环境或系统 PATH 中 Node/ADB 的 Windows 发布目录，并 SHALL 排除本机秘密和运行证据。
 
