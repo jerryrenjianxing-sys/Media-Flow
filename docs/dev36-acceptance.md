@@ -18,6 +18,8 @@
 
 ## 本机交付边界
 
-切换前只读快照确认暂停、4等待、0运行、无初始化/生命周期/人工控制占用；已备份任务库、模型库、原生历史与配置。具体本机切换是否完成，以源码外work/dev36-qa/after.json、live-skill/receipt.json及MediaFlow-UI-QA/dev36页面回执为准，不把候选构建代替运行结果。
+切换前只读快照确认暂停、4等待、0运行、无初始化/生命周期/人工控制占用；已备份任务库、模型库、原生历史与配置。已通过既有Windows后台入口更新本机，API为干净dev.36；实际模型状态为model_ready=true、requests_used=10（历史保持）、request_limit=null、requests_remaining=null、local_limits_enabled=false。更新前后任务、草稿、内容、设备登记、原生历史、配置及模型库摘要完全一致。
+
+本机模型页面同一模拟响应验证通过，不向服务商发送请求。实际Skill接口ZIP与Markdown共17份文件逐字一致，无系统Python检查客户端可读取dev.36与暂停状态。最终提交身份与再次核对保存在源码外work/dev36-qa/after.json、live-skill/receipt.json及MediaFlow-UI-QA/dev36页面回执，不将模拟模型测试冒充真实服务商调用。
 
 未运行设备业务或真实模型验证，不修改真机接入，不启动/停止/重建MuMu，不打包、不推送、不更新远端。五台真机的任务尚未启动；本轮不将其MuMu映射阻断当作预算修复的一部分。现有dev.9/dev.10历史验收额度只保留为历史事实，不再约束当前版本。
