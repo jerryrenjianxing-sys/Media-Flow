@@ -228,6 +228,29 @@ class MutationGateTest(unittest.TestCase):
 
 
 class DeviceLayoutProfileTest(unittest.TestCase):
+    def test_transposed_startup_window_uses_verified_portrait_but_rejects_landscape(self):
+        from types import SimpleNamespace
+        verified = SimpleNamespace(verified=True, width=1080, height=2340)
+        device = Mock()
+        device.window_size.return_value = (2340, 1080)
+        with patch('douyin_uia2_runner.get_device_profile', return_value=verified):
+            runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=0)
+        runner.ensure_profile(Image.new('RGB', (1080, 2340)))
+        self.assertEqual((runner.profile.width, runner.profile.height), (1080, 2340))
+        with self.assertRaises(RuntimeError):
+            runner.ensure_profile(Image.new('RGB', (2340, 1080)))
+
+    def test_unverified_or_different_layout_does_not_normalize_window(self):
+        from types import SimpleNamespace
+        for verified in (None, SimpleNamespace(verified=False, width=1080, height=2340),
+                         SimpleNamespace(verified=True, width=720, height=1600)):
+            device = Mock()
+            device.window_size.return_value = (2340, 1080)
+            with patch('douyin_uia2_runner.get_device_profile', return_value=verified):
+                runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=0)
+            with self.assertRaises(RuntimeError):
+                runner.ensure_profile(Image.new('RGB', (1080, 2340)))
+
     def test_uiautomator_transport_timeout_is_bounded_for_worker_recovery(self) -> None:
         import uiautomator2 as u2
 

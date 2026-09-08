@@ -813,6 +813,15 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         self.vision_locator = VisionCandidateLocator()
         self._visual_sequence = 0
         self.device_profile: DeviceProfile | None = get_device_profile(serial)
+        # window_size can report the preceding landscape orientation while the
+        # first captured frame has already returned to the verified portrait.
+        # Only an exact transpose of a verified layout may change this baseline;
+        # ensure_profile still rejects an actually landscape screenshot.
+        saved = self.device_profile
+        if (saved is not None and saved.verified and saved.width and saved.height
+                and saved.width < saved.height
+                and (self.profile.width, self.profile.height) == (saved.height, saved.width)):
+            self.profile = replace(self.profile, width=saved.width, height=saved.height)
         self.allow_search_feed = False
         self.search_query = ""
         self.feed_phase = "home"

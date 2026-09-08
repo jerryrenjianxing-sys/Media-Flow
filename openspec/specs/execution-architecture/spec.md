@@ -5,6 +5,13 @@ TBD - created by archiving change modularize-execution-core. Update Purpose afte
 
 ## Requirements
 
+### Requirement: 启动窗口方向与已验证布局一致性
+当启动窗口尺寸与已验证竖屏档案恰好转置时，系统 SHALL 用已验证档案作为布局基准并重新核对实际截图；真实横屏截图或其他比例漂移 MUST 仍拒绝，不转换截图、不复用过期动作坐标。
+
+#### Scenario: 窗口方向回报过期
+- **WHEN** 启动窗口报告2340×1080而已验证档案和首屏截图均为1080×2340
+- **THEN** 固定执行器按1080×2340校验并继续；若截图仍为横屏则不执行动作
+
 ### Requirement: 本地自动化复用当前可选设备
 自动化计划 SHALL 接受当前平台清单中的虚拟机身份或明确 physical 设备的 ADB 序列号，提交前复核身份与可执行状态。清单外设备、歧义映射及部分设备不可用 MUST 明确失败，不得猜测名称或缩减用户设备范围。真机展示偏好保持不变。
 
