@@ -1,0 +1,32 @@
+{
+  "name": "严格生产搜索（零互动）",
+  "config": {
+    "video_count": 20,
+    "round_count": 1,
+    "round_interval_minutes": 0,
+    "dwell_min": 8,
+    "dwell_max": 25,
+    "like_probability": 0,
+    "favorite_probability": 0,
+    "comment_probability": 0,
+    "matched_like_probability": 0,
+    "matched_favorite_probability": 0,
+    "matched_comment_probability": 0,
+    "content_mode": "search",
+    "search_query": "坚果工厂 生产线 源头厂家",
+    "search_trust_results": false,
+    "search_segment_min": 7,
+    "search_segment_max": 14,
+    "home_segment_min": 5,
+    "home_segment_max": 10,
+    "topic_prompt": "只匹配当前画面有可核实产品和生产工序的坚果干果制造内容。",
+    "topic_filter_enabled": true,
+    "topic_confidence": 1,
+    "like_only_on_match": false,
+    "engagement_requires_topic": false,
+    "comment_requires_topic": false,
+    "comment_policy_enabled": false,
+    "comment_policy_prompt": "",
+    "max_gate_skips": 6
+  }
+}

@@ -51,10 +51,13 @@ class SkillBundleTests(unittest.TestCase):
                     'mediaflow-platform/README.md',
                     'mediaflow-platform/SKILL.md',
                     'mediaflow-platform/config.example.json',
+                    'mediaflow-platform/examples/content-plan-nut-factory.json',
                     'mediaflow-platform/examples/execute-arguments.json',
                     'mediaflow-platform/examples/plan-arguments.json',
+                    'mediaflow-platform/examples/preset-zero-write.json',
                     'mediaflow-platform/examples/request-status-arguments.json',
                     'mediaflow-platform/references/api.md',
+                    'mediaflow-platform/references/content-guide.md',
                     'mediaflow-platform/references/setup.md',
                     'mediaflow-platform/references/troubleshooting.md',
                     'mediaflow-platform/references/workflows.md',
@@ -249,6 +252,54 @@ class ExtractedSkillCliTests(unittest.TestCase):
         receipt = self.run_cli('request_status', '--arguments', '{"request_id":"unknown-plan"}')
         self.assertEqual(receipt.returncode, 0, receipt.stderr)
         self.assertTrue(json.loads(receipt.stdout)['result']['ok'])
+
+    def test_packaged_business_examples_save_and_drive_real_isolated_services(self):
+        content_example = self.skill/'examples/content-plan-nut-factory.json'
+        preset_example = self.skill/'examples/preset-zero-write.json'
+
+        saved = self.run_cli('content_plan_save', '--arguments-file', str(content_example),
+                             request_id='content-example-save')
+        self.assertEqual(saved.returncode, 0, saved.stderr)
+        revision = json.loads(saved.stdout)['result']['content_plan']
+        themes = revision['document']['themes']
+        self.assertEqual([theme['search_query'] for theme in themes], [
+            '坚果工厂 生产线 源头厂家',
+            '每日坚果 OEM代工',
+            '干果炒货 自动化车间',
+            '坚果分装 生产包装线',
+        ])
+
+        listed = self.run_cli('content_plan_list')
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertEqual(json.loads(listed.stdout)['result']['content_plans'][0]['plan_id'],
+                         revision['plan_id'])
+
+        planned_config = {'config': {**self.config['config'], 'round_count': 4, 'content_mode': 'search',
+            'search_trust_results': False, 'content_plan_id': revision['plan_id'],
+            'content_plan_revision_id': revision['revision_id']}}
+        planned = self.run_cli('plan_tasks', '--arguments', json.dumps(planned_config),
+                               request_id='content-example-plan')
+        self.assertEqual(planned.returncode, 0, planned.stdout or planned.stderr)
+        plan_id = json.loads(planned.stdout)['plan_id']
+        executed = self.run_cli('execute_plan', '--arguments', json.dumps({'plan_id': plan_id}),
+                                request_id='content-example-execute')
+        self.assertEqual(executed.returncode, 0, executed.stderr)
+        task_ids = json.loads(executed.stdout)['result']['task_ids']
+        snapshots = [self.store.get(task_id).payload['content_plan_snapshot']
+                     for task_id in task_ids]
+        self.assertEqual([item['theme']['search_query'] for item in snapshots],
+                         [theme['search_query'] for theme in themes])
+
+        preset = self.run_cli('preset_save', '--arguments-file', str(preset_example),
+                              request_id='preset-example-save')
+        self.assertEqual(preset.returncode, 0, preset.stderr)
+        saved_preset = json.loads(preset.stdout)['result']['preset']
+        self.assertEqual(saved_preset['name'], '严格生产搜索（零互动）')
+        self.assertFalse(saved_preset['config']['search_trust_results'])
+        self.assertEqual([saved_preset['config'][field] for field in (
+            'like_probability', 'favorite_probability', 'comment_probability',
+            'matched_like_probability', 'matched_favorite_probability',
+            'matched_comment_probability')], [0] * 6)
 
     def test_powershell_launcher_prefers_environment_then_configured_runtime(self):
         powershell = shutil.which('pwsh') or shutil.which('powershell')

@@ -7,7 +7,7 @@ addresses only.
 
 ## Install
 
-请现在完成 MediaFlow 首次只读接入检查，再根据结果引导用户继续。仅收到本技能包也适用；用户明确只阅读、解释或修改材料时不运行检查。
+请先识别用户目标。仅收到本技能包、没有其他明确请求时完成 MediaFlow 首次只读接入检查；用户明确只阅读、解释、修改材料，或只定制主题、搜索词、评论文案时，不运行检查，也不要求平台、设备或模型。
 
 Read `SKILL.md`, then run `./scripts/mediaflow.ps1 check` on the user's Windows
 computer. This needs no Python, performs one bounded GET, and starts nothing.
@@ -57,3 +57,20 @@ configured Python. The launcher does not overwrite config. Any host may still in
 The example plan contains a placeholder device ID and must not be executed as-is.
 Read `SKILL.md` before performing any operation. Write requests are never retried
 automatically; preserve the receipt database and query uncertain results.
+
+## Included business guides and examples
+
+- `references/content-guide.md`: content plans, topic evidence, four content modes,
+  search trust, round rotation, comment material, and a complete nut/dried-fruit
+  factory example.
+- `references/api.md`: exact automation actions, arguments, response fields, and
+  nullable task result summary.
+- `references/workflows.md`: save/run separation, presets, models, notifications,
+  recovery, review, and repair.
+- `examples/content-plan-nut-factory.json`: runnable `content_plan_save` arguments.
+- `examples/preset-zero-write.json`: runnable zero-interaction `preset_save`
+  arguments. Saving either example does not create or run a task.
+
+Examples contain placeholders or reusable fixtures only. They contain no machine
+paths, credentials, device IDs, receipts, or runtime data. Use a unique stable
+`request_id` for each real write, and never replace it to replay an unknown result.
