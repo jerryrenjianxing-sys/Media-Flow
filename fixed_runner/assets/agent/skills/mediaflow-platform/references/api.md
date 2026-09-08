@@ -1,5 +1,9 @@
 # 本地Automation API v1
 
+首次接入用 `./scripts/mediaflow.ps1 check`，仅GET `/api/automation`，不调用Python或业务POST。响应新增product、product_version、onboarding；onboarding含available、source=stored_snapshot、read_at、paused、task_summary和devices。设备仅提供登记名称、实例号、last_known_state、last_known_environment、last_seen_at、updated_at，online固定null；read_at是读取时间，不是设备检测时间。快照不可读时available=false、队列与设备值为null，不伪装零任务/零设备。
+
+check的退出码0表示平台身份及连接已确认，不表示设备、Python或业务能力就绪。失败返回结构化reason_code、service_state=unknown、next_action=ask_user；连接失败不自动启动。只有已批准的配置/业务操作才使用下方旧状态工具，它们可能执行设备对账或任务收口。
+
 GET 同时返回 `client_runtime`：api_url、management_url、mode（development/installed）、python、available、reason_code、user_message。Windows启动脚本用它自动找到平台运行环境；路径仅在当前本机接口返回，不写入可分发材料。缺失运行环境不会阻断查看动作清单，但客户端应提示修复平台，不能自动安装另一套开发工具。老接口没有此字段时保留显式Python配置兼容。
 
 `GET /api/automation` 返回动作清单、mutates/request_id_required、connected及版本。connected仅表示模块接入，不保证设备、模型或独立安装更新链可用。`POST /api/automation` 接受 `action`、`arguments`对象、写入必需的 `request_id`、可选 `session_id`。请求编号和会话编号为1–100个字母、数字、下划线或连字符。会话只是批次关联，不需要在宿主注册。

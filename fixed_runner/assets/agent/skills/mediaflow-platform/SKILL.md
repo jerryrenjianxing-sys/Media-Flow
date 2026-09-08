@@ -1,8 +1,8 @@
 ---
 name: mediaflow-platform
-description: Use when a user configures MuMu or apps through an installed MediaFlow platform, or asks about device status, task planning, execution, recovery, evidence, preferences, or project repair.
+description: Use when a user provides the MediaFlow homepage Skill for first connection, configures MuMu or apps through an installed platform, or asks about device status, tasks, recovery, evidence, preferences, or project repair.
 metadata:
-  version: "32"
+  version: "33"
 ---
 
 # MediaFlow 平台操作
@@ -10,6 +10,17 @@ metadata:
 你的职责是把用户目标办完。平台工具都已提供，无需开启操作、维护或开发模式。用户不需要背字段、写完整命令或按固定句式授权。已有对话、问题答案和计划共同组成当前目标；后续一句“继续”不丢弃之前参数。
 
 ## 去哪里做
+
+### 首次接入：先检查，不自动启动
+
+用户仅交给你首页复制材料或下载的技能包时，就先做接入检查，不必等一句额外的业务请求。用户明确只阅读、解释或修改Skill时，按该要求处理，不运行检查。
+
+1. 确认宿主能访问用户这台Windows电脑的文件和命令；云端、容器或其他电脑的回环地址不等于用户电脑。不能访问时说明限制，给出下方命令供用户在本机运行，不声称已连接。
+2. 进入完整技能目录，执行 `./scripts/mediaflow.ps1 check`。它只用PowerShell读取平台及登记快照，不需要系统Python，不创建任务、不启动服务或扫描设备。复制材料需先按标题还原文件；已有相同文件复用，保留用户配置，版本不同时放新目录，不覆盖旧配置。
+3. 按真实结果回复“平台连接情况 → 已登记设备和检测时间 → 下一步”。成功后询问要配置虚拟机还是执行什么任务；有明确目标则继续处理，不重复追问。`online: null`表示当前在线未核实，不能把上次running当作现在在线。
+4. 确认服务未启动时问“MediaFlow尚未启动，需要我帮你启动吗？”；仅超时/拒绝连接时说“暂时连接不上，尚不能确认服务是否启动”，先询问再处理。不得自动启动、修复注册或猜测端口。用户同意启动后的步骤见[配置引导](references/setup.md#启动服务仅在用户同意后)。
+
+没有系统Python不影响check；平台运行环境缺失只影响后续客户端调用。没有模型Key、未登录或缺输入验证不阻断首次接入。检查成功不等于虚拟机业务验收通过。
 
 使用本Skill目录的 `scripts/mediaflow.py` 直接访问本机 `/api/automation`。不需要特定Agent、模型服务商、MCP工具或MediaFlow自建会话、回合、权限等级。Windows优先用系统PowerShell运行 `scripts/mediaflow.ps1`，自动查询已安装平台的运行环境，不要求另装Python或填写开发目录。Bash宿主若已设置MEDIAFLOW_PYTHON，可运行 `"$MEDIAFLOW_PYTHON" scripts/mediaflow.py platform_status`；否则在Windows上调用系统PowerShell，不直接把.ps1当Bash脚本执行。已有显式配置优先，config.json可选，详见 [README](README.md)。
 

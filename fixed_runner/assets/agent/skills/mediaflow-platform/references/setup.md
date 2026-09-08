@@ -11,14 +11,22 @@
 复制版按材料标题还原目录和脚本；下载版解压进入 mediaflow-platform。Windows PowerShell 执行：
 
 ```powershell
-./scripts/mediaflow.ps1 platform_status
-./scripts/mediaflow.ps1 list_devices
-./scripts/mediaflow.ps1 list_tasks
+./scripts/mediaflow.ps1 check
 ```
 
-脚本保留明确配置的 Python，否则从 `/api/automation` 的 client_runtime 自动取得平台运行环境；不要求系统 PATH 有 Python。不要让用户找开发目录或安装开发工具。只有 Bash 的 Windows 宿主调用系统 PowerShell 运行脚本，不把 .ps1 当 Bash 执行。
+check只使用系统PowerShell，不执行Python；GET `/api/automation` 同时返回client_runtime与onboarding登记快照。设备上次状态及last_seen_at不代表当前在线。后续业务命令保留明确配置的Python，否则自动取得平台运行环境；不要求系统PATH有Python。只有Bash的Windows宿主调用系统PowerShell运行脚本，不把.ps1当Bash执行。云端或另一台电脑不能把自己的回环地址当成用户电脑。
 
-平台不可达：请启动已安装的 MediaFlow，通过任务台检查后台，恢复后重试只读查询。旧版缺少运行信息时提示更新平台或保留用户已配置的 Python；不因此重装 MuMu。无 Key 不妨碍检查。
+平台不可达：先报告“尚未连接，服务是否启动未确认”，询问用户再处理。能通过已核实后台状态确认停止时，问“MediaFlow尚未启动，需要我帮你启动吗？”旧版缺少运行信息时提示更新平台或保留用户已配置的Python；不因此重装MuMu。无Key不妨碍检查。
+
+### 启动服务（仅在用户同意后）
+
+- 用户拒绝或尚未回答：保持现状，给出自行打开MediaFlow后回复“继续”的办法。再次收到Skill也不代替这次同意。
+- 用户同意：复用已核实安装位置内的 `manage-mediaflow.ps1 -Action Start -NoBrowser`。即使已知安装目录，也先只读核对当前用户 `MediaFlow Background` 计划任务的实际Action、工作目录和目标脚本属于同一安装。主任务指向其他目录时不调用Start。仅当主任务不存在且 `RiskFlow Background` 的Action已核实指向同一MediaFlow后台时，才使用同一 `manage-mediaflow.ps1` 的兼容入口；不调用旧 `manage-riskflow.ps1`，不只凭名称启动。
+- 若管理入口缺失、路径或归属不明确，请用户打开已安装的MediaFlow或提供安装位置；不全盘搜索、不猜测启动命令、不自动注册/修复后台，不降级为临时Python子进程。
+- 启动命令只发一次，通过宿主可异步观察的命令会话执行，保留会话编号及输出。原管理脚本内部等待可能超过30秒，因此不能用会杀死子进程的30秒超时替代观察截止。命令与后续检查共用30秒总观察截止；命令未返回也停止等待，不重发、不擅自杀进程。命令及时返回时，每2秒运行check复查；剩余不足5秒不发下一次check。最终未连上就报告“启动结果尚未确认”，保留输出，下次先查状态。宿主只有同步且不可控命令工具时，引导用户自行打开软件。
+- 服务启动不代表用户要求运行任务：保持原队列暂停，不恢复等待任务，不启动MuMu。连接成功回到本节配置引导。
+
+用户要求配置或执行后，才按需调用 `list_devices` / `platform_status` 获取实际状态；这些旧查询可能进行设备对账、ADB连接或任务收口，不是首次只读check的替代。
 
 默认 API 为 http://127.0.0.1:48138，管理入口为 http://127.0.0.1:3001；已有配置及平台返回信息优先。connected 只表示接口接入，不等于设备验收通过。检查当前任务及占用，不为准备设备恢复其他等待任务。
 

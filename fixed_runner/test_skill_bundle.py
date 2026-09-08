@@ -335,7 +335,7 @@ class ExtractedSkillCliTests(unittest.TestCase):
             str(self.skill/'scripts/mediaflow.ps1'), 'list_tasks'], env=env,
             capture_output=True, text=True, errors='replace', timeout=15)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Start MediaFlow', result.stderr)
+        self.assertIn('Ask the user before starting MediaFlow', result.stderr)
         self.assertEqual(self.hits, [])
 
     @unittest.skipUnless(os.name == 'nt', 'Windows portable runtime')

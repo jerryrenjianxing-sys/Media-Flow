@@ -1,5 +1,10 @@
 # 回执与故障
 
+- 首次接入check：connected仅证明本机平台可达，设备为带时间的登记快照；snapshot_unavailable表示未知，不是无设备。连接成功但client_runtime.available=false时，引导修复平台运行环境，不要求另装开发工具。
+- connection_failed / connection_timeout：尚不能确认服务停止。先询问用户；用户同意启动才按setup.md使用已核实入口，30秒内未确认不重发启动、不恢复队列。
+- unexpected_service：地址返回非预期内容或平台过旧，先核对当前软件及地址，不抢占端口、不启动第二份后台。
+- 宿主无法执行本机命令：说明当前Agent不能访问这台Windows电脑，提供check命令或引导换成本机Agent，不声称连接成功。
+
 - result_unknown：写请求可能已送达。先request_status查原编号，再plan_status/virtual_operation_status/repair_update_status核对。原写入不自动重试、不删除SQLite回执、不换编号试跑。
 - worker_start_unconfirmed：任务已存，执行者未确认。查原plan_status；用户要求继续时用新请求编号恢复原plan_id，任务ID保持原批次。
 - missing_parameters：采用已知参数和合理默认，只问真正缺少或含糊字段；没有创建任务。

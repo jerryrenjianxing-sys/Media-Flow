@@ -1,8 +1,12 @@
 # MediaFlow 运行手册
 
+## dev.33 Skill首次检查
+
+首页复制/下载材料明确要求外部Agent先运行 `scripts/mediaflow.ps1 check`。check仅PowerShell GET、五秒总截止，不启动Python、平台、ADB或设备。GET读取既有任务/设备登记快照，不收口孤儿任务或恢复修复记录；设备last_seen_at与当前在线分开。无法连接先询问用户，不能直接断言服务没开；确认并同意后才用已核实后台入口启动一次，在30秒内复查，不恢复等待任务。无本机工具则说明限制，不冒充已检查。旧platform_status/list_devices可进行对账，不用于首次检查。
+
 ## dev.32 随平台交付的配置 Skill
 
-用户先安装Windows平台，再从首页复制/下载Skill交给外部Agent。Windows启动脚本优先显式Python配置，否则通过本机GET `/api/automation` 的 `client_runtime` 自动发现平台运行环境，无需系统Python。配置示例不写死Python命令；支持环境配置和`--config`。API断开先启动平台，旧版缺少发现字段时更新平台或保留显式配置，不能据此要求重装开发工具。
+用户先安装Windows平台，再从首页复制/下载Skill交给外部Agent。Windows启动脚本优先显式Python配置，否则通过本机GET `/api/automation` 的 `client_runtime` 自动发现平台运行环境，无需系统Python。配置示例不写死Python命令；支持环境配置和`--config`。API断开先询问是否启动平台，旧版缺少发现字段时更新平台或保留显式配置，不能据此要求重装开发工具。
 
 包内 `references/setup.md` 引导复用/安装MuMu、空白实例、实际900×1600/320DPI、按需应用与控制组件、用户登录及可恢复检查。当前平台创建仍是模板路线，空白创建明确走MuMu界面。安装来源、显示及中文输入未验证时如实待验证，不猜接口；不因为未登录或输入待验阻断管理和纯浏览准备。传统维护POST不具有automation编号去重保证，未知结果先查询。
 

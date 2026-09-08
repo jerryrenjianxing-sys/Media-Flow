@@ -5,6 +5,23 @@ TBD - created by archiving change modularize-execution-core. Update Purpose afte
 
 ## Requirements
 
+### Requirement: Skill 首次接入是独立只读路径
+系统 SHALL 提供无需 Python 的首次连接检查，并从已有数据库只读返回平台及登记设备摘要。该路径 SHALL NOT 创建业务上下文、收口任务、连接 ADB、扫描或操作虚拟机；历史设备状态 SHALL 带检测时间且不得解释为当前在线。
+
+#### Scenario: 单独提供平台 Skill
+- **WHEN** 用户提供首页复制内容或技能入口，且没有要求仅阅读、解释或修改
+- **THEN** Agent SHALL 先判断本机工具能力，再运行首次只读检查并报告真实结果
+- **AND** 单独提供 Skill SHALL NOT 授权业务任务或服务启动
+
+#### Scenario: 平台无法连接
+- **WHEN** 检查失败或超时
+- **THEN** 系统 SHALL 区分错误服务、原因未知及已确认停止，不把连接失败直接称为服务停止
+- **AND** Agent SHALL 先询问用户，获得同意并核实当前安装的后台入口后才启动一次，观察最多30秒；未知结果不重复启动
+
+#### Scenario: Agent 没有本机工具
+- **WHEN** Agent 无法访问用户电脑
+- **THEN** Agent SHALL 明确限制并给出用户可执行的检查步骤，不查询云端回环地址冒充本机检查
+
 ### Requirement: 固定执行器拥有唯一设备动作平面
 系统 SHALL 只允许固定执行器持有设备连接并执行点击、滑动、输入和返回；AI、纠错分析器、控制接口和网页 SHALL NOT 直接操作设备。AI 结果 SHALL 仅作为固定执行器验证的结构化主题、安全或只读纠错数据。
 

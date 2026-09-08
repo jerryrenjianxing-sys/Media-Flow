@@ -7,6 +7,15 @@ addresses only.
 
 ## Install
 
+请现在完成 MediaFlow 首次只读接入检查，再根据结果引导用户继续。仅收到本技能包也适用；用户明确只阅读、解释或修改材料时不运行检查。
+
+Read `SKILL.md`, then run `./scripts/mediaflow.ps1 check` on the user's Windows
+computer. This needs no Python, performs one bounded GET, and starts nothing.
+Report the connection, registered snapshot with timestamps, and next step. If
+unreachable, ask before starting MediaFlow; a timeout does not prove it is stopped.
+If local tools are unavailable, explain that and give the command to the user.
+After consent, follow [startup guidance](references/setup.md#启动服务仅在用户同意后).
+
 MediaFlow is already installed before this Skill is obtained from its homepage.
 For MuMu, display, apps and input preparation, follow [配置引导](references/setup.md).
 This section installs the Skill into an external agent, not MediaFlow itself.
@@ -35,13 +44,13 @@ PowerShell launcher. Environment variables take precedence:
 On Windows, invoke `scripts/mediaflow.ps1`; it resolves Python in this order:
 `MEDIAFLOW_PYTHON`, the `python` value in local config, then the running platform's
 `GET /api/automation` client_runtime. No system Python or developer tools are needed.
-Discovery uses loopback HTTP without redirects or proxies. Start MediaFlow and retry
-if disconnected; update an older platform lacking discovery or retain an explicitly
+Discovery uses loopback HTTP without redirects or proxies. Ask the user before starting
+MediaFlow if disconnected; update an older platform lacking discovery or retain an explicitly
 configured Python. The launcher does not overwrite config. Any host may still invoke
 `scripts/mediaflow.py` directly with its configured Python 3 runtime.
 
 ```powershell
-./scripts/mediaflow.ps1 platform_status
+./scripts/mediaflow.ps1 check
 ./scripts/mediaflow.ps1 plan_tasks --arguments-file ./examples/plan-arguments.json --request-id plan-example-001
 ```
 

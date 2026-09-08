@@ -23,6 +23,16 @@ WRITE_ACTIONS = frozenset(('plan_tasks', 'execute_plan', 'resume_plan', 'reprevi
     'repair_prepare_rollback', 'repair_cancel_update'))
 
 
+def automation_catalog(connected=lambda action: True):
+    """Describe compiled interfaces without constructing their stateful services."""
+    return {'api_version': '1', 'status': 'available', 'session_role': 'correlation_only',
+        'actions': [{'action': action, 'mutates': action in WRITE_ACTIONS,
+            'request_id_required': action in WRITE_ACTIONS, 'connected': connected(action)}
+            for action in sorted(READ_ACTIONS | WRITE_ACTIONS)],
+        'native_file_actions': ['repair_edit', 'repair_revert', 'repair_delete'],
+        'user_message': '本机业务接口；原生文件工具编辑修复工作区，设备动作仍由固定执行器执行'}
+
+
 def failure(code, message, *, status='blocked', request_id=None):
     return {'ok': False, 'api_version': '1', 'request_id': request_id, 'status': status,
         'reason_code': code, 'user_message': message, 'retryable': False,
@@ -71,12 +81,7 @@ class AutomationService:
             if 'virtual_operation' in action:
                 return self.host.operations is not None
             return action in {'platform_status', 'request_status'} or self.host.platform is not None
-        return {'api_version': '1', 'status': 'available', 'session_role': 'correlation_only',
-            'actions': [{'action': action, 'mutates': action in WRITE_ACTIONS,
-                'request_id_required': action in WRITE_ACTIONS, 'connected': connected(action)}
-                for action in sorted(READ_ACTIONS | WRITE_ACTIONS)],
-            'native_file_actions': ['repair_edit', 'repair_revert', 'repair_delete'],
-            'user_message': '本机业务接口；原生文件工具编辑修复工作区，设备动作仍由固定执行器执行'}
+        return automation_catalog(connected)
 
     def receipt(self, request_id):
         with self.database() as db:
@@ -287,14 +292,19 @@ def handle_automation_http(handler, method, path, body=None):
     if method == 'POST' and not handler.headers.get('Content-Type', '').startswith('application/json'):
         handler._json(failure('json_required', '需要JSON请求'), 415)
         return
-    service = AutomationService(handler.automation_context())
     if method == 'GET':
+        from skill_onboarding import stored_onboarding
+        from product_version import product_version
         from runtime_layout import BUNDLED_PYTHON, IS_DISTRIBUTION
         python = BUNDLED_PYTHON if IS_DISTRIBUTION else Path(sys.executable)
         if python.name.lower() == 'pythonw.exe':
             python = python.with_name('python.exe')
         available = python.is_file()
-        handler._json({**service.catalog(), 'client_runtime': {
+        # Do not construct PlatformContext here: repairs/operations can recover state.
+        handler._json({**automation_catalog(), 'product': 'MediaFlow',
+            'product_version': product_version(),
+            'onboarding': stored_onboarding(getattr(getattr(handler, 'store', None), 'path', None)),
+            'client_runtime': {
             'api_url': 'http://' + host,
             'management_url': 'http://127.0.0.1:3001',
             'mode': 'installed' if IS_DISTRIBUTION else 'development',
@@ -304,6 +314,7 @@ def handle_automation_http(handler, method, path, body=None):
             'user_message': '可使用平台运行环境' if available else '平台运行环境缺失，请修复MediaFlow安装',
         }})
     else:
+        service = AutomationService(handler.automation_context())
         response = service.call(body)
         code = 409 if response['reason_code'] == 'request_id_conflict' else (200 if response['ok'] else 400)
         if response['status'] == 'unknown':

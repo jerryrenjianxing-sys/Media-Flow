@@ -1,5 +1,9 @@
 # MediaFlow 当前状态
 
+## dev.33 Skill 首次只读接入（2026-09-08）
+
+复制/ZIP入口现在明确要求先执行只读接入检查。无Python的PowerShell检查与后台启动分开，失败不擅自启动；GET automation只读既有快照，设备状态带检测时间，不构造业务上下文或触发任务收口/ADB对账。独立Agent仅收到复制材料已实际运行检查；配置、任务哈希不变。启动同意/拒绝等情景演练与真实服务检查分开记录，详见[验收范围](docs/dev33-acceptance.md)。本机是否已切换以源码外dev33-qa的after回执为准，不以候选构建代替上线；不打包推送、不操作MuMu。
+
 ## dev.32 随平台交付的配置 Skill（2026-09-08）
 
 Skill新增标准虚拟机配置参考，ZIP及完整Markdown同源14项材料；用户先安装平台，不再指导从零安装MediaFlow/Python。GET automation返回本机运行时发现，PowerShell无需系统Python，可使用安装包运行环境或开发服务解释器；显式配置优先，支持--config，配置示例不写死python命令。不更改虚拟机、模型、任务或模板，不生成安装包、不推送、不更新远端。
