@@ -180,7 +180,8 @@ class CommentDecisionTest(unittest.TestCase):
         error = raised.exception
         self.assertIsInstance(error, CloudModelError)
         self.assertEqual(error.kind, "permanent_rejection")
-        self.assertEqual(error.diagnostics["provider_name"], "example-provider")
+        self.assertEqual(error.diagnostics["category"], "permanent_rejection")
+        self.assertNotIn("message", error.diagnostics)
         self.assertNotIn("private-user", str(error))
         self.assertNotIn("sk-secret-value", str(error))
         self.assertEqual(
@@ -436,7 +437,7 @@ class CommentDecisionTest(unittest.TestCase):
             b'data: {"error":{"message":"No available provider"}}\n',
             b"data: [DONE]\n",
         ]
-        with self.assertRaisesRegex(RuntimeError, "No available provider"):
+        with self.assertRaisesRegex(RuntimeError, "provider_failure"):
             parse_streaming_response(lines)
 
     def test_safe_json_comment_is_accepted(self) -> None:

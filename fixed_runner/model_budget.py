@@ -8,9 +8,47 @@ from __future__ import annotations
 import json
 import math
 import time
+import queue
+import threading
+from types import SimpleNamespace
 from contextlib import contextmanager
 
 import requests
+
+
+def _before_deadline(operation, deadline, close=None):
+    """Bound blocking I/O by wall time; abandoned output is never consumed."""
+    from model_providers import ProviderError
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ProviderError("network_timeout")
+    result = queue.Queue(maxsize=1)
+    abandoned = threading.Event()
+    def run():
+        try:
+            value = operation()
+            if abandoned.is_set():
+                if hasattr(value, "close"):
+                    value.close()
+                return
+            result.put((True, value))
+        except BaseException as error:
+            result.put((False, error))
+    threading.Thread(target=run, daemon=True).start()
+    try:
+        ok, value = result.get(timeout=remaining)
+    except queue.Empty:
+        abandoned.set()
+        if close:
+            threading.Thread(target=close, daemon=True).start()
+        raise ProviderError("network_timeout") from None
+    if time.monotonic() >= deadline:
+        if close:
+            threading.Thread(target=close, daemon=True).start()
+        raise ProviderError("network_timeout")
+    if not ok:
+        raise value
+    return value
 
 
 class _MeteredResponse:
@@ -52,12 +90,14 @@ class _MeteredResponse:
 
 @contextmanager
 def _openrouter_post(url: str, receipt, **kwargs):
-    deadline = kwargs.pop("request_deadline", None)
-    if deadline is not None and time.monotonic() >= deadline:
-        raise RuntimeError("visual_deadline_exceeded")
+    deadline = kwargs.pop("request_deadline", time.monotonic()+20)
     # No catalogue request, price ceiling, reservation or configured local cap.
-    with requests.post(url, **kwargs) as response:
-        yield _MeteredResponse(response, receipt)
+    response = _before_deadline(lambda: requests.post(url, **kwargs), deadline)
+    try:
+        yield _MeteredResponse(_TokenPlanResponse(response, {"usage": None}, deadline), receipt)
+    finally:
+        if hasattr(response, "close"):
+            threading.Thread(target=response.close, daemon=True).start()
 
 
 class _TokenPlanResponse:
@@ -76,14 +116,19 @@ class _TokenPlanResponse:
                                      and type(v) is int and v >= 0}
 
     def json(self):
-        value = self.response.json()
+        value = _before_deadline(self.response.json, self.deadline, getattr(self.response, "close", None))
         self._record(value)
         return value
 
     def iter_lines(self, *args, **kwargs):
-        from model_providers import ProviderError
+        from model_providers import ProviderError, http_error
         size = 0
-        for line in self.response.iter_lines(*args, **kwargs):
+        lines = iter(self.response.iter_lines(*args, **kwargs))
+        while True:
+            try:
+                line = _before_deadline(lambda: next(lines), self.deadline, getattr(self.response, "close", None))
+            except StopIteration:
+                return
             size += len(line)
             if time.monotonic() >= self.deadline:
                 raise ProviderError("network_timeout")
@@ -93,11 +138,17 @@ class _TokenPlanResponse:
                 text = line.decode("utf-8") if isinstance(line, bytes) else line
                 if text.startswith("data:") and text[5:].strip() != "[DONE]":
                     value = json.loads(text[5:])
-                    if value.get("error"):
-                        raise ProviderError("provider_failure")
                     self._record(value)
-            except (ValueError, UnicodeError):
-                raise ProviderError("invalid_response") from None
+                    if value.get("error"):
+                        error = value["error"]
+                        status = error.get("code", 500) if isinstance(error, dict) else 500
+                        status = int(status) if str(status).isdigit() else 500
+                        http_error(SimpleNamespace(status_code=status, json=lambda: value))
+                        raise ProviderError("provider_failure")
+            except (ValueError, UnicodeError, TypeError, AttributeError):
+                error = ProviderError("invalid_response")
+                error.diagnostics["category"] = "json"
+                raise error from None
             yield line
 
 
@@ -115,7 +166,7 @@ def budgeted_post(url: str, **kwargs):
             with _openrouter_post(url, receipt, **kwargs) as response:
                 yield response
             return
-        deadline = min(kwargs.pop("request_deadline", time.monotonic()+20), time.monotonic()+20)
+        deadline = kwargs.pop("request_deadline", time.monotonic()+20)
         if time.monotonic() >= deadline:
             raise ProviderError("network_timeout")
         payload = dict(kwargs.pop("json", None) or json.loads(kwargs.pop("data", None) or "{}"))
@@ -132,12 +183,17 @@ def budgeted_post(url: str, **kwargs):
         kwargs["headers"]["Content-Type"] = "application/json"
         kwargs["allow_redirects"] = False
         remaining = max(.1, deadline-time.monotonic())
-        kwargs["timeout"] = (min(3, remaining), min(16, remaining))
+        kwargs["timeout"] = (min(5, remaining), min(25, remaining))
         try:
-            with requests.post(url, **kwargs) as response:
+            response = _before_deadline(lambda: requests.post(url, **kwargs), deadline)
+            try:
                 if 300 <= response.status_code < 400:
                     raise ProviderError("provider_failure")
-                http_error(response)
-                yield _TokenPlanResponse(response, receipt, deadline)
+                wrapped = _TokenPlanResponse(response, receipt, deadline)
+                http_error(wrapped)
+                yield wrapped
+            finally:
+                if hasattr(response, "close"):
+                    threading.Thread(target=response.close, daemon=True).start()
         except requests.RequestException:
             raise ProviderError("network_timeout") from None

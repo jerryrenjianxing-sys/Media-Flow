@@ -166,7 +166,7 @@ class TokenPlanTests(unittest.TestCase):
                 providers.http_error(self.response(code, {"error": {"message": detail}}))
             self.assertEqual(caught.exception.code, expected)
             self.assertNotIn("secret", str(caught.exception))
-            self.assertFalse(caught.exception.retryable)
+            self.assertEqual(caught.exception.retryable, expected == "rate_limited")
 
     def test_dead_call_is_closed_without_refund_or_replay(self):
         ref = self.passed()

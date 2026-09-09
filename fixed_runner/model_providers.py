@@ -50,9 +50,12 @@ class ProviderError(CloudModelError):
         kind = {"authentication": "authentication", "permission": "permanent_rejection",
                 "model_unavailable": "invalid_request", "rate_limited": "rate_limited",
                 "quota_exhausted": "balance",
+                "configuration_changed": "invalid_request", "credential_unreadable": "authentication",
+                "upload_consent_required": "invalid_request",
                 "network_timeout": "transient_network", "invalid_response": "invalid_response"}.get(code, "provider_failure")
         super().__init__(kind, ERRORS.get(code, "模型配置异常，请重新保存并测试"),
-                         retryable=False, diagnostics={"reason_code": code})
+                         retryable=code in {"network_timeout", "rate_limited", "provider_failure"},
+                         diagnostics={"reason_code": code})
 
 
 @contextmanager
@@ -209,8 +212,9 @@ def _require_idle(c, task_db: Path):
     if not task_db.is_file():
         raise ValueError("任务状态不可读取，暂时不能切换模型")
     with closing(sqlite3.connect(task_db.as_uri() + "?mode=ro", uri=True, timeout=3)) as tasks:
+        repairing = tasks.execute("SELECT 1 FROM tasks WHERE status IN ('waiting_model','waiting_user') LIMIT 1").fetchone()
         for table, column, values in (
-            ("tasks", "status", ("running", "pending")),
+            ("tasks", "status", ("running",) if repairing else ("running", "pending")),
             ("device_initializations", "status", ("queued", "running", "waiting_user")),
             ("incidents", "analysis_status", ("analyzing",)),
         ):
@@ -305,6 +309,8 @@ def http_error(response):
         return
     try:
         detail = str(response.json().get("error", "")).lower()
+    except CloudModelError:
+        raise
     except Exception:
         detail = ""
     code = "provider_failure"

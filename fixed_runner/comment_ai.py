@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import io
 import json
 import os
@@ -170,6 +171,20 @@ def _retry_delay(response_headers: Any, attempt: int) -> float:
     return min(2.0 * (2 ** max(0, attempt - 1)) + random.uniform(0.0, 0.5), 10.0)
 
 
+class _RequestBudget:
+    def __init__(self, timeout):
+        self.started = time.monotonic()
+        self.deadline = self.started + min(60, timeout)
+        self.attempts = 0
+
+    def annotate(self, error, stage):
+        error.attempts = self.attempts
+        error.diagnostics.update(stage=stage, elapsed_ms=round((time.monotonic()-self.started)*1000),
+                                 attempt=self.attempts)
+        error.diagnostics.setdefault("category", error.kind)
+        return error
+
+
 def _request_streaming_json(
     *,
     base_url: str,
@@ -177,9 +192,9 @@ def _request_streaming_json(
     payload: dict[str, Any],
     timeout_seconds: float,
     max_attempts: int = 2,
+    budget=None,
 ) -> str:
-    if base_url == QWEN_BASE_URL:
-        max_attempts = 1
+    budget = budget or _RequestBudget(timeout_seconds)
     request_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     proxy_url = os.environ.get("PHONE_AGENT_PROXY_URL")
     proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
@@ -192,24 +207,23 @@ def _request_streaming_json(
         headers["X-OpenRouter-Metadata"] = "enabled"
 
     for attempt in range(1, max_attempts + 1):
+        if budget.attempts >= 2 or time.monotonic() >= budget.deadline:
+            raise budget.annotate(CloudModelError("transient_network", "Model request deadline exceeded", retryable=True), "deadline")
+        budget.attempts += 1
         try:
             with budgeted_post(
                 base_url + "/chat/completions",
                 data=request_body,
                 headers=headers,
-                timeout=timeout_seconds,
+                timeout=(min(5, max(.01, budget.deadline-time.monotonic())), min(25, max(.01, budget.deadline-time.monotonic()))),
+                request_deadline=budget.deadline,
                 stream=True,
                 proxies=proxies,
             ) as response:
                 if response.status_code >= 400:
                     kind, retryable = _http_error_kind(response.status_code)
-                    diagnostics = _safe_error_diagnostics(
-                        response.text, getattr(response, "headers", None)
-                    )
-                    if retryable and attempt < max_attempts:
-                        time.sleep(_retry_delay(getattr(response, "headers", None), attempt))
-                        continue
-                    message = diagnostics.get("message") or f"HTTP {response.status_code}"
+                    diagnostics = {}
+                    message = f"HTTP {response.status_code}"
                     raise CloudModelError(
                         kind,
                         str(message),
@@ -219,7 +233,12 @@ def _request_streaming_json(
                         diagnostics=diagnostics,
                     )
                 try:
-                    return parse_streaming_response(response.iter_lines())
+                    content = parse_streaming_response(response.iter_lines())
+                    if time.monotonic() >= budget.deadline:
+                        raise CloudModelError("transient_network", "Model request deadline exceeded", retryable=True)
+                    return content
+                except CloudModelError:
+                    raise
                 except RuntimeError as exc:
                     message = _redact_text(exc)
                     lowered = message.lower()
@@ -229,27 +248,27 @@ def _request_streaming_json(
                     )
                     kind = "provider_failure" if transient_stream_failure else "invalid_response"
                     retryable = kind == "provider_failure"
-                    if retryable and attempt < max_attempts:
-                        time.sleep(_retry_delay(getattr(response, "headers", None), attempt))
-                        continue
                     raise CloudModelError(
                         kind,
-                        message,
+                        "Model response could not be parsed",
                         retryable=retryable,
                         attempts=attempt,
                     ) from exc
-        except CloudModelError:
-            raise
+        except CloudModelError as exc:
+            budget.annotate(exc, "response")
+            if not exc.retryable or budget.attempts >= 2 or attempt >= max_attempts:
+                raise
+            time.sleep(min(_retry_delay(getattr(locals().get("response"), "headers", None), attempt), max(0, budget.deadline-time.monotonic())))
         except requests.RequestException as exc:
-            if attempt < max_attempts:
-                time.sleep(_retry_delay(None, attempt))
+            if attempt < max_attempts and budget.attempts < 2:
+                time.sleep(min(_retry_delay(None, attempt), max(0, budget.deadline-time.monotonic())))
                 continue
-            raise CloudModelError(
+            raise budget.annotate(CloudModelError(
                 "transient_network",
-                _redact_text(exc),
+                "Model transport failed",
                 retryable=True,
                 attempts=attempt,
-            ) from exc
+            ), "transport") from None
     raise AssertionError("unreachable cloud model request state")
 
 
@@ -512,9 +531,17 @@ def parse_comment_constraint_decision(content: str) -> CommentConstraintDecision
     )
 
 
+class _StreamContent(str):
+    def __new__(cls, content, finish_reason=None):
+        value = super().__new__(cls, content)
+        value.finish_reason = finish_reason
+        return value
+
+
 def parse_streaming_response(response) -> str:
     content_parts: list[str] = []
     stream_error = ""
+    finish_reason = None
     for raw_line in response:
         line = raw_line.decode("utf-8", errors="replace").strip()
         if not line or line.startswith(":"):
@@ -533,6 +560,7 @@ def parse_streaming_response(response) -> str:
             continue
         try:
             choice = chunk["choices"][0]
+            finish_reason = choice.get("finish_reason") or finish_reason
             delta = choice.get("delta") or choice.get("message") or {}
             content = delta.get("content")
         except (KeyError, IndexError, TypeError, AttributeError):
@@ -544,11 +572,13 @@ def parse_streaming_response(response) -> str:
                 if isinstance(block, dict) and isinstance(block.get("text"), str):
                     content_parts.append(block["text"])
     content = "".join(content_parts)
-    if not content:
-        if stream_error:
-            raise RuntimeError(f"Cloud model stream error: {stream_error[:300]}")
-        raise RuntimeError("Cloud model stream did not contain message content")
-    return content
+    if finish_reason == "length":
+        raise CloudModelError("invalid_response", "Model response truncated", diagnostics={"category": "truncation", "finish_reason": "length"})
+    if stream_error:
+        raise CloudModelError("provider_failure", "Model stream failed", retryable=True)
+    if not content.strip():
+        raise CloudModelError("provider_failure", "Model stream did not contain message content", retryable=True, diagnostics={"category": "empty"})
+    return _StreamContent(content, finish_reason)
 
 
 def _openrouter_json_object_only(model: str) -> bool:
@@ -884,6 +914,48 @@ def build_topic_request_payload(
     return payload
 
 
+def _request_business_json(*, parser, **kwargs):
+    budget = _RequestBudget(kwargs["timeout_seconds"])
+    payload = kwargs["payload"]
+    repaired = False
+    while True:
+        content = None
+        try:
+            content = _request_streaming_json(**kwargs, budget=budget)
+            try:
+                value = _extract_json(content)
+            except (ValueError, TypeError):
+                raise CloudModelError("invalid_response", "Model JSON is invalid", diagnostics={"category": "json"}) from None
+            decision = parser(content)
+            required = ({"relevance", "topic", "evidence", "reason", "safe"} if parser == parse_topic_decision else
+                        {"policy_version", "decision", "category", "reason", "confidence"} if parser == parse_comment_constraint_decision else
+                        {"decision", "comment", "reason", "confidence", "commercial"})
+            bad_reason = decision.reason.startswith("invalid_model_response") or decision.reason in {
+                "invalid_category", "invalid_allow_category", "invalid_decision", "policy_version_mismatch"}
+            valid_fields = isinstance(value, dict)
+            if parser == parse_topic_decision:
+                valid_fields = valid_fields and value.get("relevance") in {"exact", "adjacent", "unrelated", "uncertain"} and type(value.get("safe")) is bool and isinstance(value.get("evidence"), list) and all(isinstance(item, str) for item in value.get("evidence", []))
+            elif parser == parse_comment_decision:
+                valid_fields = valid_fields and value.get("decision") in {"comment", "skip"} and type(value.get("commercial")) is bool
+            if not valid_fields or not required.issubset(value) or bad_reason:
+                raise CloudModelError("invalid_response", "Model fields are invalid", diagnostics={"category": "field"})
+            return content
+        except CloudModelError as exc:
+            if getattr(content, "finish_reason", None):
+                exc.diagnostics["finish_reason"] = content.finish_reason
+            budget.annotate(exc, "schema" if exc.kind == "invalid_response" else "response")
+            if repaired:
+                exc.attempts = max(2, budget.attempts)
+            if exc.kind != "invalid_response" or repaired or budget.attempts >= 2 or time.monotonic() >= budget.deadline:
+                raise
+            # One shared allowance: a transient retry consumes the repair slot.
+            repaired = True
+            kwargs["payload"] = copy.deepcopy(payload)
+            kwargs["payload"]["messages"][1]["content"][0]["text"] += "\nSCHEMA REPAIR ATTEMPT: Re-evaluate the same frame. Return exactly one complete JSON object with every required field and the permitted enum values. For an allow decision, category MUST be exactly allowed; never use none, clear, safe, pass, or an invented label."
+            # The repair may never initiate its own retry.
+            kwargs["max_attempts"] = 1
+
+
 def generate_comment(
     image_path: Path,
     *,
@@ -930,7 +1002,8 @@ def generate_comment(
         style_template=style_template,
         candidates=candidates,
     )
-    content = _request_streaming_json(
+    content = _request_business_json(
+        parser=parse_comment_decision,
         base_url=base_url,
         api_key=api_key,
         payload=payload,
@@ -1006,42 +1079,14 @@ def review_comment_constraint(
         base_url=base_url,
         fallback_models=fallback_models,
     )
-    content = _request_streaming_json(
+    content = _request_business_json(
+        parser=parse_comment_constraint_decision,
         base_url=base_url,
         api_key=api_key,
         payload=payload,
         timeout_seconds=timeout_seconds,
     )
     decision = parse_comment_constraint_decision(content)
-    schema_failure_reasons = {
-        "invalid_category",
-        "invalid_allow_category",
-        "invalid_decision",
-        "policy_version_mismatch",
-    }
-    if decision.reason.startswith("invalid_model_response") or decision.reason in schema_failure_reasons:
-        if base_url == QWEN_BASE_URL:
-            raise CloudModelError("invalid_response", "千问结构化响应不符合评论校验要求", retryable=False)
-        repair_payload = build_comment_constraint_payload(
-            image_path,
-            candidate_comment,
-            constraint,
-            model=model,
-            base_url=base_url,
-            fallback_models=fallback_models,
-            schema_repair_attempt=True,
-        )
-        repaired_content = _request_streaming_json(
-            base_url=base_url,
-            api_key=api_key,
-            payload=repair_payload,
-            timeout_seconds=timeout_seconds,
-        )
-        decision = parse_comment_constraint_decision(repaired_content)
-    if decision.reason.startswith("invalid_model_response"):
-        raise CloudModelError(
-            "invalid_response", decision.reason, retryable=False, attempts=1
-        )
     return decision
 
 
@@ -1078,33 +1123,14 @@ def analyze_topic(
         base_url=base_url,
         fallback_models=fallbacks if "openrouter.ai" in base_url.lower() else (),
     )
-    content = _request_streaming_json(
+    if base_url == QWEN_BASE_URL:
+        payload["max_tokens"] = 1024
+    content = _request_business_json(
+        parser=parse_topic_decision,
         base_url=base_url,
         api_key=api_key,
         payload=payload,
         timeout_seconds=timeout_seconds,
     )
     decision = parse_topic_decision(content)
-    if decision.reason.startswith("invalid_model_response"):
-        if base_url == QWEN_BASE_URL:
-            raise CloudModelError("invalid_response", "千问结构化响应不符合主题判断要求", retryable=False)
-        repair_payload = build_topic_request_payload(
-            image_path,
-            target_topic,
-            model=model,
-            base_url=base_url,
-            fallback_models=fallbacks if "openrouter.ai" in base_url.lower() else (),
-            schema_repair_attempt=True,
-        )
-        repaired_content = _request_streaming_json(
-            base_url=base_url,
-            api_key=api_key,
-            payload=repair_payload,
-            timeout_seconds=timeout_seconds,
-        )
-        decision = parse_topic_decision(repaired_content)
-    if decision.reason.startswith("invalid_model_response"):
-        raise CloudModelError(
-            "invalid_response", decision.reason, retryable=False, attempts=2
-        )
     return decision
