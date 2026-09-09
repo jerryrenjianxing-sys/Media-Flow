@@ -18,14 +18,15 @@ after(() => { delete globalThis.__preparation; return server.close(); });
 const { default: DevicesPage } = await server.ssrLoadModule('/app/devices/page.tsx');
 const { DeviceOnboardingDialog } = await server.ssrLoadModule('/app/components/device-onboarding-dialog.tsx');
 
-function render(status, legacy) {
+function render(status, legacy, appInstall = false) {
   const initialization = { id:'init', status, legacy_inspection_recheck:legacy, message:'已有准备记录',
     progress_current:1, progress_total:3, report_path:'saved-report' };
   const device = {device_id:'vm',device_type:'virtual',state:'device',initialization};
   globalThis.__preparation = {
     status:{devices:[device],paused:true,stop_requested_device_ids:[],virtualization:{devices:[{
       virtual_device_id:'vm',adb_endpoint:'vm',name:'离线样本',state:'running',presence_status:'present',
-      connected_device:device,available_actions:['continue_initialization','cancel_initialization'],initialization,
+      connected_device:device,available_actions:appInstall ? ['continue_onboarding'] : ['continue_initialization','cancel_initialization'],initialization,
+      active_operation:appInstall ? {id:'new-install',status:'waiting_user',stage:'waiting_app_install'} : null,
     }]}},
     snapshot:{physical_devices:[{...device,device_type:'physical'}],virtual_devices:[],
       device_preferences:{physical_devices_enabled:true},mumu:{provider:{status:'ready',compatible:true},instances:[]}},
@@ -34,14 +35,28 @@ function render(status, legacy) {
     renderToStaticMarkup(React.createElement(DeviceOnboardingDialog,{open:true,source:'devices',onClose(){}}))];
 }
 
-test('legacy preparation hides all continuation controls while retaining cancel and reports', () => {
-  for (const status of ['waiting_user','queued','running','failed','cancelled','ready']) {
+test('active legacy preparation hides continuation while retaining cancel and reports', () => {
+  for (const status of ['waiting_user','queued','running']) {
     const [devices,onboarding] = render(status,true);
     assert.doesNotMatch(devices, />继续复验<|>继续初始化<|>继续人工步骤</);
     assert.doesNotMatch(onboarding, /<button[^>]*>继续<\/button>/);
     assert.match(devices, /查看报告/);
     assert.match(devices, /历史只读/);
     if (['waiting_user','queued','running'].includes(status)) assert.match(devices,/安全取消/);
+  }
+});
+
+test('terminal legacy history allows new preparation and current app installation', () => {
+  for (const status of ['failed','cancelled','ready','stale']) {
+    const [devices] = render(status,true);
+    assert.match(devices, />继续复验</);
+    assert.match(devices, />重新校准<|>开始初始化<|>按指南开始初始化</);
+    assert.match(devices, /查看报告/);
+  }
+  for (const status of ['waiting_user','failed','cancelled','ready','stale']) {
+    const [devices] = render(status,true,true);
+    assert.match(devices, />安装完成，继续检查</);
+    assert.doesNotMatch(devices, />继续复验<|>继续初始化<|>继续人工步骤</);
   }
 });
 

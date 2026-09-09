@@ -1435,7 +1435,7 @@ def _virtual_device_guidance(
         user_message = "设备已经连接，正在等待安装抖音"
         suggested_action = "打开画面安装公司批准来源的抖音，完成后继续检查"
         available_actions = ["open_screen", "manual_control", "continue_onboarding"]
-    elif waiting_login:
+    elif waiting_login and not _legacy_inspection_recheck(initialization):
         reason_code = "douyin_login_required"
         issue_status = "waiting_user"
         blocking_scope = "onboarding"
@@ -1443,8 +1443,7 @@ def _virtual_device_guidance(
         suggested_action = "打开画面处理登录，退出人工接管后继续复验"
         available_actions = ["open_screen", "manual_control", "continue_initialization"]
     elif initialization_status in {"queued", "running", "waiting_user"}:
-        from task_preparation import preparation_presentation
-        presentation = preparation_presentation(initialization_status, initialization_message)
+        presentation = _initialization_presentation(initialization)
         reason_code = "initialization_" + initialization_status
         issue_status = "normal"
         blocking_scope = "onboarding"
@@ -1481,14 +1480,6 @@ def _virtual_device_guidance(
         user_message = "设备已完成连接和复验"
         suggested_action = "可以打开画面或加入任务"
         available_actions = ["open_screen", "manual_control", "add_to_draft"]
-
-    if _legacy_inspection_recheck(initialization):
-        available_actions = [action for action in available_actions
-                             if action not in {"continue_initialization", "continue_onboarding"}]
-        if initialization_status in {"queued", "running", "waiting_user"}:
-            available_actions = _initialization_presentation(initialization)["actions"]
-        user_message = "旧版详细巡检准备（历史只读）"
-        suggested_action = "查看已有记录；需要时安全取消准备"
 
     app_ready = connected and not waiting_app
     readiness_steps = [
@@ -1768,7 +1759,9 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
                                   blocking_scope="business", user_message=preparation_issue.get("message", "当前业务已暂停"),
                                   suggested_action="打开画面处理，完成后点击继续检查；原失败任务不会自动重放")
             virtual_device["available_actions"] = ["open_screen", "manual_control", "continue_onboarding"]
-        if latest and latest.status in {"queued", "running", "waiting_user"}:
+        if (latest and latest.status in {"queued", "running", "waiting_user"}
+                and not (active_operation and active_operation.get("status") == "waiting_user"
+                         and active_operation.get("stage") == "waiting_app_install")):
             # Maintenance presentation wins over older business issues.
             presentation = _initialization_presentation(latest)
             virtual_device.update(user_message=presentation["message"], available_actions=presentation["actions"])

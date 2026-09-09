@@ -420,12 +420,19 @@ class ControlApiTest(unittest.TestCase):
                     guidance = _virtual_device_guidance(
                         {"state": "running", "standard_status": "standard"}, connected=True,
                         active_operation=None, initialization=record, model_status={})
-                    if legacy:
+                    if legacy and status in {"queued", "running", "waiting_user"}:
                         self.assertNotIn("continue_initialization", guidance["available_actions"])
-                        if status in {"queued", "running", "waiting_user"}:
-                            self.assertIn("cancel_initialization", guidance["available_actions"])
-                    elif status == "waiting_user":
+                        self.assertIn("cancel_initialization", guidance["available_actions"])
+                    elif status not in {"queued", "running"}:
                         self.assertIn("continue_initialization", guidance["available_actions"])
+                        self.assertNotIn("历史只读", guidance["user_message"])
+                    app_guidance = _virtual_device_guidance(
+                        {"state": "running", "standard_status": "standard"}, connected=True,
+                        active_operation={"status": "waiting_user", "stage": "waiting_app_install"},
+                        initialization=record, model_status={})
+                    self.assertIn("continue_onboarding", app_guidance["available_actions"])
+                    self.assertNotIn("continue_initialization", app_guidance["available_actions"])
+                    self.assertIn("安装抖音", app_guidance["user_message"])
                 self.assertEqual(store.get_initialization(record.id).options, options)
                 store.claim_initialization(record.device_id, "offline-worker")
                 store.finish_initialization(record.id, status="waiting_user", stage="waiting_user", message="等待处理")
@@ -1857,9 +1864,18 @@ class ControlApiTest(unittest.TestCase):
         )
         self.assertIn("repair_standard", virtual_device["available_actions"])
 
-    def test_virtual_device_issue_explains_missing_app_without_hiding_adb(self) -> None:
+    def test_current_app_install_wins_over_legacy_initialization(self):
+        for status in ("waiting_user", "failed", "cancelled", "ready", "stale"):
+            with self.subTest(status=status):
+                self.test_virtual_device_issue_explains_missing_app_without_hiding_adb(status)
+
+    def test_virtual_device_issue_explains_missing_app_without_hiding_adb(self, legacy_status=None) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
+            if legacy_status:
+                record = store.create_initialization("127.0.0.1:16416", options={"inspection_recheck": True})
+                store.claim_initialization(record.device_id, "offline-worker")
+                store.finish_initialization(record.id, status=legacy_status, stage=legacy_status, message="旧巡检等待验证")
             store.save_virtual_device(
                 {
                     "virtual_device_id": "managed-1",
