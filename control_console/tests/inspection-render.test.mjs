@@ -13,6 +13,16 @@ const { TaskProgressPanel } = await server.ssrLoadModule('/app/components/task-p
 const { default: RecordsPage } = await server.ssrLoadModule('/app/records/page.tsx');
 const { default: InteractionsPage } = await server.ssrLoadModule('/app/interactions/page.tsx');
 
+test('mixed task detail summary uses the current message inspection name', () => {
+  const html = renderToStaticMarkup(React.createElement(components.TaskGroupDetail, { group: {
+    id: 'mixed-summary', device_name: '隔离设备', rounds_total: 10, inspection_total: 3,
+    completed_rounds: 1, degraded_rounds: 5, failed_rounds: 0, videos_seen: 119,
+    rounds: [], inspections: [],
+  }, onClose() {} }));
+  assert.match(html, /<span>消息巡检<\/span>/);
+  assert.doesNotMatch(html, /<span>互动消息<\/span>/);
+});
+
 test('records and interaction pages do not assert empty results before their first read', () => {
   const records = renderToStaticMarkup(React.createElement(RecordsPage));
   assert.doesNotMatch(records, /暂无任务记录|暂无纠错记录/);
