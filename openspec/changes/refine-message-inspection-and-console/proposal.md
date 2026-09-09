@@ -4,9 +4,11 @@
 - 固定角标字形识别和数量状态、裁剪证据。
 - 统一消息巡检入口与基于任务参数/结果的状态展示，全站现有风格纠错。
 - 停止本次批次并保留证据复盘，技能同步，dev40本机更新。
+- 修正评论逐视频证据覆盖和请求诊断丢失，保留实际停止回执与等待索引一致性；不改变请求次数、期限或设备动作策略。
 ## Capabilities
 ### New Capabilities
 - message-inspection-presentation: 新旧隔离、等待无结果与数量来源展示。
+- batch-evidence-integrity: 评论证据与模型诊断按实际视频归属，停止回执和等待状态一致。
 ### Modified Capabilities
 - engagement-inspection: 首页本地数字识别及仅历史开放旧版。
 ## Impact
