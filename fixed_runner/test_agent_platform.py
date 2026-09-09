@@ -47,6 +47,40 @@ class AgentPlatformTests(unittest.TestCase):
     def confirm(self, plan):
         return self.platform.confirm(plan['plan_id'], 'ses_one', {'confirmed': True, 'plan_hash': plan['preview']['plan_hash']})
 
+    def test_explicit_legacy_preview_blocks_confirmation_without_standard_profile(self):
+        self.config.update(engagement_inspection_enabled=True, inspection_every_rounds=1,
+                           inspection_mode='legacy')
+        plan = self.planned()
+        self.assertEqual(plan['config']['inspection_mode'], 'legacy')
+        self.assertFalse(plan['preview']['ready'])
+        self.assertTrue(any('标准虚拟机' in reason for reason in plan['preview']['blockers']))
+        with self.assertRaises(ValueError):
+            self.confirm(plan)
+        self.assertEqual(self.store.list(), [])
+        self.launch.assert_not_called()
+
+    def test_explicit_legacy_preview_hash_and_confirmed_workflow_agree(self):
+        self.store.save_virtual_device({
+            'virtual_device_id': 'vm-uuid', 'provider': 'mumu', 'provider_instance_id': '0',
+            'name': 'Isolated standard VM', 'state': 'ready', 'recipe': {}, 'provider_snapshot': {},
+            'adb_endpoint': 'vm-one', 'android_identity': 'android-one', 'managed': True,
+            'standard_status': 'standard', 'profile_status': 'ready', 'presence_status': 'present',
+        })
+        self.config.update(engagement_inspection_enabled=True, inspection_every_rounds=1,
+                           inspection_mode='legacy')
+        legacy = self.planned()
+        self.assertTrue(legacy['preview']['ready'], legacy['preview']['blockers'])
+        self.config['inspection_mode'] = 'home_badge'
+        self.context['call_id'] = 'home-comparison'
+        home = self.planned()
+        self.assertNotEqual(legacy['preview']['plan_hash'], home['preview']['plan_hash'])
+        receipt = self.confirm(legacy)
+        checks = [self.store.get(task_id) for task_id in receipt['task_ids']
+                  if self.store.get(task_id).task_type == 'douyin_engagement_inspection']
+        self.assertEqual(len(checks), legacy['preview']['inspection_task_count'])
+        self.assertTrue(all(task.payload['inspection_workflow_version'] == 'v3' for task in checks))
+        self.assertTrue(all(task.payload['inspection_mode'] == 'legacy' for task in checks))
+
     def test_plan_confirmation_is_atomic_scoped_idempotent_and_does_not_change_draft(self):
         self.store.save_run_draft({'custom': 'keep'}, expected_revision=0)
         unrelated = self.store.submit('healthcheck', 'other', {})

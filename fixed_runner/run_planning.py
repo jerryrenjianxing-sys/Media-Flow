@@ -176,9 +176,8 @@ def build_preview(
     paused: bool,
     model_status: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    # UI submissions use the homepage workflow. Reading a saved draft never
-    # rewrites it; compatibility planners still retain their explicit old mode.
-    config = normalized_config({**dict(draft.get("config") or {}), "inspection_mode": "home_badge"})
+    # Compatibility callers must preview the same frozen mode they execute.
+    config = normalized_config(dict(draft.get("config") or {}))
     device_rows, eligible_ids = _device_preview(
         store, config["device_ids"], devices, config
     )
@@ -300,6 +299,19 @@ def build_preview(
         "warnings": warnings,
         "blockers": blockers,
     }
+
+
+def build_workbench_preview(
+    store: TaskStore,
+    draft: Mapping[str, Any],
+    *,
+    devices: Iterable[Mapping[str, Any]],
+    paused: bool,
+    model_status: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    # Only the task UI selects homepage inspection. Do not rewrite saved drafts.
+    workbench_draft = {**draft, "config": {**dict(draft.get("config") or {}), "inspection_mode": "home_badge"}}
+    return build_preview(store, workbench_draft, devices=devices, paused=paused, model_status=model_status)
 
 
 def submit_previewed_draft(

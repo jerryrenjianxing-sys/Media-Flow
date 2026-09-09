@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import test_automation
 import test_run_planning
-from run_planning import build_preview, get_or_create_draft, submit_previewed_draft
+from run_planning import build_workbench_preview as build_preview, get_or_create_draft, submit_previewed_draft
 
 
 class StopReceiptTests(unittest.TestCase):

@@ -59,7 +59,8 @@ export function resolveInspection(task = {}) {
   else if (phase === "running") display = { label: "检查进行中", kind: "incomplete", message: result?.navigation_message || ({ waiting_model: "等待模型恢复", waiting_device: "等待设备恢复", waiting_user: "等待用户处理" }[status]) || "正在检查，等待阶段回执" };
   else if (!result || !Object.keys(result).length) display = { label: status === "stopped" || status === "cancelled" ? "已停止" : "未取得检查结果", kind: "incomplete", message: "未取得检查结果；请查看任务状态与已保存证据。" };
   else if (mode === "home_badge") display = receiptOutcome({ workflow_version: "home_badge", status, result_kind: task.result_kind || (result.status === "failed" || result.status === "degraded" ? "incomplete" : undefined), summary: { home_badge: result.home_badge } });
-  else display = { label: "旧版详细巡检 · 历史只读", kind: "incomplete", message: "以下仅展示原始历史结果，不提供旧版执行入口。" };
+  else if (mode === "legacy") display = { label: "旧版详细巡检 · 历史只读", kind: "incomplete", message: "以下仅展示原始历史结果，不提供旧版执行入口。" };
+  else display = { label: status === "failed" ? "检查失败" : "巡检模式未记录", kind: "incomplete", message: "巡检模式未记录；请核对任务状态、原始回执与已保存证据。" };
   return { ...display, mode, phase, showLegacySections: mode === "legacy" && phase === "final" && Boolean(result?.sections && Object.keys(result.sections).length) };
 }
 
@@ -76,7 +77,7 @@ export function homeBadgeAlertPresentation(summary, checkedAt = summary?.last_ch
 
 export function inspectionReceiptPresentation(inspection) {
   const resolved = resolveInspection(inspection || {});
-  if (resolved.mode === "conflict" || resolved.phase !== "final") {
+  if (resolved.mode === "conflict" || resolved.mode === "unknown" || resolved.phase !== "final") {
     return { label: resolved.label, kind: resolved.kind, message: resolved.message };
   }
   return receiptOutcome(inspection);

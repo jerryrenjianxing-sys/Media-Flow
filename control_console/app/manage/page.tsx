@@ -6,7 +6,7 @@ const groups=[{title:"执行工作区",description:"从准备设备到查看结�
   ["/run","运行与停止","查看真实进度、暂停及安全停止","run"],
   ["/records","结果与证据","追踪结果、异常现场和纠错记录","results"],
 ]},{title:"配置与知识",description:"集中管理平台配置、指南与数据。",entries:[
-  ["/interactions","互动记录","巡检回执、聚合通知与现场证据","results"],
+  ["/interactions","消息巡检与历史记录","巡检回执、聚合通知与现场证据","results"],
   ["/content","资产配置","模型、内容计划和任务预设","assets"],
   ["/governance","数据治理","证据保留、备份与数据检查","assets"],
   ["/settings","设置","模型连接、操作指南、偏好与关于","assets"],

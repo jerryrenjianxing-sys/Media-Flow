@@ -57,7 +57,7 @@ from runtime_control import (
 )
 from topic_review_store import TopicReviewStore
 from run_planning import (
-    build_preview as build_workbench_preview,
+    build_workbench_preview,
     get_or_create_draft,
     save_draft,
     submit_previewed_draft,

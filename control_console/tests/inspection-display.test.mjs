@@ -47,6 +47,17 @@ test("quantity status distinguishes unreadable digits and absent historic metada
   assert.equal(display.homeBadgeQuantityNote?.({ state: "present" }), "此回执未记录可靠数量；可查看原图与角标裁剪核对。");
 });
 
+test('failure-only receipts without frozen mode remain unknown diagnostics', async () => {
+  const { resolveInspection, inspectionReceiptPresentation } = await displayModule();
+  const task = { status: 'failed', payload: {}, result: { status: 'failed', failure_reason: 'screenshot_failed' } };
+  const display = resolveInspection(task);
+  assert.equal(display.mode, 'unknown');
+  assert.equal(display.label, '检查失败');
+  assert.match(display.message, /模式未记录/);
+  assert.equal(display.showLegacySections, false);
+  assert.equal(inspectionReceiptPresentation(task).label, '检查失败');
+});
+
 test("receipt summaries expose conflicting versions as diagnostics in overview and details", async () => {
   const display = await displayModule();
   const receipt = display.inspectionReceiptPresentation({ workflow_version: "v3", status: "completed", result_kind: "alert", summary: { home_badge: { state: "present", badge_text: "3" } } });

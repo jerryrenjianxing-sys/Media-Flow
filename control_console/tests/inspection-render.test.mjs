@@ -67,3 +67,40 @@ test('inspection-only groups ignore leftover video and model aggregate counters'
   const html = renderToStaticMarkup(React.createElement(components.TaskGroupList, { groups: [{ id: 'inspection', device_name: '隔离设备', status: 'completed', rounds_total: 0, inspection_total: 1, created_at: '2026-09-09T09:00:00Z', videos_seen: 119, model_attempts: 30, model_valid_response_rate: .9, model_errors: 9, video_errors: 3 }], now: 0, onOpen() {} }));
   assert.doesNotMatch(html, /视频|模型有效|模型错误|页面异常/);
 });
+
+test('inspection aggregates retain terminal and current active states in pure and mixed groups', () => {
+  const cases = [
+    [{ status: 'cancelled' }, '已取消'],
+    [{ status: 'stopped' }, '已停止'],
+    [{ status: 'partial_failed', completed_inspections: 1, failed_inspections: 1 }, '1/2 次完成 · 1 次失败'],
+    [{ status: 'partial_degraded', completed_inspections: 1, degraded_inspections: 1 }, '1/2 次完成 · 1 次部分可用'],
+    [{ status: 'running', failed_inspections: 1 }, '正在检查'],
+    [{ status: 'waiting_model', failed_inspections: 1 }, '等待模型'],
+    [{ status: 'waiting_device', degraded_inspections: 1 }, '等待设备'],
+    [{ status: 'waiting_user', failed_inspections: 1 }, '等待用户'],
+    [{ status: 'pending', failed_inspections: 1 }, '等待检查'],
+  ];
+  for (const rounds of [0, 2]) for (const [state, expected] of cases) {
+    const group = { id: 'isolated', device_name: '隔离设备', rounds_total: rounds,
+      inspection_total: 2, completed_rounds: 0, failed_rounds: 0, degraded_rounds: 0,
+      created_at: '2026-09-09T09:00:00Z', ...state, inspection_status: state.status };
+    // Mixed groups' overall video status must not override inspection status.
+    if (rounds) group.status = 'running';
+    const html = renderToStaticMarkup(React.createElement(components.TaskGroupList, { groups: [group], now: 0, onOpen() {} }));
+    assert.ok(html.includes(`巡检 <b>${expected}</b>`), `${JSON.stringify(group)}\n${html}`);
+    if (!rounds) {
+      assert.doesNotMatch(html, /0 成功 · 0 失败|0 完整 · 0 降级/);
+      assert.ok(html.includes(`消息巡检 · ${expected}`), html);
+    }
+  }
+});
+
+test('unknown-mode failure card does not classify the receipt as historical legacy', () => {
+  const html = renderToStaticMarkup(React.createElement(components.InspectionCard, { inspection: {
+    id: 'unknown', status: 'failed', payload: {}, incidents: [],
+    result: { status: 'failed', failure_reason: 'screenshot_failed' },
+  } }));
+  assert.match(html, /检查失败/);
+  assert.match(html, /模式未记录/);
+  assert.doesNotMatch(html, /旧版详细巡检|历史只读|点赞与收藏/);
+});

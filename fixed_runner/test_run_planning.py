@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from control_config import DEFAULT_CONFIG, build_scheduled_plan, normalized_config
-from run_planning import build_preview, get_or_create_draft, save_draft
+from run_planning import build_workbench_preview as build_preview, get_or_create_draft, save_draft
 from task_store import RunDraftConflict, TaskStore
 
 
