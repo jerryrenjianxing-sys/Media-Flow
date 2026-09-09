@@ -64,9 +64,11 @@ class ModelTransportTests(unittest.TestCase):
 
     def test_expired_request_never_transmits(self):
         with patch('model_budget.requests.post') as post:
-            with self.assertRaisesRegex(RuntimeError, 'deadline'):
+            with self.assertRaises(providers.ProviderError) as raised:
                 with budgeted_post('https://openrouter.ai/api/v1/chat/completions', json={}, request_deadline=time.monotonic()-1):
                     self.fail('expired request')
+        self.assertEqual(raised.exception.kind, 'transient_network')
+        self.assertEqual(raised.exception.diagnostics['reason_code'], 'network_timeout')
         post.assert_not_called()
 
 
