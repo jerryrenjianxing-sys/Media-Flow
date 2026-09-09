@@ -34,7 +34,7 @@ export type TaskRound = {
   error?: string | null;
 };
 export type TaskGroup = {
-  progress?: Pick<TaskProgress, "processed_slots" | "successful_slots" | "failed_slots" | "unavailable_slots" | "unknown_actions" | "skipped_slots">;
+  progress?: Pick<TaskProgress, "schema_supported" | "processed_slots" | "successful_slots" | "failed_slots" | "unavailable_slots" | "unknown_actions" | "skipped_slots">;
   id: string;
   device_id: string;
   device_name: string;
@@ -136,7 +136,7 @@ export const groupStatusText = (group: TaskGroup) => {
   if (group.status === "failed") return `${group.failed_rounds}/${group.rounds_total} 轮失败`;
   if (group.status === "degraded") return `${group.degraded_rounds}/${group.rounds_total} 轮完成，有异常`;
   if (group.status === "completed") return `${group.completed_rounds}/${group.rounds_total} 轮成功`;
-  if (group.status === "stopped") return "用户停止";
+  if (group.status === "stopped") return "已停止";
   return "已取消";
 };
 
@@ -145,7 +145,7 @@ const inspectionGroupText = (group: TaskGroup) => !group.inspection_total ? "" :
 const inspectionSectionStatusText = (section?: InspectionSection) => section?.status === "available" ? "已读取" : section?.status === "unavailable" ? "当前不可用" : "检查失败";
 const inspectionReasonText = (reason?: string | null) => navigationReason(reason) ?? (reason === "visitor_history_disabled" || reason === "visitor_entry_not_available" || reason === "visitor_entry_not_found" ? "账号未开启访客记录，访客类互动可能不完整" : reason === "list_boundary_not_confirmed" ? "未找到已读边界，也无法确认列表到底；本次不会误报无新互动" : reason === "interaction_entry_not_found" ? "消息页中没有找到可确认的互动消息入口" : reason === "interaction_entry_ambiguous" ? "出现多个互动消息候选，已停止以避免点错" : reason === "unified_activity_page_not_recognized" || reason === "unified_activity_page_changed" ? "互动消息聚合页结构无法安全确认" : reason === "v3_calibration_missing" || reason === "v3_calibration_unstable" ? "这台标准虚拟机尚未完成互动巡检v3三次复验" : reason === "v3_standard_display_required" ? "设备不符合900×1600、320 DPI标准" : reason === "private_message_rows_ambiguous" ? "当前消息列表无法可靠区分私信和推荐卡片" : reason === "like_rows_ambiguous" ? "收到的赞页面暂时无法可靠识别" : reason === "home_restore_failed" ? "检查后未能确认返回首页" : reason === "v2_app_version_changed" || reason === "v3_app_version_changed" ? "抖音版本已变化，任务在点击任何巡检入口前安全停止" : reason === "v2_display_signature_changed" || reason === "v3_display_signature_changed" ? "设备显示环境已变化，任务在点击任何巡检入口前安全停止" : "当前页面未能安全识别");
 
-const roundStatusText = (round: TaskRound) => taskStatusLabel(round.status);
+const roundStatusText = (round: TaskRound) => taskStatusLabel(round.status, round);
 const incidentStatusText = (incident: TaskIncident) => incident.outcome === "recovered" ? "页面已恢复" : incident.outcome === "device_fatal" ? "页面需处理" : incident.outcome === "model_circuit_open" ? "模型通道已熔断" : incident.outcome === "model_failed" ? "模型调用失败" : "已安全跳过";
 const actionRouteText = (route: string) => route === "search_source_trusted" ? "搜索来源可信" : route === "topic_matched" ? "主题匹配" : route === "topic_mismatch_blocked" ? "主题不符已拦截" : route === "safety_blocked" ? "安全检查已拦截" : route === "other_safe_content" ? "其他安全内容" : route;
 
@@ -158,7 +158,7 @@ export function TaskGroupList({ groups, now, onOpen }: { groups: TaskGroup[]; no
       <small>{group.rounds_total ? "刷视频" : "互动消息"} · {new Date(group.created_at).toLocaleString("zh-CN", { hour12: false })} · 总耗时 {formatDuration(group.started_at, group.finished_at, now)}</small>
       <div className="task-group-metrics"><span>视频 <b>{group.videos_seen}</b></span>{group.non_video_feed_items > 0 && <span>图文跳过 <b>{group.non_video_feed_items}</b></span>}{group.feed_phase_reentries > 0 && <span>阶段重入 <b>{group.feed_phase_reentries}</b></span>}<span>点赞 <b>{group.likes}</b></span><span>收藏 <b>{group.favorites}</b></span><span>评论 <b>{group.comments_sent}</b></span>{group.inspection_total > 0 && <><span className={group.failed_inspections ? "danger" : group.degraded_inspections ? "warning" : ""}>巡检 <b>{inspectionGroupText(group)}</b></span><span>控制流程 <b>{Math.round((group.control_flow_success_rate ?? 0) * 100)}%</b></span><span>数据完整 <b>{Math.round((group.data_completeness_rate ?? 0) * 100)}%</b></span></>}{group.recovered_preconditions ? <span className="warning">自动复验 <b>{group.recovered_preconditions}</b></span> : null}{group.model_attempts > 0 && <span>模型有效 <b>{Math.round(group.model_valid_response_rate * 100)}%</b></span>}{group.model_errors > 0 && <span className="warning">模型错误 <b>{group.model_errors}</b></span>}{group.video_errors > 0 && <span className="danger">页面异常 <b>{group.video_errors}</b></span>}</div>
     </div>
-    {group.progress && <p>已处理 {group.progress.processed_slots} · 成功 {group.progress.successful_slots} · 失败 {group.progress.failed_slots} · 不可用 {group.progress.unavailable_slots}</p>}<div className="task-group-actions"><b className={`task-status ${group.status}`}>{groupStatusText(group)}</b><button type="button" className="task-detail-button" onClick={() => onOpen(group)}>查看详情</button></div>
+    {group.progress?.schema_supported === true && <p>已处理 {group.progress.processed_slots} · 成功 {group.progress.successful_slots} · 失败 {group.progress.failed_slots} · 不可用 {group.progress.unavailable_slots}</p>}<div className="task-group-actions"><b className={`task-status ${group.status}`}>{groupStatusText(group)}</b><button type="button" className="task-detail-button" onClick={() => onOpen(group)}>查看详情</button></div>
   </article>)}</>;
 }
 

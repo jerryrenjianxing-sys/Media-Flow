@@ -74,6 +74,34 @@ class AgentPlatform:
             return self.plan(args, context)
         raise ValueError('此平台工具尚未接入，未执行操作')
 
+    def _task_wait_guidance(self, task):
+        if self.store.is_stop_requested(task.device_id) or (self.store.get_profile('automation-stop') or {}).get('stopped'):
+            return 'user_stop_active', '用户停止标志仍有效；需要先明确解除停止，未恢复任务'
+        if self.store.has_active_control_session(task.device_id):
+            return 'manual_control_active', '该设备仍在人工接管；请完成页面处理并退出人工接管后恢复原任务'
+        with self.store.connection() as db:
+            batch = db.execute('SELECT b.state,b.deadline,COALESCE(p.stop_policy,\'deadline\') AS policy '
+                'FROM agent_batch_tasks a JOIN agent_task_batches b ON b.id=a.batch_id '
+                'LEFT JOIN agent_batch_policies p ON p.batch_id=b.id WHERE a.task_id=?', (task.id,)).fetchone()
+        if batch and batch['state'] != 'active':
+            return 'batch_' + batch['state'], '原批次已暂停或停止；请先核对原批次状态，未恢复此任务'
+        if batch and batch['policy'] != 'round_count' and batch['deadline'] <= time.time():
+            return 'batch_expired', '原批次已到截止时间；未恢复此任务，也不会重新创建任务'
+        wait = self.store.waiting_task(task.device_id) or {}
+        if wait.get('id') != task.id:
+            wait = {}
+        reason = str(wait.get('reason_code') or task.error or 'waiting_condition_unresolved')
+        if wait.get('model_key') or task.status == 'waiting_model':
+            message = ('请先在模型页面修复凭据、权限或服务商额度，再等待当前配置后端探针通过'
+                if task.status == 'waiting_user' else '等待当前模型配置的后端探针通过；请查看下一次检查时间，不要重复测试')
+        elif any(word in reason.lower() for word in ('login', 'verification', 'captcha', 'safety', 'risk', 'account')):
+            message = '请在该设备完成登录、验证码或安全提示处理，再退出人工接管并恢复原任务'
+        elif task.status == 'waiting_device':
+            message = '请恢复该设备连接并核对当前页面；恢复原任务后由执行者重新检查'
+        else:
+            message = '请按该任务等待原因完成页面或人工确认，再恢复原任务：' + bounded_diagnostic(reason)
+        return reason, message
+
     def control_task(self, action, args):
         task_id = args.get('task_id')
         if not isinstance(task_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', task_id):
@@ -81,18 +109,15 @@ class AgentPlatform:
         task = self.store.get(task_id)
         waiting = task.status in {'waiting_model', 'waiting_device', 'waiting_user'}
         changed = False
+        control_reason = None
         workers = []
-        if action == 'stop_task' and (waiting or task.status == 'running'):
-            self.store.request_stop([task.device_id])
+        if action == 'stop_task' and (waiting or task.status in {'pending', 'running'}):
+            self.store.request_stop([task.device_id], task_id=task.id)
             changed = True
             message = '已请求安全停止这台设备，后续任务保持停止'
         elif action == 'resume_task' and waiting:
             changed = self.store.resume_waiting_task(task_id)
-            message = {'waiting_model': '等待当前模型配置的后端探针通过；请查看下一次检查时间，不要重复测试',
-                'waiting_user': '请先修复凭据、权限或服务商额度，再等待当前配置后端探针通过',
-                'waiting_device': '请恢复设备连接、退出人工接管，并确认原批次处于活动状态后恢复'}.get(task.status)
-            if self.store.is_stop_requested(task.device_id) or (self.store.get_profile('automation-stop') or {}).get('stopped'):
-                message = '用户停止标志仍有效；需要先明确解除停止，未恢复任务'
+            control_reason, message = self._task_wait_guidance(task) if not changed else (None, '')
             if changed:
                 message = '原任务已恢复排队，进度保留；设备由执行者重新检查'
                 try:
@@ -109,7 +134,7 @@ class AgentPlatform:
                     (task.status if waiting else 'blocked'),
                 'reason_code': ('worker_start_unconfirmed' if changed and action == 'resume_task' and
                     (not workers or not all(row.get('running') for row in workers)) else
-                    progress.get('waiting_reason') or ('task_control_applied' if changed else 'task_not_resumable')),
+                    control_reason or progress.get('waiting_reason') or ('task_control_applied' if changed else 'task_not_resumable')),
                 'changed': changed, 'user_message': message, 'workers': workers,
                 'task': {**self._task(task, include_result=True), 'progress': progress}}
 

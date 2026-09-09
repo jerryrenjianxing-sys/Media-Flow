@@ -66,6 +66,50 @@ class TaskFeedbackTests(unittest.TestCase):
         self.assertFalse(resumed['ok'], resumed)
         self.assertEqual(self.launches, [])
 
+    def test_stop_still_wins_after_wait_resumes_to_pending(self):
+        self.assertTrue(self.call('resume_task', 'probe-won')['ok'])
+        stopped = self.call('stop_task', 'user-stop')
+        self.assertTrue(stopped['ok'], stopped)
+        self.assertEqual(self.store.get(self.ids[0]).status, 'stopped')
+        self.assertTrue(self.store.is_stop_requested('one'))
+        self.assertEqual(self.store.get(self.ids[1]).status, 'waiting_device')
+        self.assertIsNone(self.store.claim_next('one', 'late-worker'))
+
+    def test_nonmodel_wait_blocked_by_batch_explains_batch_not_credentials(self):
+        with self.store.connection() as db:
+            db.execute("UPDATE tasks SET status='waiting_user' WHERE id=?", (self.ids[0],))
+            db.execute("UPDATE task_waits SET reason_code='platform_verification',model_key='' WHERE task_id=?", (self.ids[0],))
+        self.store.control_agent_batch('batch', 'session')
+        reply = self.call('resume_task')
+        self.assertFalse(reply['ok'])
+        self.assertIn('批次', reply['user_message'])
+        self.assertEqual(reply['reason_code'], 'batch_paused')
+        self.assertNotIn('模型', reply['user_message'])
+        self.assertNotIn('凭据', reply['user_message'])
+
+    def test_nonmodel_wait_blocked_by_manual_control_explains_takeover(self):
+        with self.store.connection() as db:
+            db.execute("UPDATE tasks SET status='waiting_user' WHERE id=?", (self.ids[0],))
+            db.execute("UPDATE task_waits SET reason_code='login_required',model_key='' WHERE task_id=?", (self.ids[0],))
+        self.store.create_device_view_session(device_id='one', virtual_device_id='vm-one',
+            mode='control', stream_profile='focus', token_hash='a' * 64)
+        reply = self.call('resume_task')
+        self.assertFalse(reply['ok'])
+        self.assertIn('人工接管', reply['user_message'])
+        self.assertEqual(reply['reason_code'], 'manual_control_active')
+        self.assertNotIn('模型', reply['user_message'])
+        self.assertNotIn('凭据', reply['user_message'])
+
+    def test_legacy_group_does_not_advertise_zero_new_slots_as_actual_progress(self):
+        import json
+        from control_api import paged_task_groups_payload
+        with self.store.connection() as db:
+            db.execute('DELETE FROM task_checkpoints WHERE task_id=?', (self.ids[0],))
+            db.execute("UPDATE tasks SET status='completed',result_json=? WHERE id=?",
+                (json.dumps({'videos_seen': 20}), self.ids[0]))
+        group = paged_task_groups_payload(self.store, 10, 0, self.ids[0])['items'][0]
+        self.assertFalse(group['progress']['schema_supported'])
+
     def test_durable_progress_in_evidence_batch_and_detail(self):
         evidence = self.call('task_evidence')['result']['task']
         self.assertEqual(evidence['progress']['processed_slots'], 3)

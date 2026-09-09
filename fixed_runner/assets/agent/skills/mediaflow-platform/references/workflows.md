@@ -54,7 +54,7 @@
 
 先按 `task_evidence.result.task.status` 选择恢复对象：`waiting_model`（等待模型）、`waiting_device`（等待设备）、`waiting_user`（等待用户）用 `resume_task {task_id}` 恢复原任务/原检查点；仅处理用户指定的设备。临时模型错误连续3条进入等待，后端按30/60/120/300秒、之后每300秒共享一个探针复查，成功后由执行者复核设备身份和页面再继续。Agent 查询回执中的 `next_check_at`，不自建探针、不重复模型测试。明确鉴权、权限或服务商额度错误进入 `waiting_user`，用户在模型页面修复配置后由后端探针验证。设备等待由执行者在恢复时重新检查；单动作不可用只暂停该能力。未确认写入记录 `unknown_actions`，不会重放。
 
-每轮20个名额中的单条失败消耗1个名额，不补刷；零散错误不取消批次。按设备/本轮报告成功、失败、不可用和已处理数量，安全供给跳过单列。`degraded` 表示“完成，有异常”，可以进入后续轮次；`stopped` 才是用户停止。停止等待任务用 `stop_task {task_id}`，原设备后续领取及模型复查恢复都受停止标志约束，其他设备继续。历史 failed/stopped/cancelled 不迁移、不自动恢复；下面的 `resume_plan` 是批次调度入口，不能替代单任务等待恢复。
+每轮20个名额中的单条失败消耗1个名额，不补刷；零散错误不取消批次。按设备/本轮报告成功、失败、不可用和已处理数量，安全供给跳过单列。`progress.schema_supported=false` 表示旧任务不支持这些名额计数，应读取原 `result_summary`，不能把新增计数字段的0当成实际完成0条。`degraded` 表示“完成，有异常”，可以进入后续轮次；`stopped` 统一报告“已停止”，只有 `error=stopped_by_user` 或 `result_summary.stopped_by_user=true` 才能归因为用户停止。停止等待任务用 `stop_task {task_id}`，原设备后续领取及模型复查恢复都受停止标志约束，其他设备继续。历史 failed/stopped/cancelled 不迁移、不自动恢复；下面的 `resume_plan` 是批次调度入口，不能替代单任务等待恢复。
 
 普通队列 `paused=true` 不要求解除全局暂停：`execute_plan` 只放行本计划，其他等待任务保持暂停。不要恢复旧任务。明确“停止全部自动操作”或设备安全停止仍按真实回执阻断。
 

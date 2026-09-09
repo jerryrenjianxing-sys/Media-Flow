@@ -2465,6 +2465,7 @@ def _enrich_group_progress(store, groups):
             progress.append(task['progress'])
         group['progress'] = {key: sum(item.get(key, 0) for item in progress) for key in
             ('processed_slots', 'successful_slots', 'failed_slots', 'unavailable_slots', 'unknown_actions', 'skipped_slots')}
+        group['progress']['schema_supported'] = bool(progress) and all(item.get('schema_supported') is True for item in progress)
 
 
 def paged_task_groups_payload(

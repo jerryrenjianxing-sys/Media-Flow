@@ -317,7 +317,7 @@ test("run workspace only monitors and safely controls existing work", async () =
   const html = await response.text();
   assert.match(html, /运行/);
   assert.match(html, /暂停领取新任务/);
-  assert.match(html, /安全停止运行中设备/);
+  assert.match(html, /安全停止活动设备/);
   assert.match(html, /当前设备进度/);
   const page = await source("../app/run/page.tsx");
   assert.match(page, /\/api\/tasks\/stop/);

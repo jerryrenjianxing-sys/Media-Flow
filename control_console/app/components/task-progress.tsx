@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { fetchLocalApi } from "../lib/local-api";
-import { controlTask, isWaitingTask, taskStatusLabel, type TaskProgress } from "../lib/task-progress.mjs";
+import { controlTask, isWaitingTask, supportedTaskProgress, taskControlActions, taskStatusLabel, type TaskProgress } from "../lib/task-progress.mjs";
 
 export function TaskProgressPanel({ taskId, status, progress, onChanged }: { taskId: string; status: string; progress?: TaskProgress; onChanged?: () => void }) {
   const [message, setMessage] = useState("");
@@ -10,7 +10,7 @@ export function TaskProgressPanel({ taskId, status, progress, onChanged }: { tas
   const [updated, setUpdated] = useState<{ base: TaskProgress | undefined; task: { status: string; progress: TaskProgress } } | null>(null);
   const request = useRef<{ action: string; id: string } | null>(null);
   const current = updated && updated.base === progress ? updated.task : { status, progress };
-  const p = current.progress;
+  const p = supportedTaskProgress(current.progress);
   if (!p) return null;
   const act = async (action: string) => {
     if (!request.current || request.current.action !== action) request.current = { action, id: crypto.randomUUID() };
@@ -30,7 +30,8 @@ export function TaskProgressPanel({ taskId, status, progress, onChanged }: { tas
     {p.last_progress_at != null && <p>最近进展：{new Date(p.last_progress_at * 1000).toLocaleString()}</p>}
     {!!p.affected_capabilities?.length && <p>暂停能力：{p.affected_capabilities.join("、")}</p>}
     {!!p.evidence_dirs?.length && <details><summary>已保存证据：{p.evidence_dirs.length} 处</summary>{p.evidence_dirs.map((path) => <p key={path}>{path}</p>)}</details>}
-    {isWaitingTask(current.status) && <><p>{taskStatusLabel(current.status)}：{p.waiting_reason || "请查看任务证据"}</p><p>{p.next_check_at ? `下一次后端检查：${new Date(p.next_check_at * 1000).toLocaleString()}` : "等待条件修复后恢复原任务"}</p>{p.available_actions?.map((action) => <button key={action} type="button" className="secondary" disabled={busy} onClick={() => void act(action)}>{action === "resume_task" ? "恢复此任务" : "停止此任务"}</button>)}</>}
+    {isWaitingTask(current.status) && <><p>{taskStatusLabel(current.status)}：{p.waiting_reason || "请查看任务证据"}</p><p>{p.next_check_at ? `下一次后端检查：${new Date(p.next_check_at * 1000).toLocaleString()}` : "等待条件修复后恢复原任务"}</p></>}
+    {taskControlActions(current.status, p).map((action) => <button key={action} type="button" className="secondary" disabled={busy} onClick={() => void act(action)}>{action === "resume_task" ? "恢复此任务" : "停止此任务"}</button>)}
     {message && <p role="status">{message}</p>}
   </section>;
 }
