@@ -9,6 +9,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from PIL import Image
+from badge_glyphs import RULE_VERSION, read_glyphs
 from task_store import now_iso
 
 
@@ -45,7 +46,8 @@ def analyze_badge(image: Image.Image, source: str) -> dict:
     """Require an unambiguous visible message tab; inspect only its badge region."""
     answer = dict(state="unknown", reason_code="message_tab_not_confirmed",
                   message="检查失败：未能确认消息角标", source="local", target_bounds=None,
-                  evidence_missing=[], badge_text=None, message_count=None, count_is_lower_bound=False)
+                  evidence_missing=[], badge_text=None, message_count=None, count_is_lower_bound=False,
+                  quantity_status="unreadable", quantity_source=None, badge_bounds=None, rule_version=RULE_VERSION)
     width, height = image.size
     try:
         root = ET.fromstring(source)
@@ -85,7 +87,7 @@ def analyze_badge(image: Image.Image, source: str) -> dict:
            if (lambda c: c[0] > 150 and c[0]-c[1] > 65 and c[0]-c[2] > 30)(pixels[x,y])}
     total_red = len(red)
     scale = width / 900
-    found = False
+    badges = []
     while red:
         stack = [red.pop()]
         component = []
@@ -102,24 +104,41 @@ def analyze_badge(image: Image.Image, source: str) -> dict:
                 and .25 <= cw/ch <= 5 and len(component) >= 10*scale*scale
                 and len(component)/(cw*ch) >= .35
                 and min(xs)>0 and min(ys)>0 and max(xs)<crop.width-1 and max(ys)<crop.height-1):
-            found = True
+            badges.append([region[0]+min(xs),region[1]+min(ys),region[0]+max(xs)+1,region[1]+max(ys)+1])
             inner = [(x,y) for y in range(min(ys)+int(ch*.2), max(ys)-int(ch*.2)+1)
                      for x in range(min(xs)+int(cw*.2),max(xs)-int(cw*.2)+1)]
             answer["numeric_appearance"] = bool(answer.get("numeric_appearance")) or cw/ch>1.4 or sum(1 for x,y in inner if min(pixels[x,y])>210) >= 3*scale*scale
-    if found:
+    # Red islands in closed glyph counters (0/6/8/9) belong to the enclosing
+    # badge; they are not additional notification candidates.
+    badges=[box for box in badges if not any(other!=box and other[0]<=box[0] and other[1]<=box[1]
+        and other[2]>=box[2] and other[3]>=box[3] for other in badges)]
+    if len(badges)>1:
+        answer.update(reason_code="badge_evidence_conflict",quantity_status="conflict")
+    elif badges:
+        answer["badge_bounds"]=badges[0]
         answer.update(state="present", reason_code="visible_message_badge", message="有消息")
         counts = set(re.findall(r"(?<!\d)([1-9]\d{0,5}\+?)(?!\d)", " ".join(semantics)))
-        if len(counts) == 1 and answer.get("numeric_appearance"):
-            apply_badge_text(answer, counts.pop())
+        local_text=read_glyphs(image.crop(badges[0]))
+        if answer.get("numeric_appearance"):
+            if len(counts)>1 or (counts and local_text and local_text not in counts):
+                answer.update(reason_code="badge_evidence_conflict",quantity_status="conflict",message="有消息，角标数量证据冲突")
+            elif local_text or len(counts)==1:
+                apply_badge_text(answer,local_text or next(iter(counts)))
+                answer.update(quantity_status="recognized",quantity_source="local_glyph" if local_text else "ui_tree")
+            else:
+                answer.update(reason_code="badge_quantity_unreadable",quantity_status="unreadable",message="有消息，数字未能确认")
+        else:
+            answer["quantity_status"]="dot"
     elif total_red > 10*scale*scale:
         answer["reason_code"] = "badge_region_ambiguous"
     elif any(re.search(r"未读|[1-9]\d*", text) for text in semantics):
         answer["reason_code"] = "badge_evidence_conflict"
+        answer["quantity_status"] = "conflict"
     else:
         # A uniform/blank button area is not proof of absence.
         low, high = image.crop((x1,y1,x2,y2)).convert("L").getextrema()
         if high-low >= 35:
-            answer.update(state="absent", reason_code="visible_tab_without_badge", message="无消息")
+            answer.update(state="absent", reason_code="visible_tab_without_badge", message="无消息",quantity_status="none")
         else:
             answer["reason_code"] = "message_tab_not_visible"
     return answer
@@ -144,7 +163,8 @@ def inspect_home_badge(inspector, policy) -> dict:
     missing, evidence = [], []
     result = dict(state="unknown", reason_code="home_not_confirmed", message="检查失败：未能确认首页",
                   source="local", target_bounds=None, evidence_missing=missing,
-                  badge_text=None, message_count=None, count_is_lower_bound=False)
+                  badge_text=None, message_count=None, count_is_lower_bound=False,
+                  quantity_status="unreadable", quantity_source=None, badge_bounds=None, rule_version=RULE_VERSION)
     root = Path(inspector._recorder.run_dir)
     root.mkdir(parents=True, exist_ok=True)
     image_path = root / "inspection-home_badge-home.png"
@@ -206,6 +226,7 @@ def inspect_home_badge(inspector, policy) -> dict:
         result.update(state="unknown", reason_code="screenshot_unavailable", message="检查失败：截图不可用")
         image = None
     if (image is not None and not fatal and visual_navigation_enabled(policy)
+            and result.get("quantity_status") != "conflict"
             and (result["state"] == "unknown" or (result["state"] == "present" and result.get("numeric_appearance") and not result.get("badge_text")))):
         try:
             observer = inspector._vision_locator or VisionCandidateLocator()
@@ -213,7 +234,7 @@ def inspect_home_badge(inspector, policy) -> dict:
             inspector._remaining()  # Late responses cannot become successful observations.
             if observed["page_type"] == "home" and observed["state"] in {"present", "absent"}:
                 region = observed["region"]
-                if result["state"] == "present" and observed["state"] != "present":
+                if (result["state"] == "present" or result.get("badge_bounds")) and observed["state"] != "present":
                     raise RuntimeError("badge_evidence_conflict")
                 result.update(state=observed["state"], source="vision", reason_code="visual_home_badge",
                               message="有消息" if observed["state"] == "present" else "无消息",
@@ -221,6 +242,14 @@ def inspect_home_badge(inspector, policy) -> dict:
                 home = True
                 if observed["state"] == "present":
                     apply_badge_text(result, observed.get("badge_text"))
+                    if result.get("badge_text"):
+                        result.update(quantity_status="recognized",quantity_source="vision")
+                    elif result.get("numeric_appearance"):
+                        result.update(reason_code="badge_quantity_unreadable",quantity_status="unreadable",message="有消息，数字未能确认")
+                    else:
+                        result.update(quantity_status="dot",quantity_source="vision")
+                else:
+                    result.update(quantity_status="none",quantity_source="vision")
         except Exception as exc:
             if result["state"] == "unknown":
                 result["reason_code"] = inspector._public_reason(exc)
@@ -231,6 +260,16 @@ def inspect_home_badge(inspector, policy) -> dict:
     entry["target_bounds"] = result["target_bounds"]
     entry["evidence_missing"] = result["evidence_missing"]
     evidence.append(entry)
+    if image is not None and result.get("badge_bounds"):
+        try:
+            crop_path=root/"inspection-home_badge-crop.png"
+            image.crop(result["badge_bounds"]).save(crop_path)
+            evidence.append(dict(id=entry["id"]+"-badge",name="badge_crop",label="消息角标原始裁剪",
+                section="home_badge",captured_at=entry["captured_at"],image_name=crop_path.name,
+                image_sha256=hashlib.sha256(crop_path.read_bytes()).hexdigest(),
+                target_bounds=result["badge_bounds"],rule_version=RULE_VERSION))
+        except Exception:
+            result["evidence_missing"].append("badge_crop")
     status = "failed" if fatal else "degraded" if result["state"] == "unknown" else "completed"
     summary = dict(conclusion=result["message"], home_badge=result, inspection_id=inspector._inspection_id(),
                    evidence_count=len(evidence), last_checked_at=now_iso())

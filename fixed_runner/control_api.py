@@ -1954,6 +1954,9 @@ def _public_home_badge(raw: dict[str, Any]) -> dict[str, Any]:
     text = str(raw.get("badge_text") or "")
     text = text if state == "present" and re.fullmatch(r"[1-9]\d{0,5}\+?", text) else None
     bounds = raw.get("target_bounds")
+    badge_bounds = raw.get("badge_bounds")
+    quantity_status = raw.get("quantity_status")
+    rule_version = raw.get("rule_version")
     return {
         "state": state, "badge_text": text,
         "message_count": int(text) if text and not text.endswith("+") else None,
@@ -1961,8 +1964,12 @@ def _public_home_badge(raw: dict[str, Any]) -> dict[str, Any]:
         "message": _bounded_public_text(raw.get("message")),
         "reason_code": _bounded_public_text(raw.get("reason_code"), 100),
         "source": "vision" if raw.get("source") == "vision" else "local",
+        "quantity_status": quantity_status if isinstance(quantity_status, str) and quantity_status in {"none", "dot", "recognized", "unreadable", "conflict"} else ("recognized" if text else "none" if state == "absent" else "unreadable"),
+        "quantity_source": raw.get("quantity_source") if isinstance(raw.get("quantity_source"), str) and raw.get("quantity_source") in {"ui_tree", "local_glyph", "vision"} else None,
+        "badge_bounds": badge_bounds if isinstance(badge_bounds, list) and len(badge_bounds)==4 and all(type(n) is int and 0<=n<=10000 for n in badge_bounds) and badge_bounds[0]<badge_bounds[2] and badge_bounds[1]<badge_bounds[3] else None,
+        "rule_version": rule_version if isinstance(rule_version, str) and re.fullmatch(r"[a-zA-Z0-9_.-]{1,80}", rule_version) else None,
         "target_bounds": bounds if isinstance(bounds, list) and len(bounds)==4 and all(type(n) is int and 0<=n<=10000 for n in bounds) else None,
-        "evidence_missing": [v for v in raw.get("evidence_missing", []) if v in {"screenshot", "ui_tree"}],
+        "evidence_missing": [v for v in raw.get("evidence_missing", []) if v in {"screenshot", "ui_tree", "badge_crop"}],
     }
 
 
