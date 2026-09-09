@@ -84,26 +84,7 @@ BLOCK_MARKERS: dict[str, tuple[str, ...]] = {
         "￥",
     ),
     "commercial_content": (
-        "厂家",
-        "源头工厂",
-        "工厂直销",
-        "批发",
-        "定制",
-        "招商",
-        "加盟",
-        "代理",
-        "供应商",
-        "采购",
         "获取报价",
-        "门窗",
-        "装修",
-        "房产",
-        "楼盘",
-        "置业",
-        "买房",
-        "卖房",
-        "二手车",
-        "汽车销售",
         "课程咨询",
         "培训报名",
     ),
@@ -708,6 +689,16 @@ def _search_context_evidence_visible(
     ) or _search_continuation_marker_visible(xml_source, width, height)
 
 
+def _search_video_source_confirmed(source: str, width: int, height: int) -> bool:
+    if DOUYIN_PACKAGE not in source or _search_results_grid_visible(source, width, height):
+        return False
+    if not _search_context_evidence_visible(source, width, height):
+        return False
+    signals = _visible_aweme_signals(source, width, height)
+    return not _missing_feed_controls(signals) or any(
+        marker in signals for marker in ('暂停视频，按钮', '播放视频，按钮'))
+
+
 def classify_douyin_page_source(
     xml_source: str,
     foreground: str,
@@ -837,6 +828,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         self.visual_navigation_enabled = visual_navigation_enabled()
         self.vision_locator = VisionCandidateLocator()
         self._visual_sequence = 0
+        self._last_search_observation = None
         self.device_profile: DeviceProfile | None = get_device_profile(serial)
         # window_size can report the preceding landscape orientation while the
         # first captured frame has already returned to the verified portrait.
@@ -1146,6 +1138,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         allow_visual_fallback: bool = False,
     ) -> bool:
         """Confirm read-only search browsing without granting mutation access."""
+        self._last_search_observation = None
         try:
             if foreground_package(self.device) != DOUYIN_PACKAGE:
                 self._record_search_rejection('foreground_not_douyin')
@@ -1160,16 +1153,25 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             )
             has_douyin_nodes = DOUYIN_PACKAGE in source
             context_visible = _search_context_evidence_visible(source, self.profile.width, self.profile.height)
+            if _search_video_source_confirmed(source, self.profile.width, self.profile.height):
+                return True
+            # UIAutomator can transiently expose only SystemUI while the actual
+            # search video is already visible. Reclassify the fresh evidence we
+            # capture before unwinding a valid page; never reuse old coordinates.
+            observed = self._record_search_rejection(
+                'missing_search_context' if has_douyin_nodes and not context_visible else 'search_feed_not_confirmed',
+                input_source=source)
+            if isinstance(observed, tuple) and len(observed) == 3:
+                fresh_image, fresh_source, fresh_package = observed
+                if (fresh_package == DOUYIN_PACKAGE
+                        and fresh_image.size == (self.profile.width, self.profile.height)
+                        and _search_video_source_confirmed(fresh_source, *fresh_image.size)):
+                    self._last_search_observation = (fresh_image, fresh_source)
+                    self.recorder.emit('search_observation_recovered', source='fresh_fixed_rules', action='none')
+                    return True
             if has_douyin_nodes and not context_visible:
-                self._record_search_rejection('missing_search_context')
                 return bool(allow_visual_fallback and self.visual_navigation_enabled
                             and self._visual_feed_kind() == 'search_video')
-            if has_douyin_nodes and not _missing_feed_controls(signals):
-                return True
-            if has_douyin_nodes and any(
-                marker in source for marker in ("暂停视频，按钮", "播放视频，按钮")
-            ):
-                return True
             # Some devices render the app correctly but expose only SystemUI
             # nodes through uiautomator.  Accept the existing conservative
             # visual feed shell only after a verified search-result transition.
@@ -1181,13 +1183,11 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                 and allow_visual_fallback
                 and main_feed_visible(image)
             )
-            if not confirmed:
-                self._record_search_rejection('search_feed_not_confirmed')
             return confirmed
         except Exception:
             return False
 
-    def _record_search_rejection(self, reason):
+    def _record_search_rejection(self, reason, *, input_source=None):
         """Fresh pair, never label the caller's potentially old XML as paired."""
         try:
             def read():
@@ -1199,12 +1199,16 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             elapsed = round((time.monotonic()-started)*1000)
             name = f'search-rejection-{time.time_ns()}'
             self.recorder.save_observation(frame, source, name, acquired_ms=elapsed)
+            if isinstance(input_source, str) and isinstance(getattr(self.recorder, 'run_dir', None), Path):
+                (self.recorder.run_dir / (name+'-input-unpaired.xml')).write_text(input_source, encoding='utf-8')
             self.recorder.emit('search_rejection_observation', reason=reason, evidence=name,
                 package=package, size=list(frame.size),
                 signals=list(_visible_aweme_signals(source, frame.width, frame.height)),
                 search_context=_search_context_evidence_visible(source, frame.width, frame.height))
+            return frame, source, package
         except Exception as exc:
             self.recorder.emit('search_rejection_evidence_failed', reason=reason, error_type=type(exc).__name__)
+            return None
 
     def require_main_feed(self, image: Image.Image, stage: str) -> None:
         if not self.main_feed_confirmed(image):
@@ -1879,6 +1883,8 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                     before,
                     allow_visual_fallback=self._search_visual_fallback_active,
                 )
+                if search_feed and self._last_search_observation is not None:
+                    before, source = self._last_search_observation
             except Exception:
                 search_feed = False
             if not search_feed:
@@ -1903,6 +1909,8 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                             before,
                             allow_visual_fallback=self._search_visual_fallback_active,
                         )
+                        if search_feed and self._last_search_observation is not None:
+                            before, source = self._last_search_observation
                     except Exception:
                         search_feed = False
             if not search_feed:

@@ -67,6 +67,25 @@ class LongExecutionTest(unittest.TestCase):
         self.assertEqual(result['processed_slots'], 20)
         self.assertEqual(result['model_valid_response_rate'], .9)
 
+    def test_model_uses_gate_returned_frame_not_before_recovery_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = Uia2RunRecorder(Path(directory), 'phone')
+            stale = recorder.run_dir / 'video-1-topic-analysis-before.png'
+            Image.new('RGB',(900,1600),'red').save(stale)
+            def analyze(path, topic):
+                with Image.open(path) as frame:
+                    self.assertEqual(frame.getpixel((0,0)), (0,0,255))
+                self.assertNotEqual(path, stale)
+                return Topic()
+            with redirect_stdout(io.StringIO()), patch('execution_tasks.Uia2DouyinRunner', Feed), \
+                 patch.object(Feed,'capture_gate',return_value=(Image.new('RGB',(900,1600),'blue'),GateDecision(True,(),()))), \
+                 patch('execution_tasks.analyze_topic',side_effect=analyze) as model:
+                result = topic_session(Device(),recorder,config=self.config(1))
+            self.assertEqual(model.call_count,1)
+            self.assertEqual(result['successful_slots'],1)
+            with Image.open(stale) as frame:
+                self.assertEqual(frame.getpixel((0,0)),(255,0,0))
+
     def test_scattered_failures_over_hundreds_do_not_open_circuit(self):
         outputs = [CloudModelError('transient_network', 'timeout', retryable=True) if n % 30 == 0 else Topic() for n in range(200)]
         result, _ = self.run_session(outputs, self.config(200))

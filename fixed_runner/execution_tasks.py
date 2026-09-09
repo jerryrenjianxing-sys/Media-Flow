@@ -1078,7 +1078,11 @@ def topic_session(
                 consecutive_anomalies = 0
                 continue
 
-            frame_path = recorder.run_dir / f"video-{video}-topic-analysis-before.png"
+            # capture_gate may recover onto another video. Its returned frame
+            # is authoritative; the original '-before' file is historical only.
+            frame_path = recorder.run_dir / f"video-{video}-topic-analysis-current.png"
+            frame.save(frame_path)
+            entry['topic_image_path'] = str(frame_path)
             target_topic = (
                 str(config["topic_prompt"])
                 if topic_filter_enabled

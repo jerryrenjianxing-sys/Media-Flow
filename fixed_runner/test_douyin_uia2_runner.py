@@ -173,10 +173,11 @@ class MutationGateTest(unittest.TestCase):
         self.assertFalse(decision.allowed)
         self.assertIn("effect", decision.reasons)
 
-    def test_factory_product_caption_blocks_mutation(self) -> None:
-        decision = self.classify("@000后门窗小刘 #系统门窗 #记录我的工作")
-        self.assertFalse(decision.allowed)
-        self.assertIn("commercial_content", decision.reasons)
+    def test_factory_industry_words_are_not_advertising_evidence(self) -> None:
+        for text in ('@腰果源头工厂', '坚果生产厂家', '工厂直销 批发 定制',
+                     '@门窗小刘 #系统门窗 #记录我的工作'):
+            self.assertTrue(self.classify(text).allowed, text)
+        self.assertFalse(self.classify('@腰果源头工厂', '立即咨询').allowed)
     def test_missing_feed_controls_blocks_mutation(self) -> None:
         decision = self.classify("普通文本", include_controls=False)
         self.assertFalse(decision.allowed)
@@ -795,6 +796,33 @@ class HomeTabRecoveryRegressionTest(unittest.TestCase):
 
 
 class TopicSearchRegressionTest(unittest.TestCase):
+    def test_transient_tree_uses_fresh_fixed_pair_without_navigation(self):
+        fresh = page_xml('暂停视频，按钮').replace('</hierarchy>', search_shell_nodes()+'</hierarchy>')
+        image = Image.new('RGB', (1080,2400), 'blue')
+        device = Mock()
+        device.window_size.return_value = image.size
+        device.dump_hierarchy.return_value = fresh
+        device.screenshot.return_value = image
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+        runner._visual_feed_kind = Mock(side_effect=AssertionError('fixed rules suffice'))
+        with patch('douyin_uia2_runner.foreground_package', return_value=PACKAGE):
+            self.assertTrue(runner.search_feed_confirmed('<hierarchy/>', image))
+        self.assertEqual(runner._last_search_observation[1], fresh)
+        device.click.assert_not_called()
+        device.press.assert_not_called()
+
+    def test_fresh_home_is_not_search_and_wrong_dimensions_are_rejected(self):
+        fresh = page_xml('暂停视频，按钮').replace('</hierarchy>', search_shell_nodes()+'</hierarchy>')
+        device = Mock()
+        device.window_size.return_value = (1080,2400)
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=3)
+        with patch('douyin_uia2_runner.foreground_package', return_value=PACKAGE):
+            for source, size in ((page_xml('推荐'), (1080,2400)),(fresh,(2400,1080))):
+                device.dump_hierarchy.return_value = source
+                device.screenshot.return_value = Image.new('RGB',size)
+                self.assertFalse(runner.search_feed_confirmed('<hierarchy/>', Image.new('RGB',(1080,2400))))
+                self.assertIsNone(runner._last_search_observation)
+
     def test_partial_nodes_allow_authorized_read_only_visual_classification(self):
         image = Image.new('RGB', (1080, 2400), 'black')
         source = '<hierarchy>' + node(text='加载中') + '</hierarchy>'
