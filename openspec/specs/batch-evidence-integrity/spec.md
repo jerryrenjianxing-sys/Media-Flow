@@ -1,7 +1,9 @@
+# batch-evidence-integrity Specification
+
 ## Purpose
 确保长批次停止与评论异常的回执可追溯，按实际视频保存独立证据并保留请求诊断，不通过重放设备动作或改写历史弥补证据缺口。
 
-## ADDED Requirements
+## Requirements
 ### Requirement: 评论证据按实际视频归属
 执行器 SHALL 为每条视频保留独立的评论决定与可用响应证据，后续视频 MUST NOT 覆盖前一条证据。模型失败 SHALL 保存当前视频输入和脱敏的结构化错误诊断；未取得的原始响应 MUST NOT 用旧文件代替。
 #### Scenario: 后一条评论响应无效

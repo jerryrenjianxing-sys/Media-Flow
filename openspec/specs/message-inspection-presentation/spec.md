@@ -1,7 +1,9 @@
+# message-inspection-presentation Specification
+
 ## Purpose
 统一电脑端消息巡检的模式、执行状态、数量和证据展示，避免未执行记录回退成旧巡检或将读取失败解释为无消息，同时保留历史兼容能力。
 
-## ADDED Requirements
+## Requirements
 ### Requirement: 新版巡检状态真实展示
 控制台 SHALL 将home_badge称为消息巡检，结合冻结任务参数与实际结果判断模式。未执行任务 MUST 只显示排期和未检查，不回退旧分区或伪造失败。模式冲突 MUST 显示诊断。旧详细模式执行入口 SHALL 隐藏，历史只读保留。
 #### Scenario: 新版等待任务无结果
