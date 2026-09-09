@@ -63,6 +63,8 @@ Windows 优先运行 `scripts/mediaflow.ps1`；它会使用显式配置或已安
 
 ## 报告结果
 
+长批次的等待、按名额计数和单设备恢复使用[持久进度与单任务控制](references/api.md#持久进度与单任务控制)。先读取原任务 `progress`：`waiting_model/waiting_device/waiting_user` 是可查询、可停止的等待，`degraded` 是“完成，有异常”，与用户停止不同。恢复用 `resume_task {task_id}` 保留原编号及进度，不能用新计划补刷或迁移历史终态。模型等待的复查由后端统一执行，Agent 不另建探针。
+
 计划完成后读取每个实际任务的 `task_evidence`。`result.task.requested` 是请求的条数/轮次；真实完成数量、主题命中、跳过、异常、互动和模型情况只来自可空的 `result.task.result_summary`。`result_summary:null` 表示未保存结果，不能写成 0。异常现场只引用返回的 `incidents`、`evidence_status` 和证据入口；没有截图或分类明细就明确说未保存，不能猜。
 
 给出：实际状态与完成数量 → 主题命中/跳过/异常 → 已有证据 → 下一步建议。建议调整主题、预设、模型或流程不等于已经修改；只有完成对应写操作并取得确定回执，才能说已修改。

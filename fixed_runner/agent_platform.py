@@ -54,7 +54,7 @@ class AgentPlatform:
             if type(limit) is not int or not 1 <= limit <= 50 or type(offset) is not int or not 0 <= offset <= 100000:
                 raise ValueError('分页参数无效')
             tasks = self.store.list(limit, offset)
-            return {'tasks': [self._task(row) for row in tasks], 'offset': offset, 'limit': limit,
+            return {'tasks': [{**self._task(row), 'progress': self.store.task_progress(row.id)} for row in tasks], 'offset': offset, 'limit': limit,
                     'counts': self.store.task_status_counts()}
         if name == 'task_evidence':
             task_id = args.get('task_id')
@@ -62,7 +62,7 @@ class AgentPlatform:
                 raise ValueError('请指定有效任务编号')
             task = self.store.get(task_id)
             incidents = self.store.list_incidents_for_tasks([task_id])
-            return {'task': self._task(task, include_result=True), 'incidents': [{
+            return {'task': {**self._task(task, include_result=True), 'progress': self.store.task_progress(task.id)}, 'incidents': [{
                 'id': row.id, 'stage': row.stage, 'reason_code': row.error_type,
                 'message': bounded_diagnostic(row.error_message), 'outcome': row.outcome,
                 'recovery_action': bounded_diagnostic(row.recovery_action), 'has_screenshot': bool(row.screenshot_path),
@@ -73,6 +73,45 @@ class AgentPlatform:
         if name == 'plan_tasks':
             return self.plan(args, context)
         raise ValueError('此平台工具尚未接入，未执行操作')
+
+    def control_task(self, action, args):
+        task_id = args.get('task_id')
+        if not isinstance(task_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', task_id):
+            raise ValueError('请指定有效任务编号')
+        task = self.store.get(task_id)
+        waiting = task.status in {'waiting_model', 'waiting_device', 'waiting_user'}
+        changed = False
+        workers = []
+        if action == 'stop_task' and (waiting or task.status == 'running'):
+            self.store.request_stop([task.device_id])
+            changed = True
+            message = '已请求安全停止这台设备，后续任务保持停止'
+        elif action == 'resume_task' and waiting:
+            changed = self.store.resume_waiting_task(task_id)
+            message = {'waiting_model': '等待当前模型配置的后端探针通过；请查看下一次检查时间，不要重复测试',
+                'waiting_user': '请先修复凭据、权限或服务商额度，再等待当前配置后端探针通过',
+                'waiting_device': '请恢复设备连接、退出人工接管，并确认原批次处于活动状态后恢复'}.get(task.status)
+            if self.store.is_stop_requested(task.device_id) or (self.store.get_profile('automation-stop') or {}).get('stopped'):
+                message = '用户停止标志仍有效；需要先明确解除停止，未恢复任务'
+            if changed:
+                message = '原任务已恢复排队，进度保留；设备由执行者重新检查'
+                try:
+                    workers = self.worker_launcher([task.device_id]) if self.worker_launcher else []
+                except Exception:
+                    workers = []
+                if not workers or not all(row.get('running') for row in workers):
+                    message = '原任务已恢复排队，但执行者启动尚未确认；请查询原任务'
+        else:
+            message = '该任务不是可恢复的等待任务；历史终态不会重建或重放'
+        task = self.store.get(task_id)
+        progress = self.store.task_progress(task_id)
+        return {'status': ('stop_requested' if action == 'stop_task' else 'queued') if changed else
+                    (task.status if waiting else 'blocked'),
+                'reason_code': ('worker_start_unconfirmed' if changed and action == 'resume_task' and
+                    (not workers or not all(row.get('running') for row in workers)) else
+                    progress.get('waiting_reason') or ('task_control_applied' if changed else 'task_not_resumable')),
+                'changed': changed, 'user_message': message, 'workers': workers,
+                'task': {**self._task(task, include_result=True), 'progress': progress}}
 
     @staticmethod
     def _task(task, *, include_result=False):

@@ -70,6 +70,7 @@ GET 同时返回 `client_runtime`：api_url、management_url、mode（developmen
 | plan_status | 可选plan_id，省略列本关联最近计划 | 否 |
 | repreview_plan / pause_batch / stop_batch | plan_id | 是 |
 | task_evidence | task_id | 否 |
+| resume_task / stop_task | task_id；原任务编号 | 是 |
 | incident_evidence | incident_id | 否 |
 | request_status | request_id（要查询的原请求） | 否 |
 | plan_virtual_operation | virtual_device_id,action；可选settings,backup | 是，计划不启动设备 |
@@ -112,6 +113,16 @@ Bash命令工具（Windows同样适用）在Skill目录调用：
 同一request_id同参数返回原接入响应（不刷新成后来业务状态）；同编号不同参数返回request_id_conflict。用查询动作获取实时状态。接入中断会永久保留未知回执，不能删除回执或换ID来试成功。
 
 ## 任务证据中的真实结果
+
+### 持久进度与单任务控制
+
+`list_tasks.result.tasks[]`、`task_evidence.result.task`、`plan_status.result.result.tasks[]` 的 `progress` 保留原任务/本轮检查点计数：`processed_slots,successful_slots,failed_slots,unavailable_slots,unknown_actions,skipped_slots`，以及 `waiting_reason,next_check_at,last_progress_at,next_slot,affected_device,affected_capabilities,available_actions,evidence_dirs`。批次回执中的每个任务均带 `progress`；按设备/批次汇总时明确范围，不把单轮数量当整个计划数量。`next_check_at` 是 Unix 秒；`null` 表示没有定时复查。证据目录只引用回执已有值。
+
+已处理名额 = 成功 + 失败 + 不可用；20 条中失败 2 条就是成功 18、失败 2，不补刷到成功20条。`skipped_slots` 是安全识别的供给跳过，不消耗名额，不能加进已处理计数。`unknown_actions` 是未确认写入，不是成功次数，不重放；`affected_capabilities` 指仅本任务暂停的动作能力。
+
+`resume_task {task_id}` 与 `stop_task {task_id}` 都要求稳定唯一的 `request_id`，支持原回执去重。页面同义接口为 `POST /api/tasks/{task_id}/resume`、`POST /api/tasks/{task_id}/stop`，请求体含 `request_id`。返回 `result.changed` 和 `result.task`（原编号、实际状态和最新 `progress`）。恢复成功为 `status=queued`，仅为原设备启动执行者；不是业务已开始或已完成。`worker_start_unconfirmed` 表示原任务排队成功但执行者未确认。未满足条件时 `ok=false`，保留 `waiting_model/waiting_device/waiting_user` 和具体原因，Agent 不宣称恢复成功。修复后新恢复操作使用新请求编号；网络未知则继续查询原编号。
+
+等待时 `available_actions` 为 `resume_task,stop_task`。模型恢复需要当前配置的成功后端探针，Agent 不重复调用 `model_test`。`stop_task` 置该设备停止标志，阻断后端探针/同设备后续任务越过用户停止；不取消其他设备或整个批次。`failed/stopped/cancelled` 历史终态不可 `resume_task`，也不自动改写为等待。
 
 `task_evidence.result.task` 保留任务公开字段，并含：
 

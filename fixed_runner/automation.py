@@ -19,7 +19,7 @@ READ_ACTIONS = frozenset(('platform_status', 'list_devices', 'list_tasks', 'plan
     'task_evidence', 'incident_evidence', 'request_status', 'virtual_operation_status',
     'memory_list', 'memory_history', 'repair_list', 'repair_status', 'repair_files',
     'repair_read', 'repair_diff', 'repair_test_status', 'repair_update_status')) | BUSINESS_READ_ACTIONS
-WRITE_ACTIONS = frozenset(('plan_tasks', 'execute_plan', 'resume_plan', 'repreview_plan',
+WRITE_ACTIONS = frozenset(('plan_tasks', 'execute_plan', 'resume_plan', 'repreview_plan', 'resume_task', 'stop_task',
     'pause_batch', 'stop_batch', 'plan_virtual_operation', 'execute_virtual_operation',
     'memory_save', 'memory_restore', 'repair_create', 'repair_test', 'repair_validate',
     'repair_export', 'repair_close', 'repair_cancel', 'repair_prepare_apply', 'repair_apply',
@@ -135,8 +135,10 @@ class AutomationService:
                 status = result.get('state', 'submitted')
             unknown = (operation.get('stage') or result.get('stage')) == 'result_unknown'
             status = 'unknown' if unknown else status
-            blocked = status in {'blocked', 'failed', 'unknown', 'waiting_user', 'expired', 'cancelled',
+            blocked = status in {'blocked', 'failed', 'unknown', 'waiting_user', 'waiting_model', 'waiting_device', 'expired', 'cancelled',
                                  'timeout', 'interrupted'}
+            if action in {'resume_task', 'stop_task'} and not result.get('changed'):
+                blocked = True
             message = (operation.get('message') or operation.get('error') or result.get('user_message')
                 or result.get('message') or result.get('error') or '已读取实际业务回执')
             if status == 'blocked' and (result.get('preview') or {}).get('blockers'):
@@ -195,6 +197,8 @@ class AutomationService:
         if host.platform is None:
             raise ValueError('平台任务存储尚未接入')
         platform = host.platform
+        if action in {'resume_task', 'stop_task'}:
+            return platform.control_task(action, args)
         if action == 'incident_evidence':
             from agent_evidence import read_incident
             if not host.evidence_root:

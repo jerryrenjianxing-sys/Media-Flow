@@ -5,11 +5,14 @@ import { useEffect, useState } from "react";
 import { fetchLocalApi } from "../lib/local-api";
 import { navigationReason } from "../lib/navigation-feedback";
 import { homeBadgePresentation, inspectionTaskLabel, type HomeBadge } from "../lib/inspection-display.mjs";
+import { isWaitingTask, taskStatusLabel, type TaskProgress } from "../lib/task-progress.mjs";
+import { TaskProgressPanel } from "./task-progress";
 
 const API = "http://127.0.0.1:48138";
 
-export type TaskStatus = "pending" | "running" | "completed" | "degraded" | "failed" | "stopped" | "cancelled";
+export type TaskStatus = "pending" | "running" | "waiting_model" | "waiting_device" | "waiting_user" | "completed" | "degraded" | "failed" | "stopped" | "cancelled";
 export type TaskRound = {
+  progress?: TaskProgress;
   id: string;
   device_id: string;
   task_type: string;
@@ -31,6 +34,7 @@ export type TaskRound = {
   error?: string | null;
 };
 export type TaskGroup = {
+  progress?: Pick<TaskProgress, "processed_slots" | "successful_slots" | "failed_slots" | "unavailable_slots" | "unknown_actions" | "skipped_slots">;
   id: string;
   device_id: string;
   device_name: string;
@@ -117,6 +121,7 @@ const formatDuration = (start?: string | null, end?: string | null, now = Date.n
 };
 
 export const groupStatusText = (group: TaskGroup) => {
+  if (isWaitingTask(group.status)) return taskStatusLabel(group.status);
   if (!group.rounds_total && group.inspection_total) {
     if (group.status === "running") return "互动消息执行中";
     if (group.status === "pending") return "互动消息等待中";
@@ -129,18 +134,18 @@ export const groupStatusText = (group: TaskGroup) => {
   if (group.status === "partial_failed") return `${group.completed_rounds} 成功 · ${group.failed_rounds} 失败`;
   if (group.status === "partial_degraded") return `${group.completed_rounds} 完整 · ${group.degraded_rounds} 降级`;
   if (group.status === "failed") return `${group.failed_rounds}/${group.rounds_total} 轮失败`;
-  if (group.status === "degraded") return `${group.degraded_rounds}/${group.rounds_total} 轮降级`;
+  if (group.status === "degraded") return `${group.degraded_rounds}/${group.rounds_total} 轮完成，有异常`;
   if (group.status === "completed") return `${group.completed_rounds}/${group.rounds_total} 轮成功`;
-  if (group.status === "stopped") return "已安全停止";
+  if (group.status === "stopped") return "用户停止";
   return "已取消";
 };
 
-const inspectionTaskStatusText = (status: TaskStatus) => status === "completed" ? "检查完成" : status === "degraded" ? "部分可用" : status === "failed" ? "检查失败" : status === "running" ? "检查中" : status === "pending" ? "等待检查" : status === "stopped" ? "已安全停止" : "已取消";
+const inspectionTaskStatusText = (status: TaskStatus) => taskStatusLabel(status);
 const inspectionGroupText = (group: TaskGroup) => !group.inspection_total ? "" : group.inspection_status === "completed" ? `${group.completed_inspections}/${group.inspection_total} 次完成` : group.inspection_status === "degraded" || group.degraded_inspections ? `${group.degraded_inspections} 次部分可用` : group.inspection_status === "failed" || group.failed_inspections ? `${group.failed_inspections} 次失败` : group.inspection_status === "running" ? "正在检查" : "等待检查";
 const inspectionSectionStatusText = (section?: InspectionSection) => section?.status === "available" ? "已读取" : section?.status === "unavailable" ? "当前不可用" : "检查失败";
 const inspectionReasonText = (reason?: string | null) => navigationReason(reason) ?? (reason === "visitor_history_disabled" || reason === "visitor_entry_not_available" || reason === "visitor_entry_not_found" ? "账号未开启访客记录，访客类互动可能不完整" : reason === "list_boundary_not_confirmed" ? "未找到已读边界，也无法确认列表到底；本次不会误报无新互动" : reason === "interaction_entry_not_found" ? "消息页中没有找到可确认的互动消息入口" : reason === "interaction_entry_ambiguous" ? "出现多个互动消息候选，已停止以避免点错" : reason === "unified_activity_page_not_recognized" || reason === "unified_activity_page_changed" ? "互动消息聚合页结构无法安全确认" : reason === "v3_calibration_missing" || reason === "v3_calibration_unstable" ? "这台标准虚拟机尚未完成互动巡检v3三次复验" : reason === "v3_standard_display_required" ? "设备不符合900×1600、320 DPI标准" : reason === "private_message_rows_ambiguous" ? "当前消息列表无法可靠区分私信和推荐卡片" : reason === "like_rows_ambiguous" ? "收到的赞页面暂时无法可靠识别" : reason === "home_restore_failed" ? "检查后未能确认返回首页" : reason === "v2_app_version_changed" || reason === "v3_app_version_changed" ? "抖音版本已变化，任务在点击任何巡检入口前安全停止" : reason === "v2_display_signature_changed" || reason === "v3_display_signature_changed" ? "设备显示环境已变化，任务在点击任何巡检入口前安全停止" : "当前页面未能安全识别");
 
-const roundStatusText = (round: TaskRound) => round.status === "completed" ? "完整成功" : round.status === "degraded" ? "降级结束" : round.status === "failed" ? "失败" : round.status === "running" ? "执行中" : round.status === "pending" ? "等待执行" : round.status === "stopped" ? "安全停止" : "已取消";
+const roundStatusText = (round: TaskRound) => taskStatusLabel(round.status);
 const incidentStatusText = (incident: TaskIncident) => incident.outcome === "recovered" ? "页面已恢复" : incident.outcome === "device_fatal" ? "页面需处理" : incident.outcome === "model_circuit_open" ? "模型通道已熔断" : incident.outcome === "model_failed" ? "模型调用失败" : "已安全跳过";
 const actionRouteText = (route: string) => route === "search_source_trusted" ? "搜索来源可信" : route === "topic_matched" ? "主题匹配" : route === "topic_mismatch_blocked" ? "主题不符已拦截" : route === "safety_blocked" ? "安全检查已拦截" : route === "other_safe_content" ? "其他安全内容" : route;
 
@@ -153,7 +158,7 @@ export function TaskGroupList({ groups, now, onOpen }: { groups: TaskGroup[]; no
       <small>{group.rounds_total ? "刷视频" : "互动消息"} · {new Date(group.created_at).toLocaleString("zh-CN", { hour12: false })} · 总耗时 {formatDuration(group.started_at, group.finished_at, now)}</small>
       <div className="task-group-metrics"><span>视频 <b>{group.videos_seen}</b></span>{group.non_video_feed_items > 0 && <span>图文跳过 <b>{group.non_video_feed_items}</b></span>}{group.feed_phase_reentries > 0 && <span>阶段重入 <b>{group.feed_phase_reentries}</b></span>}<span>点赞 <b>{group.likes}</b></span><span>收藏 <b>{group.favorites}</b></span><span>评论 <b>{group.comments_sent}</b></span>{group.inspection_total > 0 && <><span className={group.failed_inspections ? "danger" : group.degraded_inspections ? "warning" : ""}>巡检 <b>{inspectionGroupText(group)}</b></span><span>控制流程 <b>{Math.round((group.control_flow_success_rate ?? 0) * 100)}%</b></span><span>数据完整 <b>{Math.round((group.data_completeness_rate ?? 0) * 100)}%</b></span></>}{group.recovered_preconditions ? <span className="warning">自动复验 <b>{group.recovered_preconditions}</b></span> : null}{group.model_attempts > 0 && <span>模型有效 <b>{Math.round(group.model_valid_response_rate * 100)}%</b></span>}{group.model_errors > 0 && <span className="warning">模型错误 <b>{group.model_errors}</b></span>}{group.video_errors > 0 && <span className="danger">页面异常 <b>{group.video_errors}</b></span>}</div>
     </div>
-    <div className="task-group-actions"><b className={`task-status ${group.status}`}>{groupStatusText(group)}</b><button type="button" className="task-detail-button" onClick={() => onOpen(group)}>查看详情</button></div>
+    {group.progress && <p>已处理 {group.progress.processed_slots} · 成功 {group.progress.successful_slots} · 失败 {group.progress.failed_slots} · 不可用 {group.progress.unavailable_slots}</p>}<div className="task-group-actions"><b className={`task-status ${group.status}`}>{groupStatusText(group)}</b><button type="button" className="task-detail-button" onClick={() => onOpen(group)}>查看详情</button></div>
   </article>)}</>;
 }
 
@@ -174,6 +179,7 @@ function InspectionCard({ inspection, onRecover, recoveryBusy }: { inspection: T
     { key: "profile_visitors", label: "主页访客" },
   ];
   return <article className={`inspection-card ${inspection.status}`}>
+    <TaskProgressPanel taskId={inspection.id} status={inspection.status} progress={inspection.progress}/>
     <div className="inspection-card-heading"><div><span>第 {inspection.inspection_index || "-"} 次{inspectionTaskLabel(inspection)}</span><small>完成第 {inspection.after_round_index || "-"} 轮后 · {formatDuration(inspection.started_at, inspection.finished_at)}</small></div><b className={`task-status ${inspection.status}`}>{inspectionTaskStatusText(inspection.status)}</b></div>
     <p className="inspection-card-notice">{isHomeBadge ? "只检查抖音首页的消息提醒，不进入消息，也不把平台确认当成抖音已读。" : result.workflow_version === "v3" ? "只读取互动消息聚合页；不会进入普通私信、具体互动或用户主页，也不会回复、回赞或关注。" : "打开列表可能改变未读角标；本次巡检不打开具体会话，不回复、回赞或关注。"}</p>
     {isHomeBadge && <div className={`inspection-recovery ${homeBadgeDisplay.kind === "clear" ? "ready" : homeBadgeDisplay.kind === "incomplete" ? "failed" : ""}`}><strong>{homeBadgeDisplay.label}</strong><span>{homeBadgeDisplay.message}</span>{homeBadge?.badge_text ? <small>首页角标 {homeBadge.badge_text}{homeBadge.count_is_lower_bound ? "（至少）" : ""}</small> : null}<small>{homeBadge?.source === "vision" ? "视觉辅助判断" : "本地截图判断"}</small>{homeBadge?.evidence_missing?.length ? <small>未能取得：{homeBadge.evidence_missing.join("、")}</small> : null}</div>}
@@ -199,6 +205,7 @@ export function TaskGroupDetail({ group, onClose }: { group: TaskGroup | null; o
 }
 
 function TaskGroupDetailDialog({ group, onClose }: { group: TaskGroup; onClose: () => void }) {
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [rounds, setRounds] = useState<TaskDetailRound[]>([]);
   const [inspections, setInspections] = useState<TaskDetailRound[]>([]);
   const [loading, setLoading] = useState(true);
@@ -229,6 +236,12 @@ function TaskGroupDetailDialog({ group, onClose }: { group: TaskGroup; onClose: 
   };
 
   useEffect(() => {
+    if (![...group.tasks, ...(group.inspections || [])].some((task) => isWaitingTask(task.status) || task.status === "running")) return;
+    const timer = window.setInterval(() => setRefreshVersion((value) => value + 1), 5000);
+    return () => window.clearInterval(timer);
+  }, [group]);
+
+  useEffect(() => {
     const controller = new AbortController();
     const ids = [...group.tasks, ...(group.inspections || [])].map((task) => task.id);
     const chunks = Array.from({ length: Math.ceil(ids.length / 20) }, (_, index) => ids.slice(index * 20, index * 20 + 20));
@@ -249,7 +262,7 @@ function TaskGroupDetailDialog({ group, onClose }: { group: TaskGroup; onClose: 
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("keydown", closeOnEscape);
     return () => { controller.abort(); window.removeEventListener("keydown", closeOnEscape); };
-  }, [group, onClose]);
+  }, [group, onClose, refreshVersion]);
 
   return <div className="task-detail-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="task-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="task-detail-title">
@@ -267,6 +280,7 @@ function TaskGroupDetailDialog({ group, onClose }: { group: TaskGroup; onClose: 
         const visiblePhases = (["search", "home"] as const).filter((phase) => phaseSummaries[phase]);
         return <article key={round.id} className={`task-round-card ${round.status}`}>
           <div className="task-round-heading"><div><span>第 {round.round_index || "-"} 轮</span><small>{round.id.slice(0, 8)} · {formatDuration(round.started_at, round.finished_at)}</small></div><b className={`task-status ${round.status}`}>{roundStatusText(round)}</b></div>
+          <TaskProgressPanel taskId={round.id} status={round.status} progress={round.progress} onChanged={() => setRefreshVersion((value) => value + 1)}/>
           {round.content_plan && <div className="task-content-plan"><strong>{round.content_plan.theme_name}</strong><span>{round.content_plan.plan_name} · v{round.content_plan.revision_number} · 主题 {round.content_plan.theme_queue_index}/{round.content_plan.theme_queue_size}</span>{round.content_plan.search_query && <small>搜索词：{round.content_plan.search_query}</small>}</div>}
           {Array.isArray(round.result?.comment_asset_reviews) && round.result.comment_asset_reviews.length > 0 && <div className="task-comment-assets"><strong>评论资产</strong>{(round.result.comment_asset_reviews as Array<Record<string, unknown>>).map((item, index) => <span key={`${String(item.video_index)}-${index}`}>第 {String(item.video_index)} 条 · {item.source_type === "theme_pool" ? "主题词池" : item.source_type === "common_pool" ? "通用词池" : "自由生成"} · {String(item.final_comment || "已跳过")}</span>)}</div>}
           {visiblePhases.length > 0 && <div className="task-phase-grid">{visiblePhases.map((phase) => { const item = phaseSummaries[phase]; return <section key={phase} className={`task-phase-card ${phase}`}><div><strong>{item.label || (phase === "search" ? "搜索视频流" : "主页视频流")}</strong><span>有效视频 {Number(item.videos || 0)}</span></div><p>主题精确 {Number(item.topic_exact || 0)} · 点赞 {Number(item.likes || 0)} · 收藏 {Number(item.favorites || 0)} · 评论 {Number(item.comments_sent || 0)}</p><small>模型 {Number(item.model_valid_decisions || 0)}/{Number(item.model_attempts || 0)} · 已知跳过 {Number(item.known_safe_skips || 0)} · 漂移 {Number(item.unknown_blocked_pages || 0)} · 恢复 {Number(item.recoveries || 0)}</small></section>; })}</div>}

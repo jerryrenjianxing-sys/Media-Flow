@@ -1146,11 +1146,11 @@ def active_tasks_for_display(
     """Return at most one live card per device, preferring running work."""
     selected: dict[str, Any] = {}
     for task in tasks:
-        if task.status not in {"running", "pending"}:
+        if task.status not in {"running", "pending", "waiting_model", "waiting_device", "waiting_user"}:
             continue
         current = selected.get(task.device_id)
         candidate_key = (
-            0 if task.status == "running" else 1,
+            0 if task.status == "running" else 2 if task.status == "pending" else 1,
             task.started_at or task.not_before,
             task.created_at,
             task.id,
@@ -1159,7 +1159,7 @@ def active_tasks_for_display(
             selected[task.device_id] = task
             continue
         current_key = (
-            0 if current.status == "running" else 1,
+            0 if current.status == "running" else 2 if current.status == "pending" else 1,
             current.started_at or current.not_before,
             current.created_at,
             current.id,
@@ -1592,6 +1592,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
     recent_tasks = store.list(100)
     active_tasks = store.list_active_tasks()
     task_groups = group_tasks_for_display(recent_tasks)[:5]
+    _enrich_group_progress(store, task_groups)
     initialization_summary = store.initialization_summary()
     runtime_stale_count = sum(
         1
@@ -1770,9 +1771,9 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
         ],
         "reconciled_tasks": reconciled_tasks,
         "task_summary": store.task_status_counts(),
-        "tasks": [_compact_task_payload(task) for task in store.list(5)],
+        "tasks": [{**_compact_task_payload(task), "progress": store.task_progress(task.id)} for task in store.list(5)],
         "active_tasks": [
-            _compact_task_payload(task, include_live_result=True)
+            {**_compact_task_payload(task, include_live_result=True), "progress": store.task_progress(task.id)}
             for task in active_tasks_for_display(active_tasks, config["device_ids"])
         ],
         "task_groups": [_compact_group_payload(group) for group in task_groups],
@@ -2247,6 +2248,9 @@ def _group_status(tasks: list) -> str:
     statuses = [task.status for task in tasks]
     if "running" in statuses:
         return "running"
+    for waiting_status in ("waiting_user", "waiting_model", "waiting_device"):
+        if waiting_status in statuses:
+            return waiting_status
     if "pending" in statuses:
         return "pending"
     failed = statuses.count("failed")
@@ -2453,12 +2457,23 @@ def group_tasks_for_display(tasks: list) -> list[dict[str, Any]]:
     return sorted(groups, key=lambda group: (group["created_at"], group["id"]), reverse=True)
 
 
+def _enrich_group_progress(store, groups):
+    for group in groups:
+        progress = []
+        for task in group['tasks'] + group['inspections']:
+            task['progress'] = store.task_progress(task['id'])
+            progress.append(task['progress'])
+        group['progress'] = {key: sum(item.get(key, 0) for item in progress) for key in
+            ('processed_slots', 'successful_slots', 'failed_slots', 'unavailable_slots', 'unknown_actions', 'skipped_slots')}
+
+
 def paged_task_groups_payload(
     store: TaskStore, limit: int, offset: int, task_id: str | None = None
 ) -> dict[str, Any]:
     if not 1 <= limit <= 100 or offset < 0:
         raise ValueError("limit must be 1-100 and offset must be non-negative")
     groups = group_tasks_for_display([store.get(task_id)] if task_id else store.list_all())
+    _enrich_group_progress(store, groups[offset : offset + limit])
     return {
         "items": groups[offset : offset + limit],
         "total": len(groups),
@@ -2808,6 +2823,7 @@ def task_detail_payload(store: TaskStore, task_ids: list[str]) -> dict[str, Any]
         "tasks": [
             {
                 **_public_task(task, store.get_task_recovery(task.id)),
+                "progress": store.task_progress(task.id),
                 "images": (
                     []
                     if task.task_type == "douyin_engagement_inspection"
@@ -4287,6 +4303,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.store.set_paused(False)
                 cleared = self.store.clear_stop_requests()
                 self._json({"ok": True, "paused": False, "stop_requests_cleared": cleared})
+                return
+            task_control = re.fullmatch(r"/api/tasks/([^/]+)/(resume|stop)", path)
+            if task_control:
+                from automation import AutomationService
+                reply = AutomationService(self.automation_context()).call({
+                    'action': task_control.group(2) + '_task',
+                    'arguments': {'task_id': task_control.group(1)},
+                    'request_id': body.get('request_id'), 'session_id': body.get('session_id')})
+                self._json(reply, 200 if reply.get('ok') else 409)
                 return
             if path == "/api/tasks/stop":
                 device_ids = body.get("device_ids")

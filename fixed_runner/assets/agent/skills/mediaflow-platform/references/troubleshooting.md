@@ -1,5 +1,10 @@
 # 回执与故障
 
+- waiting_model：读取原任务 progress 的 waiting_reason/next_check_at。连续3次临时失败后后端单探针按30/60/120/300秒、之后每300秒复查；Agent不重复model_test。恢复条件未满足时保持等待，不新建任务或补刷。
+- waiting_device / waiting_user：按 affected_device 和 affected_capabilities 处理单设备或单动作问题；明确鉴权/权限/服务商额度问题先在模型页面修复配置，再等待当前配置探针通过。用户要求继续时 resume_task 原task_id；ok=false表示尚未恢复。
+- degraded：完成，有异常；不等于stopped或用户停止。成功+失败+不可用=已处理名额，安全跳过不占名额；零散错误不取消其他设备/后续轮次。
+- 停止等待任务：stop_task 原task_id会设置对应设备停止标志；其他设备与批次保持。未知动作不重放；历史failed/stopped/cancelled不改写为等待。
+
 - 首次接入check：connected仅证明本机平台可达，设备为带时间的登记快照；snapshot_unavailable表示未知，不是无设备。连接成功但client_runtime.available=false时，引导修复平台运行环境，不要求另装开发工具。
 - connection_failed / connection_timeout：尚不能确认服务停止。先询问用户；用户同意启动才按setup.md使用已核实入口，30秒内未确认不重发启动、不恢复队列。
 - unexpected_service：地址返回非预期内容或平台过旧，先核对当前软件及地址，不抢占端口、不启动第二份后台。
