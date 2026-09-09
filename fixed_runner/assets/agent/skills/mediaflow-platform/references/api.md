@@ -126,7 +126,7 @@ Bash命令工具（Windows同样适用）在Skill目录调用：
 
 `home_badge` 保留 `state,badge_text,message_count` 等兼容字段。新增可选字段为 `quantity_status=recognized|none|dot|unreadable|conflict`、`quantity_source=ui_tree|local_glyph|vision|null`、`badge_bounds`（原图像素区域，右/下边界不含）、`rule_version`。`recognized` 表示可靠数字或原文 `99+`；`none` 表示没有角标数量，仍须结合 `state` 判断业务结论。字段缺失不能补成 `none` 或0。数量和执行状态的解释见 [消息巡检](workflows.md#消息巡检)。
 
-详情证据中的 `section=badge_crop` 是角标裁剪；使用接口实际返回的 `image_url/ui_tree_url` 读取，原图与裁剪分别保留，不构造文件路径。没有裁剪、来源或规则版本就说明历史未保存。旧详细记录只读，不能通过旧创建、切换或复查动作补证据。
+详情证据中同时满足 `section=home_badge` 和 `label=消息角标原始裁剪` 的条目是角标裁剪，以该条目实际返回的 `id` 和 `image_url` 定位、读取。原图也属于home_badge分区，但有独立的证据ID和URL；原图与裁剪分别保留，使用实际返回的 `image_url/ui_tree_url`，不构造文件路径。不使用未公开的name字段，也不把section解释为badge_crop。没有裁剪、来源或规则版本就说明历史未保存。旧详细记录只读，不能通过旧创建、切换或复查动作补证据。
 
 ### 持久进度与单任务控制
 

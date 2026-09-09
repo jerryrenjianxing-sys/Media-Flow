@@ -14,7 +14,7 @@ type PhysicalDevice = {
   state: string;
   friendly_name?: string;
   model?: string;
-  initialization?: { status: string; message: string } | null;
+  initialization?: { status: string; message: string; legacy_inspection_recheck?: boolean } | null;
 };
 
 type Provider = {
@@ -38,7 +38,7 @@ type Snapshot = {
     adb_endpoint?: string;
     name: string;
     state: string;
-    initialization?: { status: string; message: string } | null;
+    initialization?: { status: string; message: string; legacy_inspection_recheck?: boolean } | null;
   }>;
   agent_guide_url: string;
   agent_document: string;
@@ -179,6 +179,7 @@ export function DeviceOnboardingDialog({
   };
 
   const continuePhysical = async (deviceId: string) => {
+    if (physical.find((device) => device.device_id === deviceId)?.initialization?.legacy_inspection_recheck) return;
     setInitializing(deviceId);
     try {
       const response = await fetchLocalApi(`${API}/api/devices/${encodeURIComponent(deviceId)}/initialization/continue`, { method: "POST" }, 20_000);
@@ -204,6 +205,7 @@ export function DeviceOnboardingDialog({
       return;
     }
     if (status === "waiting_user") {
+      if (device.initialization?.legacy_inspection_recheck) return;
       await continuePhysical(device.device_id);
       return;
     }
@@ -281,9 +283,10 @@ export function DeviceOnboardingDialog({
           <div className="onboarding-device-list">
             {physical.map((device) => {
               const initializationStatus = device.initialization?.status;
+              const legacyWaiting = initializationStatus === "waiting_user" && device.initialization?.legacy_inspection_recheck;
               const active = initializationStatus === "queued" || initializationStatus === "running";
-              const label = initializing === device.device_id ? "处理中…" : initializationStatus === "ready" ? source === "workbench" ? "加入草稿" : "已就绪" : initializationStatus === "waiting_user" ? "继续" : active ? "初始化中" : "初始化";
-              return <div key={device.device_id}><span><strong>{device.friendly_name || device.device_id}</strong><small>{device.state === "unauthorized" ? "等待手机确认USB调试" : device.state === "device" ? device.initialization?.message || "已授权，可开始初始化" : "设备离线"}</small></span><button type="button" className="secondary" disabled={device.state !== "device" || initializing === device.device_id || active || (initializationStatus === "ready" && !onDeviceReady)} onClick={() => void physicalAction(device)}>{label}</button></div>;
+              const label = legacyWaiting ? "旧版巡检（历史只读）" : initializing === device.device_id ? "处理中…" : initializationStatus === "ready" ? source === "workbench" ? "加入草稿" : "已就绪" : initializationStatus === "waiting_user" ? "继续" : active ? "初始化中" : "初始化";
+              return <div key={device.device_id}><span><strong>{device.friendly_name || device.device_id}</strong><small>{device.state === "unauthorized" ? "等待手机确认USB调试" : device.state === "device" ? device.initialization?.message || "已授权，可开始初始化" : "设备离线"}</small></span><button type="button" className="secondary" disabled={Boolean(legacyWaiting) || device.state !== "device" || initializing === device.device_id || active || (initializationStatus === "ready" && !onDeviceReady)} onClick={() => void physicalAction(device)}>{label}</button></div>;
             })}
             {!physical.length && <p className="onboarding-empty">暂未检测到真机。插好后点击重新检测。</p>}
           </div>

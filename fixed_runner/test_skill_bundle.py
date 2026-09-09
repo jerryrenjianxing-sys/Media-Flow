@@ -154,8 +154,12 @@ class ExtractedSkillCliTests(unittest.TestCase):
         class Endpoint(BaseHTTPRequestHandler):
             store = outer.store
 
+            def _headers(self, *args, **kwargs):
+                from control_api import Handler
+                return Handler._headers(self, *args, **kwargs)
+
             def do_GET(self):
-                if self.path.startswith(('/api/records/task-detail', '/api/interaction-inspections')):
+                if self.path.startswith(('/api/records/task-detail', '/api/interaction-inspections', '/api/interaction-evidence')):
                     from control_api import Handler
                     return Handler.do_GET(self)
                 from automation import handle_automation_http
@@ -352,6 +356,20 @@ class ExtractedSkillCliTests(unittest.TestCase):
         self.assertEqual(self.launches, [])
 
     def test_documented_read_only_task_to_inspection_route_preserves_quantity_evidence(self):
+        from engagement_inspection import EngagementInspector
+        from test_home_badge import Device, Recorder
+        from skill_bundle import SKILL_SOURCE
+        evidence_root = self.root/'evidence'
+        evidence_root.mkdir()
+        device = Device(True)
+        inspector = EngagementInspector(device, Recorder(evidence_root), device_id='vm-one',
+            task_id='offline-evidence', sleep=lambda _: None, navigation_lock=lambda: True)
+        produced = inspector.inspect({'inspection_workflow_version': 'home_badge'})
+        self.assertEqual(produced['status'], 'completed')
+        self.assertEqual(device.actions, [])
+        documented = (SKILL_SOURCE/'references/api.md').read_text(encoding='utf-8')
+        self.assertIn('`section=home_badge`', documented)
+        self.assertIn('`label=消息角标原始裁剪`', documented)
         def get_json(path):
             with urllib.request.urlopen('http://127.0.0.1:%s%s' %
                                         (self.server.server_port, path), timeout=10) as response:
@@ -376,8 +394,7 @@ class ExtractedSkillCliTests(unittest.TestCase):
                     inspection_id=inspection_id, task_id=task_id, device_id='vm-one',
                     workflow_version='home_badge', status='completed',
                     result_kind='clear' if state == 'absent' else 'alert', restored=True,
-                    summary={'home_badge': badge}, evidence=[{'id': 'crop', 'section': 'badge_crop',
-                        'label': '角标裁剪', 'image_name': 'crop.png'}], run_dir=str(self.root/'evidence'),
+                    summary={'home_badge': badge}, evidence=produced['evidence'], run_dir=str(evidence_root),
                     started_at='2026-09-09T00:00:00Z', finished_at='2026-09-09T00:00:01Z')
                 self.store.finish(task_id, status='completed', run_dir=str(self.root/'evidence'),
                     result={'workflow_version': 'home_badge', 'home_badge': badge,
@@ -390,9 +407,19 @@ class ExtractedSkillCliTests(unittest.TestCase):
                 detail = get_json('/api/interaction-inspections/' + actual_id)['inspection']
                 self.assertEqual(detail['summary']['home_badge'], badge)
                 self.assertEqual(task['result']['home_badge']['message_count'], count)
-                self.assertEqual(detail['evidence'][0]['section'], 'badge_crop')
-                self.assertEqual(detail['evidence'][0]['image_url'],
-                    '/api/interaction-evidence?inspection_id=%s&evidence_id=crop&kind=image' % actual_id)
+                crops = [item for item in detail['evidence'] if item['section'] == 'home_badge'
+                         and item['label'] == '消息角标原始裁剪']
+                self.assertEqual(len(crops), 1)
+                crop = crops[0]
+                original = next(item for item in detail['evidence'] if item['id'] != crop['id'])
+                self.assertNotEqual(original['image_url'], crop['image_url'])
+                self.assertNotIn('name', crop)
+                with patch('control_api.DEFAULT_ARTIFACTS', self.root):
+                    for item in (original, crop):
+                        with urllib.request.urlopen('http://127.0.0.1:%s%s' %
+                                (self.server.server_port, item['image_url']), timeout=10) as response:
+                            self.assertEqual(response.status, 200)
+                            self.assertTrue(response.read().startswith(b'\x89PNG'))
                 self.assertNotIn(str(self.root), json.dumps(detail))
         self.assertEqual(self.launches, [])
         self.assertTrue(all(hit['action'] == 'list_tasks' for hit in self.hits))

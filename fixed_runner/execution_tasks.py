@@ -362,11 +362,12 @@ def process_current_comment(
         raw_path = recorder.run_dir / f"{evidence_id}-ai-raw.txt"
         raw_path.write_text(decision.raw_response[:8000], encoding="utf-8")
         decision_path = recorder.run_dir / f"{evidence_id}-decision.json"
-        evidence.update(raw_response_path=str(raw_path), decision_path=str(decision_path))
+        evidence["raw_response_path"] = str(raw_path)
         decision_path.write_text(
-            json.dumps({**decision.public_dict(), **evidence}, ensure_ascii=False, indent=2),
+            json.dumps({**decision.public_dict(), **evidence, "decision_path": str(decision_path)}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        evidence["decision_path"] = str(decision_path)
         recorder.emit("comment_ai_decision", **decision.public_dict(), **evidence)
         policy_allowed = True
         if comment_policy_enabled and decision.decision == "comment":

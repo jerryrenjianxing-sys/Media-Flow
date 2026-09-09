@@ -135,5 +135,30 @@ class CommentEvidenceTest(unittest.TestCase):
         self.assertIsNone(failure['failure_path'])
         self.assertEqual(failure['evidence_write_error'], 'OSError')
 
+    def test_decision_write_failure_publishes_only_saved_current_video_evidence(self):
+        write_text = Path.write_text
+        error = OSError('decision disk unavailable')
+        error.comment_model_error = self.error().public_dict()
+        def write(path, *args, **kwargs):
+            if path.name.endswith('-decision.json'):
+                raise error
+            return write_text(path, *args, **kwargs)
+        with patch('execution_tasks.generate_comment', return_value=CommentDecision('comment', 'hello', 'current', .9, False, 'current raw')) as generate, \
+             patch('execution_tasks.send_comment') as send, patch.object(Path, 'write_text', write):
+            with self.assertRaises(OSError) as caught:
+                process_current_comment(Device(), self.recorder, CommentFeed(), video=7, send=True)
+        self.assertIs(caught.exception, error)
+        generate.assert_called_once()
+        send.assert_not_called()
+        failure = self.events('comment_failure_evidence')[0]
+        self.assertEqual(failure['video_index'], 7)
+        self.assertIn('video-7-', failure['attempt_id'])
+        self.assertTrue(Path(failure['input_screenshot_path']).is_file())
+        self.assertEqual(Path(failure['raw_response_path']).read_text(encoding='utf-8'), 'current raw')
+        self.assertIsNone(failure['decision_path'])
+        self.assertEqual(failure['model_error'], self.error().public_dict())
+        saved = json.loads(Path(failure['failure_path']).read_text(encoding='utf-8'))
+        self.assertEqual(saved, {key: value for key, value in failure.items() if key not in {'time', 'event'}})
+
 
 if __name__ == '__main__': unittest.main()

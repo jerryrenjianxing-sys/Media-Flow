@@ -1305,6 +1305,22 @@ def _compact_task_payload(task: Any, *, include_live_result: bool = False) -> di
     }
 
 
+def _legacy_inspection_recheck(record: InitializationRecord | None) -> bool:
+    # Match the executor: every recheck except explicit home_badge uses legacy.
+    return bool(record and record.options.get("inspection_recheck")
+                and record.options.get("inspection_mode") != "home_badge")
+
+
+def _initialization_presentation(record: InitializationRecord) -> dict[str, Any]:
+    from task_preparation import preparation_presentation
+    presentation = preparation_presentation(record.status, record.message)
+    if _legacy_inspection_recheck(record):
+        presentation["actions"] = [action for action in presentation["actions"]
+                                   if action not in {"continue_initialization", "continue_onboarding"}]
+        presentation["message"] = "旧版详细巡检准备（历史只读）；可查看已有记录或安全取消"
+    return presentation
+
+
 def _compact_initialization_payload(record: InitializationRecord | None) -> dict[str, Any] | None:
     if record is None:
         return None
@@ -1317,6 +1333,7 @@ def _compact_initialization_payload(record: InitializationRecord | None) -> dict
         "message": record.message,
         "updated_at": record.updated_at,
         "error": record.error,
+        "legacy_inspection_recheck": _legacy_inspection_recheck(record),
     }
 
 
@@ -1464,6 +1481,14 @@ def _virtual_device_guidance(
         user_message = "设备已完成连接和复验"
         suggested_action = "可以打开画面或加入任务"
         available_actions = ["open_screen", "manual_control", "add_to_draft"]
+
+    if _legacy_inspection_recheck(initialization):
+        available_actions = [action for action in available_actions
+                             if action not in {"continue_initialization", "continue_onboarding"}]
+        if initialization_status in {"queued", "running", "waiting_user"}:
+            available_actions = _initialization_presentation(initialization)["actions"]
+        user_message = "旧版详细巡检准备（历史只读）"
+        suggested_action = "查看已有记录；需要时安全取消准备"
 
     app_ready = connected and not waiting_app
     readiness_steps = [
@@ -1745,8 +1770,7 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
             virtual_device["available_actions"] = ["open_screen", "manual_control", "continue_onboarding"]
         if latest and latest.status in {"queued", "running", "waiting_user"}:
             # Maintenance presentation wins over older business issues.
-            from task_preparation import preparation_presentation
-            presentation = preparation_presentation(latest.status, latest.message)
+            presentation = _initialization_presentation(latest)
             virtual_device.update(user_message=presentation["message"], available_actions=presentation["actions"])
         virtual_device["can_start"] = bool(
             not active_operation
@@ -1839,6 +1863,7 @@ def cached_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str,
 
 def public_initialization(record: InitializationRecord) -> dict[str, Any]:
     payload = asdict(record)
+    payload["legacy_inspection_recheck"] = _legacy_inspection_recheck(record)
     payload["write_acceptance"] = bool(record.options.get("write_acceptance", False))
     if record.status == "waiting_user":
         payload["error"] = None

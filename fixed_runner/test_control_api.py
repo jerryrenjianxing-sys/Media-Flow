@@ -401,6 +401,39 @@ class ControlApiTest(unittest.TestCase):
         self.assertEqual(payload["message"], "请在手机上允许安装后继续")
         self.assertIsNone(payload["error"])
 
+    def test_legacy_recheck_presentation_uses_stored_options_without_changing_them(self):
+        from control_api import _compact_initialization_payload, _virtual_device_guidance
+        from dataclasses import replace
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / "tasks.db")
+            for index, (options, legacy) in enumerate([
+                ({"inspection_recheck": True}, True),
+                ({"inspection_recheck": True, "inspection_mode": "legacy"}, True),
+                ({"inspection_recheck": True, "inspection_mode": "home_badge"}, False),
+                ({}, False),
+            ]):
+                record = store.create_initialization(f"device-{index}", options=options)
+                for status in ("queued", "running", "waiting_user", "failed", "cancelled", "ready"):
+                    record = replace(record, status=status, message="请完成登录或验证")
+                    for payload in (public_initialization(record), _compact_initialization_payload(record)):
+                        self.assertEqual(payload.get("legacy_inspection_recheck"), legacy)
+                    guidance = _virtual_device_guidance(
+                        {"state": "running", "standard_status": "standard"}, connected=True,
+                        active_operation=None, initialization=record, model_status={})
+                    if legacy:
+                        self.assertNotIn("continue_initialization", guidance["available_actions"])
+                        if status in {"queued", "running", "waiting_user"}:
+                            self.assertIn("cancel_initialization", guidance["available_actions"])
+                    elif status == "waiting_user":
+                        self.assertIn("continue_initialization", guidance["available_actions"])
+                self.assertEqual(store.get_initialization(record.id).options, options)
+                store.claim_initialization(record.device_id, "offline-worker")
+                store.finish_initialization(record.id, status="waiting_user", stage="waiting_user", message="等待处理")
+                resumed = store.continue_initialization(record.device_id)
+                self.assertEqual(resumed.id, record.id)
+                self.assertEqual(resumed.status, "queued")
+                self.assertEqual(resumed.options, options)
+
     def test_ready_initialization_becomes_stale_when_runtime_signature_changes(self) -> None:
         profile = {
             "status": "ready",
