@@ -2,7 +2,7 @@
 name: mediaflow-platform
 description: Use when a user provides the MediaFlow homepage Skill, wants a content theme or reusable plan, configures an installed platform, or asks about devices, tasks, results, notifications, recovery, preferences, or project repair.
 metadata:
-  version: "39"
+  version: "40"
 ---
 
 # MediaFlow 平台操作
@@ -59,7 +59,7 @@ Windows 优先运行 `scripts/mediaflow.ps1`；它会使用显式配置或已安
 - 外部 Agent 负责聊天与文字整理；平台视觉模型负责业务画面判断。纯文案不需要任何模型。Key 只能由用户在原平台界面填写；`model_status` 是只读，不测试、不调用模型。只有用户明确要求时才 `model_test` / `model_activate`，沿用上传同意、忙碌和测试通过检查，不自动切换 provider。
 - 平台不设 API 次数或金额预算上限；无需再向用户索取预算或追加次数授权。累计用量只是记录，不是执行门槛。服务商实际额度、权限、限流及网络错误仍按真实结果处理，不能假称服务商不限量或免费。
 - 固定执行器是唯一设备动作平面。不要用 Agent、终端 ADB 或点击循环替代 Worker。登录/验证码由用户在模拟器中完成。
-- 首页消息检查默认 `home_badge`：数字、`99+` 和纯红点都可表示有消息；`unknown` 是失败，不是无消息。确认平台提醒不清除抖音角标，也不代表抖音已读。
+- 当前功能叫“消息巡检”（`home_badge`），只看首页角标。已检查的业务结论是“有消息 / 无消息”；数量未识别与检查失败分开，pending/running 无结果时不下结论。旧详细巡检仅保留历史只读，不创建、切换或复查，也不作为“看详情”的推荐选项。数量、证据与提醒语义见[消息巡检](references/workflows.md#消息巡检)。
 
 ## 报告结果
 

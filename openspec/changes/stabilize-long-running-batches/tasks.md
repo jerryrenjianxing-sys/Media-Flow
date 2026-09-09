@@ -9,5 +9,5 @@
 ## 4. 交付
 - [x] 4.1 全部离线验证与独立审查，主规格同步
 - [x] 4.2 历史材料正式模型入口单次及五并发验证
-- [ ] 4.3 干净提交dev.39、本机安全切换并校验原数据
-- [ ] 4.4 新五机正式批次启动核对，不宣称长任务已成功
+- [x] 4.3 干净提交dev.39、本机安全切换并校验原数据（dev39-audit的before/after一致，live-skill/receipt与live-page核实899b81d运行；见docs/dev39-acceptance.md）
+- [x] 4.4 新五机正式批次启动核对，不宣称长任务已成功（formal-execute/progress/integrity核实18392e61910646e6bdbbd99930967baa已派发、4台运行/1台安全等待；后续停止及异常见docs/dev40-batch-review.md，不归档其他未完成变更）

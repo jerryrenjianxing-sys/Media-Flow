@@ -114,6 +114,20 @@ Bash命令工具（Windows同样适用）在Skill目录调用：
 
 ## 任务证据中的真实结果
 
+### 消息巡检回执
+
+`task_evidence` 用于核对任务状态和现有视频摘要；当前 automation 摘要不提供完整巡检数量字段，不从 `result_summary` 推算角标。用户提供的已保存巡检回执可直接解释。需要代读完整结果时沿用已确认的本机 API 地址：
+
+1. 从 `list_tasks.result.tasks[].task_id` 或原计划的真实任务清单取得目标任务ID，再用 `task_evidence` 核对对象和状态。
+2. 只读 `GET /api/records/task-detail?ids={URL编码的任务ID}`，读取 `tasks[]` 中对应任务的 `result.home_badge`，从 `result.inspection_metadata.inspection_id` 取得保存的巡检ID。任务结果为空（或无字段）时不生成结论；没有巡检ID就说明证据尚未关联，不猜ID。
+3. 只读 `GET /api/interaction-inspections/{URL编码的巡检ID}`，读取 `inspection.summary.home_badge` 及可用的 `inspection.evidence[]`。浏览历史也可使用 `GET /api/interaction-inspections?limit=50&offset=0` 返回的实际ID；不能把“最新一条”自动当成指定任务。
+
+这些 GET 不是新的 automation action。宿主可用 PowerShell `Invoke-RestMethod` 或现有 HTTP 工具代读；不需要启动任务、检查实时设备或模型。没有宿主 HTTP 能力时引导用户打开任务台消息巡检详情。
+
+`home_badge` 保留 `state,badge_text,message_count` 等兼容字段。新增可选字段为 `quantity_status=recognized|none|dot|unreadable|conflict`、`quantity_source=ui_tree|local_glyph|vision|null`、`badge_bounds`（原图像素区域，右/下边界不含）、`rule_version`。`recognized` 表示可靠数字或原文 `99+`；`none` 表示没有角标数量，仍须结合 `state` 判断业务结论。字段缺失不能补成 `none` 或0。数量和执行状态的解释见 [消息巡检](workflows.md#消息巡检)。
+
+详情证据中的 `section=badge_crop` 是角标裁剪；使用接口实际返回的 `image_url/ui_tree_url` 读取，原图与裁剪分别保留，不构造文件路径。没有裁剪、来源或规则版本就说明历史未保存。旧详细记录只读，不能通过旧创建、切换或复查动作补证据。
+
 ### 持久进度与单任务控制
 
 `list_tasks.result.tasks[]`、`task_evidence.result.task`、`plan_status.result.result.tasks[]` 的 `progress` 保留原任务/本轮检查点计数：`processed_slots,successful_slots,failed_slots,unavailable_slots,unknown_actions,skipped_slots`，以及 `waiting_reason,next_check_at,last_progress_at,next_slot,affected_device,affected_capabilities,available_actions,evidence_dirs`。批次回执中的每个任务均带 `progress`；按设备/批次汇总时明确范围，不把单轮数量当整个计划数量。`next_check_at` 是 Unix 秒；`null` 表示没有定时复查。证据目录只引用回执已有值。

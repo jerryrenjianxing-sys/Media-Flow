@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -13,6 +14,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import zipfile
+import urllib.request
 
 from agent_memory import AgentMemory
 from agent_platform import AgentPlatform
@@ -150,7 +152,12 @@ class ExtractedSkillCliTests(unittest.TestCase):
         outer = self
 
         class Endpoint(BaseHTTPRequestHandler):
+            store = outer.store
+
             def do_GET(self):
+                if self.path.startswith(('/api/records/task-detail', '/api/interaction-inspections')):
+                    from control_api import Handler
+                    return Handler.do_GET(self)
                 from automation import handle_automation_http
                 handle_automation_http(self, 'GET', self.path)
 
@@ -300,6 +307,95 @@ class ExtractedSkillCliTests(unittest.TestCase):
             'like_probability', 'favorite_probability', 'comment_probability',
             'matched_like_probability', 'matched_favorite_probability',
             'matched_comment_probability')], [0] * 6)
+
+    def test_both_bundles_preview_home_inspection_without_execution_and_keep_null_results(self):
+        from skill_bundle import build_skill_markdown
+        entries = re.findall(r'### `([^`]+)`\n\n(`{4,})[^\n]*\n(.*?)\n\2\n',
+                             build_skill_markdown(), re.S)
+        restored = self.root/'copied'
+        for name, _, body in entries:
+            target = restored/name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding='utf-8')
+        zipped = self.skill
+        for label, skill in [('zip', zipped), ('markdown', restored/'mediaflow-platform')]:
+            with self.subTest(format=label):
+                self.skill = skill
+                config = json.loads((skill/'examples/plan-arguments.json').read_text(encoding='utf-8'))
+                config['config'].update(device_ids=['vm-uuid'], engagement_inspection_enabled=True,
+                                         inspection_mode='home_badge', inspection_every_rounds=1)
+                call = self.run_cli('plan_tasks', '--arguments', json.dumps(config),
+                                    request_id='inspection-preview-' + label)
+                self.assertEqual(call.returncode, 0, call.stdout or call.stderr)
+                plan = json.loads(call.stdout)['result']
+                self.assertEqual(plan['config']['inspection_mode'], 'home_badge')
+                self.assertEqual([plan['config'][field] for field in (
+                    'like_probability', 'favorite_probability', 'comment_probability',
+                    'matched_like_probability', 'matched_favorite_probability',
+                    'matched_comment_probability')], [0] * 6)
+                self.assertEqual(self.store.list(), [])
+                self.assertEqual(self.launches, [])
+
+        task_id = self.store.submit('douyin_engagement_inspection', 'vm-one',
+                                    {'inspection_mode': 'home_badge', 'inspection_workflow_version': 'home_badge',
+                                     'submission_id': 'fixture-null', 'inspection_index': 1,
+                                     'after_round_index': 1, 'inspection_every_rounds': 1})
+        for status in ('pending', 'running'):
+            if status == 'running':
+                self.store.set_paused(False)
+                self.store.claim_next('vm-one', 'fixture-worker')
+            call = self.run_cli('task_evidence', '--arguments', json.dumps({'task_id': task_id}))
+            self.assertEqual(call.returncode, 0, call.stdout or call.stderr)
+            task = json.loads(call.stdout)['result']['task']
+            self.assertEqual(task['status'], status)
+            self.assertIsNone(task['result_summary'])
+        self.assertEqual(self.launches, [])
+
+    def test_documented_read_only_task_to_inspection_route_preserves_quantity_evidence(self):
+        def get_json(path):
+            with urllib.request.urlopen('http://127.0.0.1:%s%s' %
+                                        (self.server.server_port, path), timeout=10) as response:
+                return json.load(response)
+
+        self.store.set_paused(False)
+        cases = [('recognized', '3', 3, 'present'), ('recognized', '99+', None, 'present'),
+                 ('dot', None, None, 'present'), ('unreadable', None, None, 'present'),
+                 ('conflict', None, None, 'present'), ('none', None, None, 'absent')]
+        for index, (quantity_status, text, count, state) in enumerate(cases):
+            with self.subTest(quantity_status=quantity_status, text=text):
+                task_id = self.store.submit('douyin_engagement_inspection', 'vm-one',
+                                            {'inspection_mode': 'home_badge', 'inspection_workflow_version': 'home_badge',
+                                             'submission_id': 'fixture-%s' % index, 'inspection_index': 1,
+                                             'after_round_index': 1, 'inspection_every_rounds': 1})
+                self.store.claim_next('vm-one', 'fixture-worker')
+                inspection_id = 'saved-inspection-%s' % index
+                badge = {'state': state, 'badge_text': text, 'message_count': count,
+                         'quantity_status': quantity_status, 'quantity_source': 'local_glyph',
+                         'badge_bounds': [10, 10, 30, 30], 'rule_version': 'fixture-v1'}
+                self.store.record_interaction_inspection(
+                    inspection_id=inspection_id, task_id=task_id, device_id='vm-one',
+                    workflow_version='home_badge', status='completed',
+                    result_kind='clear' if state == 'absent' else 'alert', restored=True,
+                    summary={'home_badge': badge}, evidence=[{'id': 'crop', 'section': 'badge_crop',
+                        'label': '角标裁剪', 'image_name': 'crop.png'}], run_dir=str(self.root/'evidence'),
+                    started_at='2026-09-09T00:00:00Z', finished_at='2026-09-09T00:00:01Z')
+                self.store.finish(task_id, status='completed', run_dir=str(self.root/'evidence'),
+                    result={'workflow_version': 'home_badge', 'home_badge': badge,
+                            'inspection_metadata': {'inspection_id': inspection_id}})
+                listed = json.loads(self.run_cli('list_tasks').stdout)['result']['tasks']
+                self.assertIn(task_id, [task['task_id'] for task in listed])
+                task = get_json('/api/records/task-detail?ids=' + task_id)['tasks'][0]
+                actual_id = task['result']['inspection_metadata']['inspection_id']
+                self.assertEqual(actual_id, inspection_id)
+                detail = get_json('/api/interaction-inspections/' + actual_id)['inspection']
+                self.assertEqual(detail['summary']['home_badge'], badge)
+                self.assertEqual(task['result']['home_badge']['message_count'], count)
+                self.assertEqual(detail['evidence'][0]['section'], 'badge_crop')
+                self.assertEqual(detail['evidence'][0]['image_url'],
+                    '/api/interaction-evidence?inspection_id=%s&evidence_id=crop&kind=image' % actual_id)
+                self.assertNotIn(str(self.root), json.dumps(detail))
+        self.assertEqual(self.launches, [])
+        self.assertTrue(all(hit['action'] == 'list_tasks' for hit in self.hits))
 
     def test_powershell_launcher_prefers_environment_then_configured_runtime(self):
         powershell = shutil.which('pwsh') or shutil.which('powershell')
