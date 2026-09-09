@@ -529,6 +529,38 @@ class ExistingReactionRegressionTest(unittest.TestCase):
 
         self.assertEqual(len(device.clicks), 1)
 
+    def test_long_batch_delayed_reaction_uses_observation_not_second_tap(self):
+        inactive = Image.new('RGB', (1080,2400), 'black')
+        active = inactive.copy()
+        active.paste((255,0,0), (900,900,1040,1100))
+        recorder = Mock()
+        recorder.screenshot.side_effect = [inactive, inactive, active]
+        device = self.Device()
+        device.dump_hierarchy = Mock(return_value='<hierarchy/>')
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
+        runner.observe_reactions_only = True
+        runner.control_bounds['like'] = (900,900,1040,1100)
+        runner.control_states['like'] = False
+        with patch('douyin_uia2_runner.time.sleep'), patch.object(runner, 'main_feed_confirmed', return_value=True):
+            self.assertTrue(runner.like_verified(1, inactive))
+        self.assertEqual(len(device.clicks), 1)
+
+    def test_long_batch_red_on_wrong_page_cannot_confirm_a_like(self):
+        inactive = Image.new('RGB', (1080,2400), 'black')
+        red = inactive.copy()
+        red.paste((255,0,0), (900,900,1040,1100))
+        recorder = Mock()
+        recorder.screenshot.return_value = red
+        device = self.Device()
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
+        runner.observe_reactions_only = True
+        runner.control_bounds['like'] = (900,900,1040,1100)
+        runner.control_states['like'] = False
+        with patch('douyin_uia2_runner.time.sleep'), patch.object(runner, 'main_feed_confirmed', return_value=False):
+            with self.assertRaisesRegex(RuntimeError, 'Like verification'):
+                runner.like_verified(1, inactive)
+        self.assertEqual(len(device.clicks), 1)
+
 
 class ForegroundPackageRegressionTest(unittest.TestCase):
     class Device:

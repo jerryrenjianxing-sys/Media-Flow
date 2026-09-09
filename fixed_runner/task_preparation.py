@@ -72,6 +72,14 @@ def record_inspection_outcome(store, task, result):
     reason = str(result.get("failure_reason") or (result.get("degraded_reason") or {}).get("code") or "inspection_incomplete")
     store.save_profile(inspection_suspension_key(task.device_id, result.get("workflow_version")),
                        {"suspended": True, "reason": reason, "task_id": task.id, "rule_version": RULE_VERSION})
+    if (getattr(task, 'payload', None) or {}).get('resilience_version') == 'v1':
+        result['inspection_status'] = 'failed'
+        if result.get('restored') is not True:
+            from task_resilience import TaskWaiting
+            raise TaskWaiting('waiting_device', 'inspection_home_restore_failed', result=result)
+        result['status'] = 'degraded'
+        result['degraded_reason'] = {'code': reason, 'scope': 'message_check_only'}
+        return
     if result.get("restored") is not True:
         store.request_stop([task.device_id])
         store.save_profile("preparation-issue:" + task.device_id,

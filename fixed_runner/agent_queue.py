@@ -32,7 +32,7 @@ class AgentQueueMixin:
         from task_store import now_iso
         db.execute("UPDATE agent_task_batches SET state='cancelled' WHERE deadline<=? AND state!='cancelled' AND id NOT IN "
                    "(SELECT batch_id FROM agent_batch_policies WHERE stop_policy='round_count')", (time.time(),))
-        db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_batch_expired_or_stopped; not replayed' WHERE status='pending' AND id IN (SELECT a.task_id FROM agent_batch_tasks a JOIN agent_task_batches b ON b.id=a.batch_id WHERE b.state='cancelled')", (now_iso(),))
+        db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_batch_expired_or_stopped; not replayed' WHERE status IN ('pending','waiting_model','waiting_user','waiting_device') AND id IN (SELECT a.task_id FROM agent_batch_tasks a JOIN agent_task_batches b ON b.id=a.batch_id WHERE b.state='cancelled')", (now_iso(),))
 
     def _check_agent_admission(self, db, devices, *, resume_stopped_devices=False, batch_id=None):
         self._expire_device_view_sessions(db)
@@ -40,7 +40,7 @@ class AgentQueueMixin:
         if stopped and json.loads(stopped[0]).get('stopped'):
             raise ValueError('所有自动操作已停止，请先在设备页解除停止所有自动操作；未恢复任务')
         for device in devices:
-            if db.execute("SELECT 1 FROM tasks WHERE device_id=? AND status IN ('pending','running') AND id NOT IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?) LIMIT 1", (device, batch_id or '')).fetchone():
+            if db.execute("SELECT 1 FROM tasks WHERE device_id=? AND status IN ('pending','running','waiting_model','waiting_user','waiting_device') AND id NOT IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?) LIMIT 1", (device, batch_id or '')).fetchone():
                 raise ValueError('所选设备已有其他排队或运行任务，请处理后重新确认')
             if db.execute("SELECT 1 FROM device_view_sessions WHERE device_id=? AND mode='control' AND status IN ('created','connected','disconnected')", (device,)).fetchone():
                 raise ValueError('设备正在人工接管，请退出后重新确认')
@@ -59,7 +59,7 @@ class AgentQueueMixin:
                                "LEFT JOIN agent_batch_policies p ON p.batch_id=b.id WHERE b.id=? AND b.session_id=?", (batch_id, session_id)).fetchone()
             if not batch or batch['state'] == 'cancelled' or (batch['stop_policy'] == 'deadline' and batch['deadline'] <= time.time()):
                 raise ValueError('本批次已停止或过期，不能恢复或重放')
-            devices = {row[0] for row in db.execute("SELECT DISTINCT device_id FROM tasks WHERE status IN ('pending','running') AND id IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?)", (batch_id,))}
+            devices = {row[0] for row in db.execute("SELECT DISTINCT device_id FROM tasks WHERE status IN ('pending','running','waiting_model','waiting_user','waiting_device') AND id IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?)", (batch_id,))}
             self._check_agent_admission(db, devices, resume_stopped_devices=resume_stopped_devices, batch_id=batch_id)
             db.execute("UPDATE agent_task_batches SET state='active' WHERE id=?", (batch_id,))
 
@@ -101,9 +101,17 @@ class AgentQueueMixin:
             if not batch:
                 return None
             rows = db.execute('SELECT t.id,t.status,t.device_id FROM tasks t JOIN agent_batch_tasks a ON a.task_id=t.id WHERE a.batch_id=? ORDER BY a.position', (batch_id,)).fetchall()
+            tasks = [{**dict(row), 'progress': self.task_progress(row['id'])} for row in rows]
+            counters = ('processed_slots', 'successful_slots', 'failed_slots', 'unavailable_slots', 'unknown_actions', 'skipped_slots')
+            def total(items):
+                return {'schema_supported': bool(items) and all(task['progress'].get('schema_supported') for task in items),
+                        **{key: sum(task['progress'].get(key, 0) for task in items) for key in counters}}
             return {'batch_id': batch_id, 'state': batch['state'], 'stop_policy': batch['stop_policy'],
                     'deadline': batch['deadline'] if batch['stop_policy'] == 'deadline' else None,
-                    'tasks': [dict(row) for row in rows], 'task_ids': [row['id'] for row in rows]}
+                    'tasks': tasks, 'progress': total(tasks),
+                    'device_progress': {device: total([task for task in tasks if task['device_id'] == device])
+                                        for device in sorted({task['device_id'] for task in tasks})},
+                    'task_ids': [row['id'] for row in rows]}
 
     def agent_task_may_run_paused(self, task_id):
         with self.connection() as db:
@@ -123,7 +131,7 @@ class AgentQueueMixin:
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute("UPDATE agent_task_batches SET state='cancelled' WHERE session_id=?", (session_id,))
-            return db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_session_stopped; not replayed' WHERE status='pending' AND id IN (SELECT a.task_id FROM agent_batch_tasks a JOIN agent_task_batches b ON b.id=a.batch_id WHERE b.session_id=?)", (now_iso(), session_id)).rowcount
+            return db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_session_stopped; not replayed' WHERE status IN ('pending','waiting_model','waiting_user','waiting_device') AND id IN (SELECT a.task_id FROM agent_batch_tasks a JOIN agent_task_batches b ON b.id=a.batch_id WHERE b.session_id=?)", (now_iso(), session_id)).rowcount
 
     def control_agent_batch(self, batch_id, session_id, *, stop=False):
         from task_store import now_iso
@@ -135,12 +143,18 @@ class AgentQueueMixin:
             if row['state'] != 'cancelled':
                 db.execute('UPDATE agent_task_batches SET state=? WHERE id=?', ('cancelled' if stop else 'paused', batch_id))
             if stop:
-                db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_batch_stopped; not replayed' WHERE status='pending' AND id IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?)", (now_iso(), batch_id))
+                db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_batch_stopped; not replayed' WHERE status IN ('pending','waiting_model','waiting_user','waiting_device') AND id IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?)", (now_iso(), batch_id))
         return {**self.agent_batch_receipt(batch_id, session_id),
                 'message': '本批次已请求安全停止，当前动作在检查点收口' if stop else '本批次已暂停后续领取，当前视频仍可完成'}
 
     @staticmethod
     def close_agent_batch_after_failure(db, task_id):
-        from task_store import now_iso
-        db.execute("UPDATE agent_task_batches SET state='cancelled' WHERE id IN (SELECT batch_id FROM agent_batch_tasks WHERE task_id=?)", (task_id,))
-        db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_batch_failed; remaining tasks not replayed' WHERE status='pending' AND id IN (SELECT a.task_id FROM agent_batch_tasks a WHERE a.batch_id IN (SELECT batch_id FROM agent_batch_tasks WHERE task_id=?))", (now_iso(), task_id))
+        # A failed device is not a revoked batch. Keep every other device live,
+        # block this device's first successor and preserve all historical states.
+        row = db.execute("SELECT t.id FROM tasks t JOIN agent_batch_tasks a ON a.task_id=t.id "
+                         "WHERE t.status='pending' AND t.device_id=(SELECT device_id FROM tasks WHERE id=?) "
+                         "AND a.batch_id=(SELECT batch_id FROM agent_batch_tasks WHERE task_id=?) ORDER BY a.position LIMIT 1",
+                         (task_id, task_id)).fetchone()
+        if row:
+            db.execute("UPDATE tasks SET status='waiting_device',error='previous_device_task_failed' WHERE id=?", (row[0],))
+            db.execute("INSERT OR REPLACE INTO task_waits VALUES(?,?,'',NULL,?)", (row[0], 'previous_device_task_failed', time.time()))

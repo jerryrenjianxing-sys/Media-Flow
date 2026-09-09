@@ -505,6 +505,7 @@ def build_scheduled_plan(
                 "round_index": index + 1,
                 "seed": base_seed + device_offset * round_count + index,
                 "submission_id": submission_id,
+                "resilience_version": "v1",
             }
             from task_preparation import PREPARATION_VERSION, task_requirements
             on_demand = inspection_profiles.get(device_id, {}).get("preparation_version") == PREPARATION_VERSION
@@ -544,6 +545,7 @@ def build_scheduled_plan(
                     "device_id": device_id,
                     "submission_id": submission_id,
                     "inspection_index": device_inspection_count + 1,
+                    "resilience_version": "v1",
                     "after_round_index": round_index,
                     "inspection_every_rounds": inspection_every,
                     "max_items_per_section": 20,

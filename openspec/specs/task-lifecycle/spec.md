@@ -31,7 +31,7 @@ TBD - created by archiving change stabilize-runtime-lifecycle. Update Purpose af
 - **THEN** 系统保持该设备不领取新任务并返回没有活动任务，而不制造失败记录
 
 ### Requirement: 等待任务可取消
-系统 SHALL 允许将一个或多个 `pending` 任务原子转为 `cancelled` 终态，运行中或已结束任务不得被取消。
+系统 SHALL 允许将一个或多个 `pending`、`waiting_model`、`waiting_device`、`waiting_user` 任务原子转为 `cancelled` 终态，运行中或已结束任务不得被取消。显式停止等待或恢复中的原任务 SHALL 与设备停止标志原子协调，不允许探针随后自启。
 
 #### Scenario: 取消全部等待任务
 - **WHEN** 用户确认取消全部等待任务
@@ -56,11 +56,11 @@ TBD - created by archiving change stabilize-runtime-lifecycle. Update Purpose af
 - **THEN** 系统拒绝删除任务和纠错记录，现有数据库和证据保持不变
 
 ### Requirement: 看门狗恢复不得重放中断任务
-后台宿主因 Worker 意外退出而重新拉起该设备 Worker 时，系统 MUST 先把原 Worker 留下的运行中任务收口为失败并保留证据；新 Worker 只能领取其他尚未开始的等待任务。
+历史未启用检查点的任务 MUST 保持失败收口且不重放。新resilience_version=v1任务 SHALL 保存原任务、轮次、阶段、下一名额、随机状态和确认动作；已证实旧执行者退出时转等待设备并恢复原任务下一名额，未知写入不重放且暂停本设备本批次该能力。清理 MUST 在事务内核对观察到的执行者与开始时间，不能释放新执行者的租约。等待释放动作租约、保留同设备队首，显式维护和人工接管优先。
 
 #### Scenario: Worker 在可能改变状态后退出
 - **WHEN** Worker 在运行任务期间意外退出且后台宿主重新拉起该设备 Worker
-- **THEN** 原任务以 `worker_interrupted` 失败终态结束并且不会自动重新提交或从头执行
+- **THEN** 历史任务以 `worker_interrupted` 失败终态结束；v1任务保留检查点并等待身份/目标流复核后从下一名额继续，两者均不得从头或重放未知写入
 
 #### Scenario: Worker 空闲时退出
 - **WHEN** Worker 没有运行中任务时意外退出
@@ -76,8 +76,8 @@ TBD - created by archiving change stabilize-runtime-lifecycle. Update Purpose af
 
 #### Scenario: 必需模型能力不可用
 - **WHEN** 主题必需任务的模型通道熔断打开
-- **THEN** 任务以 `failed` 终态结束并使用模型通道失败错误码
-- **AND** 该任务不得显示为成功或降级成功
+- **THEN** 历史任务保持failed；v1任务按临时或永久故障进入waiting_model或waiting_user，零散失败留证继续且轮末degraded
+- **AND** 等待不得显示为成功、结束或用户停止，也不取消其他设备的批次任务
 
 #### Scenario: 汇总成功率
 - **WHEN** 控制台汇总二十视频验证轮次

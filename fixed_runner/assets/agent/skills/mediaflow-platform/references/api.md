@@ -120,7 +120,7 @@ Bash命令工具（Windows同样适用）在Skill目录调用：
 
 `progress.schema_supported=true` 才可使用名额计数；false或缺失表示旧任务不支持，读取原 `result_summary`，不能报告新计数为0。批次/设备汇总的 schema_supported=false 表示成员包含不支持的新计数范围。
 
-已处理名额 = 成功 + 失败 + 不可用；20 条中失败 2 条就是成功 18、失败 2，不补刷到成功20条。`skipped_slots` 是安全识别的供给跳过，不消耗名额，不能加进已处理计数。`unknown_actions` 是未确认写入，不是成功次数，不重放；`affected_capabilities` 指仅本任务暂停的动作能力。
+已处理名额 = 成功 + 失败 + 不可用；20 条中失败 2 条就是成功 18、失败 2，不补刷到成功20条。`skipped_slots` 是安全识别的供给跳过，不消耗名额，不能加进已处理计数。`unknown_actions` 是未确认写入，不是成功次数，不重放；`affected_capabilities` 指本设备本批次暂停的动作能力。
 
 `resume_task {task_id}` 与 `stop_task {task_id}` 都要求稳定唯一的 `request_id`，支持原回执去重。页面同义接口为 `POST /api/tasks/{task_id}/resume`、`POST /api/tasks/{task_id}/stop`，请求体含 `request_id`。返回 `result.changed` 和 `result.task`（原编号、实际状态和最新 `progress`）。恢复成功为 `status=queued`，仅为原设备启动执行者；不是业务已开始或已完成。`worker_start_unconfirmed` 表示原任务排队成功但执行者未确认。未满足条件时 `ok=false`，保留 `waiting_model/waiting_device/waiting_user` 和具体原因，Agent 不宣称恢复成功。未恢复时若 `reason_code=manual_control_active` 则退出人工接管；`batch_paused` 则核对原批次；登录、验证码或安全提示按该设备实际页面处理，不一律归因为模型。修复后新恢复操作使用新请求编号；网络未知则继续查询原编号。
 

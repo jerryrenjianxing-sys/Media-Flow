@@ -120,7 +120,7 @@ class PiRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             config=Path(folder)/'runtime.json'
             with patch('sys.argv',['pi','run','--config',str(config)]): self.assertEqual(main(),1)
-            self.assertEqual(json.loads((Path(folder)/'last-error.json').read_text())['reason_code'],'pi_runtime_missing')
+            self.assertEqual(json.loads((Path(folder)/'last-error.json').read_text(encoding='utf-8'))['reason_code'],'pi_runtime_missing')
 
     def test_native_git_discovery_environment_is_preserved(self):
         from unittest.mock import patch

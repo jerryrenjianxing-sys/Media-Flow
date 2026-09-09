@@ -237,6 +237,18 @@ class FakeDevice:
 
 
 class CommentSendTest(unittest.TestCase):
+    def test_durable_send_hooks_straddle_only_the_physical_send(self):
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = Uia2RunRecorder(Path(directory), 'device-1')
+            device = FakeDevice()
+            observed = []
+            def hook(label):
+                send = [value for selector, value in device.selectors if selector.get('text') == '发送']
+                observed.append((label, device.typed, bool(send and send[-1].clicked)))
+            with patch('execution_tasks.time.sleep'):
+                self.assertTrue(send_comment(device, recorder, '过程很清晰', 1, before_send=lambda: hook('before'), after_send=lambda: hook('after')))
+            self.assertEqual(observed, [('before', '过程很清晰', False), ('after', '过程很清晰', True)])
+
     def test_comment_input_prefers_verified_selector_text(self) -> None:
         class Selector:
             value = ""

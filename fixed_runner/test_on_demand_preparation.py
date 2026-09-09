@@ -10,6 +10,59 @@ from virtual_device_qualification import qualify_virtual_device
 
 
 class OnDemandTests(unittest.TestCase):
+    def test_stop_wins_when_worker_receives_wait_exception(self):
+        from worker import run_worker
+        from task_resilience import TaskWaiting
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = TaskStore(root/'tasks.db')
+            task_id = store.submit('healthcheck', 'phone', {'resilience_version': 'v1'})
+            def execute(*args, **kwargs):
+                store.request_stop(['phone'], task_id=task_id)
+                raise TaskWaiting('waiting_device', 'device_lost')
+            with patch('worker.DeviceLock', return_value=nullcontext()), patch('worker.connect_with_retry', return_value=Mock()), patch('worker.execute_task', side_effect=execute):
+                run_worker(store=store, device_id='phone', artifacts_root=root/'artifacts', poll_seconds=0, max_tasks=1, connect_attempts=1, reconnect_delay_seconds=0, offline_wait_seconds=0)
+            self.assertEqual(store.get(task_id).status, 'stopped')
+            store.clear_stop_requests(['phone'])
+            self.assertFalse(store.resume_waiting_task(task_id))
+
+    def test_waiting_business_does_not_starve_explicit_maintenance(self):
+        from worker import run_worker
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = TaskStore(root/'tasks.db')
+            task_id = store.submit('healthcheck', 'vm', {'resilience_version': 'v1'})
+            store.claim_next('vm', 'old')
+            store.wait_task(task_id, 'waiting_device', 'device_identity_unavailable')
+            record = store.create_initialization('vm')
+            store.set_paused(True)
+            def execute(_device, claimed, _store, **kwargs):
+                self.assertEqual(claimed.id, record.id)
+                self.assertEqual(store.get(task_id).status, 'waiting_device')
+                store.finish_initialization(claimed.id, status='ready', stage='ready', message='ready', result={})
+                store.request_stop(['vm'])
+                return {'status': 'ready'}
+            # Guard against starvation without permitting a hanging test.
+            with patch('worker.DeviceLock', return_value=nullcontext()), patch('worker.connect_with_retry', return_value=Mock()), patch('worker.execute_initialization', side_effect=execute) as maintenance, patch('worker.service_model_wait', side_effect=AssertionError('maintenance must precede wait probe')):
+                run_worker(store=store, device_id='vm', artifacts_root=root/'artifacts', poll_seconds=0, max_tasks=1, connect_attempts=1, reconnect_delay_seconds=0, offline_wait_seconds=0)
+            maintenance.assert_called_once()
+
+    def test_resilient_inspection_failure_continues_only_after_safe_home_restore(self):
+        from task_preparation import record_inspection_outcome
+        from task_resilience import TaskWaiting
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory)/'tasks.db')
+            task = SimpleNamespace(task_type='douyin_engagement_inspection', device_id='phone', id='receipt', payload={'resilience_version': 'v1'})
+            result = {'status': 'failed', 'restored': True, 'workflow_version': 'home_badge'}
+            record_inspection_outcome(store, task, result)
+            self.assertEqual(result['status'], 'degraded')
+            self.assertEqual(result['inspection_status'], 'failed')
+            self.assertFalse(store.is_stop_requested('phone'))
+            with self.assertRaises(TaskWaiting) as caught:
+                record_inspection_outcome(store, task, {'status': 'failed', 'restored': False})
+            self.assertEqual(caught.exception.status, 'waiting_device')
+            self.assertFalse(store.is_stop_requested('phone'))
+
     def test_upgrade_only_cancels_explicit_unstarted_legacy_records(self):
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory)/"tasks.db")

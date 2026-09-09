@@ -2,7 +2,7 @@
 name: mediaflow-platform
 description: Use when a user provides the MediaFlow homepage Skill, wants a content theme or reusable plan, configures an installed platform, or asks about devices, tasks, results, notifications, recovery, preferences, or project repair.
 metadata:
-  version: "37"
+  version: "39"
 ---
 
 # MediaFlow 平台操作

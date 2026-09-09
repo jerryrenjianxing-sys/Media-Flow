@@ -279,7 +279,11 @@ class RuntimeSupervisor:
             if is_loopback and device_id not in managed_ready:
                 continue
             eligible.append(device_id)
-        return eligible
+        # A scoped long-running batch owns its workers independently of the
+        # saved form selection or momentary ADB availability. Otherwise a
+        # disconnected/model-waiting device loses its recovery coordinator.
+        waiting_owners = getattr(self.store, 'resilient_worker_devices', lambda: [])()
+        return list(dict.fromkeys([*eligible, *waiting_owners]))
 
     def desired_factories(self) -> list[tuple[str, Callable[[], Any]]]:
         factories: list[tuple[str, Callable[[], Any]]] = [

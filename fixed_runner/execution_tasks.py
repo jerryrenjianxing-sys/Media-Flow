@@ -29,6 +29,8 @@ from douyin_uia2_runner import (
 )
 from engagement_inspection import EngagementInspector
 from feed_orchestration import FeedPhase, HybridFeedPlanner
+from session_checkpoint import SessionCheckpoint, tuple_tree
+from task_resilience import TaskWaiting
 from task_store import TaskRecord
 
 PauseWaiter = Callable[[], None]
@@ -355,6 +357,8 @@ def process_current_comment(
                     comment_policy_prompt,
                 )
             except Exception as exc:
+                if getattr(runner, 'observe_reactions_only', False) and _model_error_details(exc):
+                    raise
                 constraint = CommentConstraintDecision(
                     decision="block",
                     category="policy_uncertain",
@@ -390,6 +394,8 @@ def process_current_comment(
                 decision.comment,
                 video,
                 expected_size=(runner.profile.width, runner.profile.height),
+                before_send=getattr(runner, 'before_comment_send', None),
+                after_send=getattr(runner, 'after_comment_send', None),
             )
     except Exception as exc:
         try:
@@ -603,10 +609,16 @@ def topic_session(
     pause_waiter: PauseWaiter | None = None,
     incident_sink: IncidentSink | None = None,
     stop_checker: StopChecker | None = None,
+    checkpoint: SessionCheckpoint | None = None,
 ) -> dict[str, Any]:
     """Run a bounded, reproducible topic-matching safety-test session."""
     wall_started = time.monotonic()
     rng = random.Random(int(config["seed"]))
+    resilient = config.get('resilience_version') == 'v1'
+    progress = checkpoint or SessionCheckpoint()
+    restored = progress.state if resilient else {}
+    if restored.get('rng'):
+        rng.setstate(tuple_tree(restored['rng']))
     runner = Uia2DouyinRunner(
         device,
         recorder,
@@ -614,6 +626,7 @@ def topic_session(
         max_gate_skips=int(config.get("max_gate_skips", 3)),
         device_id=str(config.get("device_id", "")),
     )
+    runner.observe_reactions_only = resilient
     content_mode = str(
         config.get(
             "content_mode",
@@ -634,21 +647,23 @@ def topic_session(
             home_min=int(config.get("home_segment_min", 5)),
             home_max=int(config.get("home_segment_max", 10)),
         )
+        if restored.get('planner'):
+            hybrid_planner.restore(restored['planner'])
     runner.ensure_app_ready()
     if content_mode == "search":
         runner.enter_topic_search(search_query)
     elif hybrid_planner is not None:
         first_phase = hybrid_planner.current_or_start()
-        if first_phase is None or not _prepare_feed_phase(
+        if first_phase is not None and not _prepare_feed_phase(
             runner, first_phase.name, search_query, "hybrid-phase-1"
         ):
             raise DeviceFatalError("Could not enter the first hybrid feed phase")
-        initial_hybrid_phase_name = first_phase.name
+        initial_hybrid_phase_name = first_phase.name if first_phase else None
         recorder.emit(
             "feed_phase_started",
-            phase=first_phase.name,
-            target=first_phase.target,
-            processed=first_phase.processed,
+            phase=first_phase.name if first_phase else 'complete',
+            target=first_phase.target if first_phase else 0,
+            processed=first_phase.processed if first_phase else 0,
             total_target=int(config["video_count"]),
         )
     initial = recorder.screenshot(device, "topic-session-initial")
@@ -686,6 +701,8 @@ def topic_session(
                 }
             )
     summary: dict[str, Any] = {
+        'processed_slots': 0, 'successful_slots': 0, 'failed_slots': 0,
+        'unavailable_slots': 0, 'unknown_actions': 0, 'incomplete_phases': [],
         "videos_seen": 0,
         "feed_items_seen": 0,
         "topic_matches": 0,
@@ -746,7 +763,20 @@ def topic_session(
             }
             for phase in ("search", "home")
         }
-    decisions: list[dict[str, Any]] = []
+    if restored.get('summary'):
+        summary.update(restored['summary'])
+    for name, count in restored.get('confirmed_action_counts', {}).items():
+        summary[name] = max(int(summary.get(name, 0)), count)
+    for phase_name, counts in restored.get('confirmed_phase_actions', {}).items():
+        for name, count in counts.items():
+            phase_summary = summary.get('phase_summaries', {}).get(phase_name)
+            if phase_summary is not None:
+                phase_summary[name] = max(int(phase_summary.get(name, 0)), count)
+    if restored.get('slot_in_progress'):
+        # A crash between consuming a slot and its durable completion never
+        # causes the same video or write to be attempted again.
+        summary['failed_slots'] += 1
+    decisions: list[dict[str, Any]] = list(restored.get('decisions', []))
     preview_only = bool(config["preview_only"])
     topic_filter_enabled = content_mode != "general"
     topic_analysis_required = topic_filter_enabled or any(
@@ -757,19 +787,31 @@ def topic_session(
     consecutive_anomalies = 0
     permanent_model_fingerprint = ""
     permanent_model_failures = 0
-    disabled_reactions: set[str] = set()
-    comment_disabled = False
+    model_failure_streak = int(restored.get('model_failure_streak', 0))
+    disabled_reactions: set[str] = set(progress.disabled()) & {'like', 'favorite'}
+    comment_disabled = 'comment' in progress.disabled()
     wait_for_resume = pause_waiter or (lambda: None)
     should_stop = stop_checker or (lambda: False)
     stopped_by_user = False
-    used_comment_candidates: set[str] = set()
+    used_comment_candidates: set[str] = set(restored.get('used_comment_candidates', []))
     consecutive_non_video_items = 0
+    consecutive_safe_skips = 0
     non_video_phase_reentry_used = False
 
     active_phase_name = "search" if content_mode == "search" else "home"
     active_phase_target = int(config["video_count"])
     prepared_hybrid_phase = initial_hybrid_phase_name
-    while int(summary["videos_seen"]) < int(config["video_count"]):
+    def persist(in_progress=False):
+        summary['feed_phase'] = active_phase_name
+        summary['search_query'] = search_query
+        summary['reaction_actions_disabled'] = sorted(disabled_reactions)
+        summary['comment_actions_disabled'] = ['comment'] if comment_disabled else []
+        if resilient:
+            progress.save(summary, rng, hybrid_planner, decisions, streak=model_failure_streak,
+                          used=used_comment_candidates, in_progress=in_progress)
+
+    persist()
+    while int(summary['processed_slots'] if resilient else summary["videos_seen"]) < int(config["video_count"]):
         if hybrid_planner is not None:
             phase = hybrid_planner.current_or_start()
             if phase is None:
@@ -815,6 +857,7 @@ def topic_session(
         }
         actions: list[str] = []
         stage = "swipe"
+        slot_consumed = False
         try:
             wait_for_resume()
             runner.swipe_next(video - 1, video)
@@ -852,6 +895,12 @@ def topic_session(
                     }
                 )
                 if known_safe_skip:
+                    consecutive_safe_skips += 1
+                    if resilient and consecutive_safe_skips >= NON_VIDEO_REENTRY_THRESHOLD * 2:
+                        raise InsufficientVideoSupplyError('当前阶段连续40项没有可处理视频；供给检查结束')
+                    if resilient and consecutive_safe_skips == NON_VIDEO_REENTRY_THRESHOLD and gate.reasons != ('non_video_feed_item',):
+                        if not _prepare_feed_phase(runner, active_phase_name, search_query, 'safe-skip-supply'):
+                            raise InsufficientVideoSupplyError('当前阶段视频供给不足且重新进入失败')
                     if gate.reasons == ("non_video_feed_item",):
                         summary["non_video_feed_items"] += 1
                         consecutive_non_video_items += 1
@@ -906,7 +955,10 @@ def topic_session(
                 )
 
             summary["videos_seen"] += 1
+            summary['processed_slots'] += 1
+            slot_consumed = True
             consecutive_non_video_items = 0
+            consecutive_safe_skips = 0
             non_video_phase_reentry_used = False
             if hybrid_planner is not None:
                 phase_after = hybrid_planner.consume_valid_video()
@@ -915,6 +967,7 @@ def topic_session(
                 entry["valid_video_index"] = hybrid_planner.total_processed
             else:
                 entry["valid_video_index"] = int(summary["videos_seen"])
+            persist(in_progress=True)
             recorder.emit(
                 "valid_video_processed",
                 video=video,
@@ -960,6 +1013,7 @@ def topic_session(
                     action_routes=disabled_routes,
                 )
                 decisions.append(entry)
+                summary['successful_slots'] += 1
                 consecutive_anomalies = 0
                 continue
 
@@ -1036,6 +1090,16 @@ def topic_session(
                     }
                 )
                 decisions.append(entry)
+                summary['failed_slots'] += 1
+                if resilient:
+                    model_failure_streak = model_failure_streak + 1 if bool(model_error.get('retryable')) else 0
+                    permanent = error_kind in {'authentication', 'balance', 'permanent_rejection',
+                                               'permission_denied', 'model_unavailable', 'invalid_request'}
+                    if permanent or model_failure_streak >= 3:
+                        persist()
+                        raise TaskWaiting('waiting_user' if permanent else 'waiting_model',
+                                          error_kind, result={**summary, 'status': 'waiting', 'stopped_by_user': False}) from model_exc
+                    continue
                 if circuit_open:
                     decisions_path = recorder.run_dir / "topic-session-decisions.json"
                     decisions_path.write_text(
@@ -1070,6 +1134,8 @@ def topic_session(
                     ) from model_exc
                 continue
             summary["model_valid_decisions"] += 1
+            permanent_model_failures = 0
+            permanent_model_fingerprint = ''
             if hybrid_planner is not None:
                 summary["phase_summaries"][active_phase_name]["model_valid_decisions"] += 1
             (recorder.run_dir / f"video-{video}-topic-ai-raw.txt").write_text(
@@ -1145,6 +1211,9 @@ def topic_session(
                 wait_for_resume()
                 stage = "like"
                 like_frame, like_gate = runner.capture_gate(video, "like")
+                if like_gate.allowed:
+                    persist(in_progress=True)
+                    progress.before_action(summary['processed_slots'], 'like')
                 if like_gate.allowed and runner.like_verified(video, like_frame):
                     actions.append("like")
                     summary["likes"] += 1
@@ -1152,6 +1221,9 @@ def topic_session(
                         summary["phase_summaries"][active_phase_name]["likes"] += 1
                 elif any(reason in {"visual_main_feed_check_failed", "search_context_drift"} for reason in like_gate.reasons):
                     raise FeedContextDriftError("Page drifted before like")
+                if like_gate.allowed:
+                    progress.after_action(True, 'like' in actions)
+                    persist(in_progress=True)
 
             if (
                 safe_for_action
@@ -1161,6 +1233,9 @@ def topic_session(
                 wait_for_resume()
                 stage = "favorite"
                 favorite_frame, favorite_gate = runner.capture_gate(video, "favorite")
+                if favorite_gate.allowed:
+                    persist(in_progress=True)
+                    progress.before_action(summary['processed_slots'], 'favorite')
                 if favorite_gate.allowed and runner.favorite_verified(video, favorite_frame):
                     actions.append("favorite")
                     summary["favorites"] += 1
@@ -1168,6 +1243,9 @@ def topic_session(
                         summary["phase_summaries"][active_phase_name]["favorites"] += 1
                 elif any(reason in {"visual_main_feed_check_failed", "search_context_drift"} for reason in favorite_gate.reasons):
                     raise FeedContextDriftError("Page drifted before favorite")
+                if favorite_gate.allowed:
+                    progress.after_action(True, 'favorite' in actions)
+                    persist(in_progress=True)
 
             if (
                 safe_for_action
@@ -1178,6 +1256,11 @@ def topic_session(
                 stage = "comment"
                 _, comment_gate = runner.capture_gate(video, "comment-preview")
                 if comment_gate.allowed:
+                    def before_comment_send():
+                        persist(in_progress=True)
+                        progress.before_action(summary['processed_slots'], 'comment')
+                    runner.before_comment_send = before_comment_send if resilient else None
+                    runner.after_comment_send = (lambda: progress.after_action(True, True)) if resilient else None
                     comment, sent, policy_review = process_current_comment(
                         device,
                         recorder,
@@ -1212,12 +1295,17 @@ def topic_session(
                     )
                     if sent and hybrid_planner is not None:
                         summary["phase_summaries"][active_phase_name]["comments_sent"] += 1
+                    if not preview_only:
+                        progress.after_action(True, sent)
+                        persist(in_progress=True)
                 elif any(reason in {"visual_main_feed_check_failed", "search_context_drift"} for reason in comment_gate.reasons):
                     raise FeedContextDriftError("Page drifted before comment")
             entry["actions"] = actions
             decisions.append(entry)
+            summary['successful_slots'] += 1
+            model_failure_streak = 0
             consecutive_anomalies = 0
-        except (DeviceFatalError, ModelChannelError):
+        except (DeviceFatalError, ModelChannelError, TaskWaiting):
             raise
         except Exception as exc:
             confirmed_comment = getattr(exc, "confirmed_comment_outcome", None)
@@ -1241,6 +1329,25 @@ def topic_session(
                     video=video,
                 )
             summary["video_errors"] += 1
+            if isinstance(exc, InsufficientVideoSupplyError):
+                summary['video_errors'] -= 1
+            if resilient and not slot_consumed and not isinstance(exc, InsufficientVideoSupplyError):
+                summary['processed_slots'] += 1
+                slot_consumed = True
+                if hybrid_planner:
+                    hybrid_planner.consume_valid_video()
+            if slot_consumed:
+                summary['failed_slots'] += 1
+            if resilient and stage in {'like', 'favorite', 'comment'} and progress.action_pending():
+                confirmed = confirmed_comment is not None and bool(confirmed_comment[1])
+                progress.after_action(confirmed, 'confirmed_before_cleanup_error' if confirmed else None)
+                if not confirmed:
+                    summary['unknown_actions'] += 1
+                    progress.disable(stage)
+                    if stage == 'comment':
+                        comment_disabled = True
+                    else:
+                        disabled_reactions.add(stage)
             if not isinstance(exc, (ConsecutiveAnomalyLimitError, FeedContextDriftError)):
                 consecutive_anomalies += 1
             if isinstance(exc, FeedContextDriftError) and stage != "topic_gate":
@@ -1315,6 +1422,7 @@ def topic_session(
                 )
 
             insufficient_supply = isinstance(exc, InsufficientVideoSupplyError)
+            safety_verification = _interaction_safety_verification_visible(ui_tree_source)
             already_on_feed = bool(
                 not insufficient_supply
                 and incident_image is not None
@@ -1327,7 +1435,7 @@ def topic_session(
             recovery_action = "already_required_feed" if recovered else "back_close_or_relaunch"
             recovery_event: dict[str, Any] | None = None
             recovery_count = len(getattr(runner, "recovery_events", []))
-            if not recovered:
+            if not recovered and not (resilient and safety_verification):
                 try:
                     recovered = _recover_required_feed(
                         runner, f"video-{video}-{stage}-error"
@@ -1341,7 +1449,7 @@ def topic_session(
                     summary["recovery_events"].append(recovery_event)
             if recovered and force_recovery and recovery_event is None:
                 recovery_action = "required_feed_revalidated"
-            limit_reached = consecutive_anomalies >= anomaly_limit
+            limit_reached = consecutive_anomalies >= anomaly_limit and not resilient
             outcome = (
                 "device_fatal"
                 if limit_reached or insufficient_supply
@@ -1398,12 +1506,43 @@ def topic_session(
                 }
             )
             decisions.append(entry)
+            if resilient and safety_verification:
+                persist()
+                raise TaskWaiting('waiting_user', 'platform_safety_verification', result=summary) from exc
+            if resilient and insufficient_supply and recovered:
+                missing = hybrid_planner.exhaust_phase() if hybrid_planner else int(config['video_count']) - int(summary['processed_slots'])
+                summary['processed_slots'] += missing
+                summary['unavailable_slots'] += missing
+                summary['incomplete_phases'].append({'phase': active_phase_name, 'unavailable_slots': missing, 'reason': 'insufficient_video_supply'})
+                consecutive_non_video_items = 0
+                consecutive_safe_skips = 0
+                non_video_phase_reentry_used = False
+                prepared_hybrid_phase = None
+                continue
+            if resilient and not recovered:
+                persist()
+                raise TaskWaiting('waiting_device', 'required_feed_recovery_failed', result=summary) from exc
+            model_error = _model_error_details(exc) if resilient else None
+            if resilient and not model_error:
+                model_failure_streak = 0
+            if model_error:
+                error_kind = str(model_error['kind'])
+                summary['model_errors'] += 1
+                errors = summary['model_error_counts']
+                errors[error_kind] = int(errors.get(error_kind, 0)) + 1
+                model_failure_streak = model_failure_streak + 1 if model_error.get('retryable') else 0
+                permanent = error_kind in {'authentication', 'balance', 'permanent_rejection', 'permission_denied', 'model_unavailable', 'invalid_request'}
+                if permanent or model_failure_streak >= 3:
+                    persist()
+                    raise TaskWaiting('waiting_user' if permanent else 'waiting_model', error_kind, result=summary) from exc
             if not recovered or limit_reached or insufficient_supply:
                 raise DeviceFatalError(
                     str(exc)
                     if limit_reached
                     else f"Video {video} failed at {stage} and the required feed could not be recovered"
                 ) from exc
+        finally:
+            persist()
 
     result_path = recorder.run_dir / "topic-session-decisions.json"
     result_path.write_text(json.dumps(decisions, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1413,35 +1552,9 @@ def topic_session(
         model_valid_decisions / model_attempts if model_attempts else 1.0, 4
     )
     summary["model_valid_response_rate"] = model_valid_response_rate
-    model_required = topic_analysis_required
-    if summary["model_errors"] and model_valid_response_rate < 0.95 and model_required:
-        code = "model_channel_quality_below_threshold"
-        raise ModelChannelError(
-            code,
-            {
-                "status": "failed",
-                "failure_reason": {
-                    "code": code,
-                    "model_valid_response_rate": model_valid_response_rate,
-                    "model_error_counts": dict(summary["model_error_counts"]),
-                },
-                "stopped_by_user": False,
-                "task_type": "douyin_topic_session",
-                "preview_only": preview_only,
-                "content_mode": content_mode,
-                "topic_filter_enabled": topic_filter_enabled,
-                "seed": int(config["seed"]),
-                "round_index": int(config.get("round_index", 1)),
-                "action_control": "probability_only",
-                **summary,
-                "wall_s": round(time.monotonic() - wall_started, 3),
-            },
-        )
-    degraded = bool(
-        summary["model_errors"]
-        and model_valid_response_rate < 0.95
-        and not model_required
-    )
+    # Quality is reported, never used to cancel a completed round or batch.
+    degraded = bool(summary['model_errors'] or (resilient and (
+        summary['failed_slots'] or summary['video_errors'] or summary['unavailable_slots'] or summary['unknown_actions'])))
     return {
         "status": (
             "stopped"
@@ -1573,6 +1686,8 @@ def send_comment(
     video: int,
     *,
     expected_size: tuple[int, int] = (PROFILE.width, PROFILE.height),
+    before_send=None,
+    after_send=None,
 ) -> bool:
     if device(text=comment).exists(timeout=0):
         raise RuntimeError("Exact comment already exists; duplicate send was blocked")
@@ -1637,6 +1752,8 @@ def send_comment(
     if send_button is None:
         raise RuntimeError("Send button was not found after comment input")
     recorder.emit("comment_send_attempt", video=video, comment=comment)
+    if before_send:
+        before_send()
     send_button.click()
     time.sleep(1.3)
     foreground = foreground_package(device)
@@ -1664,6 +1781,8 @@ def send_comment(
         raise RuntimeError(
             "Comment send could not be verified; task will not retry automatically"
         )
+    if after_send:
+        after_send()
     return True
 
 
@@ -1745,6 +1864,7 @@ def execute_task(
             pause_waiter=pause_waiter,
             incident_sink=incident_sink,
             stop_checker=stop_checker,
+            checkpoint=SessionCheckpoint(task_store, task.id, recorder.run_dir) if task_store and task.payload.get('resilience_version') == 'v1' else None,
         )
     elif task.task_type == "douyin_engagement_inspection":
         result = EngagementInspector(

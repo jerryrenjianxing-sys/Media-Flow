@@ -7,6 +7,7 @@ import sqlite3
 import uuid
 import time
 from agent_queue import AgentQueueMixin
+from task_resilience import ResilienceStoreMixin, WAIT_SQL
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -31,6 +32,9 @@ TASK_STATUSES = {
     "failed",
     "stopped",
     "cancelled",
+    "waiting_model",
+    "waiting_device",
+    "waiting_user",
 }
 INCIDENT_OUTCOMES = {
     "recovered",
@@ -183,7 +187,7 @@ class InitializationRecord:
     cancel_requested: bool
 
 
-class TaskStore(AgentQueueMixin):
+class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,6 +212,7 @@ class TaskStore(AgentQueueMixin):
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode = WAL")
             self.initialize_agent_queue(connection)
+            self.initialize_resilience(connection)
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tasks (
@@ -2037,12 +2042,13 @@ class TaskStore(AgentQueueMixin):
             ).fetchone()
         return bool(row and row["value"] == "1")
 
-    def request_stop(self, device_ids: list[str]) -> int:
+    def request_stop(self, device_ids: list[str], *, task_id: str | None = None) -> int:
         unique_ids = list(dict.fromkeys(str(value).strip() for value in device_ids if str(value).strip()))
         if not unique_ids:
             raise ValueError("至少需要一台设备")
         changed = 0
         with self.connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
             for device_id in unique_ids:
                 key = f"stop:{device_id}"
                 previous = connection.execute(
@@ -2055,6 +2061,11 @@ class TaskStore(AgentQueueMixin):
                 )
                 if previous is None or previous["value"] != "1":
                     changed += 1
+                connection.execute("UPDATE tasks SET status='stopped',finished_at=?,error='stopped_by_user',worker_id=NULL "
+                                   "WHERE device_id=? AND status IN " + WAIT_SQL, (now_iso(), device_id))
+                if task_id:
+                    connection.execute("UPDATE tasks SET status='stopped',finished_at=?,error='stopped_by_user' "
+                                       "WHERE id=? AND device_id=? AND status='pending'", (now_iso(), task_id, device_id))
         return changed
 
     def clear_stop_requests(self, device_ids: list[str] | None = None) -> int:
@@ -2083,7 +2094,7 @@ class TaskStore(AgentQueueMixin):
     def cancel_pending(
         self, task_ids: list[str] | None = None, *, device_ids: list[str] | None = None
     ) -> int:
-        clauses = ["status='pending'"]
+        clauses = ["status IN ('pending','waiting_model','waiting_device','waiting_user')"]
         parameters: list[Any] = [now_iso()]
         if task_ids is not None:
             clean_ids = list(dict.fromkeys(str(value).strip() for value in task_ids if str(value).strip()))
@@ -2133,11 +2144,11 @@ class TaskStore(AgentQueueMixin):
         """Close tasks left running after their owning worker disappeared."""
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT id, worker_id FROM tasks WHERE status='running'"
+                "SELECT id, worker_id, started_at FROM tasks WHERE status='running'"
             ).fetchall()
 
         orphaned_ids = [
-            row["id"]
+            row
             for row in rows
             if not row["worker_id"] or not is_worker_alive(str(row["worker_id"]))
         ]
@@ -2147,7 +2158,15 @@ class TaskStore(AgentQueueMixin):
         finished_at = now_iso()
         reconciled = 0
         with self.connection() as connection:
-            for task_id in orphaned_ids:
+            connection.execute('BEGIN IMMEDIATE')
+            for observed in orphaned_ids:
+                task_id = observed['id']
+                if not connection.execute("SELECT 1 FROM tasks WHERE id=? AND status='running' AND worker_id IS ? AND started_at IS ?",
+                                          (task_id, observed['worker_id'], observed['started_at'])).fetchone():
+                    continue
+                if self.recover_resilient_task(connection, task_id):
+                    reconciled += 1
+                    continue
                 cursor = connection.execute(
                     "UPDATE tasks SET status='failed', finished_at=?, "
                     "error='worker_interrupted; worker process is no longer running' "
@@ -2191,7 +2210,7 @@ class TaskStore(AgentQueueMixin):
         """Return only live queue records for lightweight status polling."""
         with self.connection() as connection:
             rows = connection.execute(
-                "SELECT * FROM tasks WHERE status IN ('running','pending') "
+                "SELECT * FROM tasks WHERE status IN ('running','pending','waiting_model','waiting_device','waiting_user') "
                 "ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END, "
                 "COALESCE(started_at, not_before, created_at), rowid"
             ).fetchall()
@@ -2571,8 +2590,13 @@ class TaskStore(AgentQueueMixin):
 
     def recover_interrupted(self, device_id: str) -> int:
         with self.connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
             interrupted = connection.execute("SELECT id FROM tasks WHERE device_id=? AND status='running'", (device_id,)).fetchall()
+            preserved = 0
             for row in interrupted:
+                if self.recover_resilient_task(connection, row['id']):
+                    preserved += 1
+                    continue
                 self.close_agent_batch_after_failure(connection, row['id'])
             cursor = connection.execute(
                 "UPDATE tasks SET status='failed', finished_at=?, "
@@ -2580,7 +2604,7 @@ class TaskStore(AgentQueueMixin):
                 "WHERE device_id=? AND status='running'",
                 (now_iso(), device_id),
             )
-            return cursor.rowcount
+            return cursor.rowcount + preserved
 
     def recover_interrupted_initializations(self, device_id: str) -> int:
         with self.connection() as connection:
@@ -2636,9 +2660,15 @@ class TaskStore(AgentQueueMixin):
             if stopped and stopped["value"] == "1":
                 connection.commit()
                 return None
+            if self._waiting_blocks(connection, device_id):
+                connection.commit()
+                return None
+            if connection.execute("SELECT 1 FROM tasks WHERE device_id=? AND status='running'", (device_id,)).fetchone():
+                connection.commit()
+                return None
             row = connection.execute(
                 "SELECT id FROM tasks WHERE device_id=? AND status='pending' "
-                "AND not_before<=? AND " + queue_filter + " ORDER BY not_before, created_at, id LIMIT 1",
+                "AND not_before<=? AND " + queue_filter + " ORDER BY CASE WHEN EXISTS (SELECT 1 FROM task_checkpoints c WHERE c.task_id=tasks.id) THEN 0 ELSE 1 END, not_before, created_at, id LIMIT 1",
                 (device_id, now_iso(), time.time()),
             ).fetchone()
             if row is None:
@@ -2675,6 +2705,8 @@ class TaskStore(AgentQueueMixin):
                 (f"stop:{device_id}",),
             ).fetchone()
             if stopped and stopped["value"] == "1":
+                return False
+            if self._waiting_blocks(connection, device_id):
                 return False
             row = connection.execute(
                 "SELECT 1 FROM tasks WHERE device_id=? AND status='pending' "

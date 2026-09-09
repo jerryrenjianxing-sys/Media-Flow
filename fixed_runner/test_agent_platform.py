@@ -78,7 +78,7 @@ class AgentPlatformTests(unittest.TestCase):
             self.confirm(plan)
         self.assertEqual(self.store.list(), [])
 
-    def test_failure_stops_rest_and_explicit_pause_revokes_exemption(self):
+    def test_failure_waits_same_device_and_explicit_pause_revokes_exemption(self):
         receipt = self.confirm(self.planned())
         self.store.set_paused(True)
         self.assertFalse(self.store.has_ready('vm-one'))
@@ -87,7 +87,7 @@ class AgentPlatformTests(unittest.TestCase):
         task = self.store.claim_next('vm-one', 'worker')
         self.store.finish(task.id, status='failed', run_dir=None, error='test failure')
         self.assertFalse(self.store.has_ready('vm-one'))
-        self.assertEqual(self.store.get(receipt['task_ids'][1]).status, 'cancelled')
+        self.assertEqual(self.store.get(receipt['task_ids'][1]).status, 'waiting_device')
 
     def test_stop_session_cancels_only_its_tasks_and_prevents_confirmation(self):
         plan = self.planned()
@@ -211,14 +211,15 @@ class AgentPlatformTests(unittest.TestCase):
         self.config['topic_prompt']='测试主题'
         self.assertIn('plan_id',self.planned())
 
-    def test_deadline_and_worker_restart_close_batch_without_replay(self):
+    def test_deadline_cancels_but_worker_restart_preserves_new_progress(self):
         plan = self.planned()
         receipt = self.confirm(plan)
         first = self.store.claim_next('vm-one', 'worker')
         self.assertEqual(self.store.recover_interrupted('vm-one'), 1)
-        self.assertEqual(self.store.get(first.id).status, 'failed')
-        self.assertEqual(self.store.get(receipt['task_ids'][1]).status, 'cancelled')
+        self.assertEqual(self.store.get(first.id).status, 'waiting_device')
+        self.assertEqual(self.store.get(receipt['task_ids'][1]).status, 'pending')
         self.assertFalse(self.store.has_ready('vm-one'))
+        self.store.control_agent_batch(receipt['batch_id'], 'ses_one', stop=True)
         self.context['call_id'] = 'second_call'
         receipt2 = self.confirm(self.planned())
         with self.store.connection() as db:

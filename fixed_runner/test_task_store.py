@@ -947,6 +947,9 @@ class TaskStoreTest(unittest.TestCase):
                 "failed": 0,
                 "stopped": 0,
                 "cancelled": 0,
+                "waiting_model": 0,
+                "waiting_device": 0,
+                "waiting_user": 0,
             },
         )
 

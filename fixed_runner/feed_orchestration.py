@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from random import Random
 
 
@@ -77,6 +77,30 @@ class HybridFeedPlanner:
             total_processed=self.total_processed,
         )
         return self._current
+
+    def checkpoint(self) -> dict:
+        return {'total_processed': self.total_processed, 'next_name': self._next_name,
+                'current': asdict(self._current) if self._current else None}
+
+    def restore(self, state: dict) -> None:
+        total = int(state['total_processed'])
+        if not 0 <= total <= self.total_videos or state['next_name'] not in self.bounds:
+            raise ValueError('混合流检查点无效')
+        current = FeedPhase(**state['current']) if state.get('current') else None
+        if current and (current.name not in self.bounds or not 0 <= current.processed <= current.target
+                        or current.total_processed != total):
+            raise ValueError('混合流阶段检查点无效')
+        self.total_processed, self._next_name, self._current = total, state['next_name'], current
+
+    def exhaust_phase(self) -> int:
+        """Account for unavailable phase slots without calling them videos."""
+        current = self.current_or_start()
+        if current is None:
+            return 0
+        missing = current.target - current.processed
+        self.total_processed += missing
+        self._current = replace(current, processed=current.target, total_processed=self.total_processed)
+        return missing
 
 
 __all__ = ["FeedPhase", "HybridFeedPlanner"]

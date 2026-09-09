@@ -36,6 +36,8 @@ from execution_tasks import (
     two_video_demo,
 )
 from task_store import TaskStore
+from task_resilience import TaskWaiting
+from model_recovery import model_configuration_key, service_model_wait
 from worker_runtime import (
     connect_with_retry,
     device_preflight,
@@ -93,6 +95,16 @@ def run_worker(
                 break
             from task_preparation import maintenance_may_run
             if (store.get_profile("automation-stop") or {}).get("stopped"):
+                time.sleep(poll_seconds)
+                continue
+            waiting = store.waiting_task(device_id)
+            if waiting is not None and not maintenance_may_run(store, device_id):
+                if waiting['reason_code'] == 'worker_interrupted':
+                    # Reclaim the same task, then check identity/page under its
+                    # action lease. No old write or finished slot is replayed.
+                    store.resume_waiting_task(waiting['id'])
+                else:
+                    service_model_wait(store, waiting)
                 time.sleep(poll_seconds)
                 continue
             if store.is_paused() and not maintenance_may_run(store, device_id) and not store.has_ready(device_id):
@@ -236,6 +248,9 @@ def run_worker(
                     device = connect_with_retry(device_id, connect_attempts, reconnect_delay_seconds)
                     if not device_preflight(device):
                         raise RuntimeError("设备连接检查失败，请重试连接")
+                if task.payload.get('resilience_version') == 'v1':
+                    from session_checkpoint import verify_task_identity
+                    verify_task_identity(store, task, device)
                 def save_video_incident(incident: dict[str, Any]) -> None:
                     store.record_incident(
                         task_id=task.id,
@@ -254,6 +269,9 @@ def run_worker(
                     stop_checker=lambda: store.is_stop_requested(device_id) or store.agent_task_stop_requested(task.id),
                     task_store=store,
                 )
+                from task_preparation import record_inspection_outcome
+                if task.payload.get('resilience_version') == 'v1':
+                    record_inspection_outcome(store, task, result)
                 task_status = (
                     "stopped"
                     if result.get("stopped_by_user")
@@ -282,8 +300,8 @@ def run_worker(
                         else None
                     ),
                 )
-                from task_preparation import record_inspection_outcome
-                record_inspection_outcome(store, task, result)
+                if task.payload.get('resilience_version') != 'v1':
+                    record_inspection_outcome(store, task, result)
                 if task_status == "failed" and task.payload.get("preparation_version") != "on-demand-v1":
                     try:
                         recovery = recover_version_drift(
@@ -329,7 +347,32 @@ def run_worker(
                 if task_status == "stopped":
                     completed += 1
                     break
+            except TaskWaiting as exc:
+                key = exc.model_key
+                if exc.status == 'waiting_model' or exc.reason in {'authentication', 'balance', 'permanent_rejection', 'invalid_request'}:
+                    key = key or model_configuration_key()
+                waiting = store.wait_task(task.id, exc.status, exc.reason, model_key=key, result=exc.result)
+                current = store.get(task.id)
+                print_json({'event': 'task_waiting' if waiting else 'task_' + current.status,
+                            'task_id': task.id, 'status': current.status,
+                            'reason_code': exc.reason if waiting else current.error, 'run_dir': run_dir})
+                continue
             except Exception as exc:
+                if task.payload.get('resilience_version') == 'v1':
+                    record_incident_evidence(
+                        device=device, recorder=recorder,
+                        incident_sink=lambda incident: store.record_incident(task_id=task.id, device_id=task.device_id, **incident),
+                        video_index=None, stage='task', error_type=type(exc).__name__,
+                        error_message=str(exc), outcome='device_fatal', recovery_action='waiting_device',
+                        context={'task_type': task.task_type, 'progress_preserved': True})
+                    waiting = store.wait_task(task.id, 'waiting_device', 'device_or_page_unavailable',
+                                              result=getattr(exc, 'result', None))
+                    needs_reconnect = True
+                    current = store.get(task.id)
+                    print_json({'event': 'task_waiting' if waiting else 'task_' + current.status,
+                                'task_id': task.id, 'status': current.status,
+                                'reason_code': 'device_or_page_unavailable' if waiting else current.error, 'run_dir': run_dir})
+                    continue
                 if task.payload.get("preparation_version") == "on-demand-v1":
                     # Unclassified preparation failures have no safe-home proof.
                     store.request_stop([task.device_id])

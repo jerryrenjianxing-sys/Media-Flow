@@ -1970,6 +1970,8 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         color: str,
         threshold: float,
     ) -> bool:
+        if getattr(self, 'observe_reactions_only', False):
+            return self._observe_reaction(video, action, color=color, threshold=threshold)
         retry_before, retry_gate = self.capture_gate(
             video,
             action,
@@ -2032,6 +2034,33 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         )
         return retry_active
 
+    def _observe_reaction(self, video, action, *, color, threshold):
+        """Bounded read-only confirmation. Never navigate or tap again here."""
+        deadline = time.monotonic() + 4
+        keyword = '喜欢' if action == 'like' else '收藏'
+        for attempt in range(8):
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(min(.5, max(0, deadline - time.monotonic())))
+            frame = self.recorder.screenshot(self.device, f'video-{video}-{action}-observe-{attempt + 1}')
+            if time.monotonic() >= deadline or not self.main_feed_confirmed(frame):
+                return False
+            try:
+                source = self.device.dump_hierarchy(compressed=True, pretty=False)
+                bounds = find_control_bounds(source, keyword, frame.width, frame.height)
+                semantic = control_semantic_state(find_control_description(source, keyword, bounds), action) if bounds else None
+            except Exception:
+                bounds, semantic = None, None
+            # Never reuse a moved target's old coordinates. UI-less visual
+            # confirmation is allowed only after the current feed check above.
+            bounds = bounds or self.control_bounds[action]
+            active = semantic if semantic is not None else color_active_in_bounds(frame, bounds, color, threshold)
+            self.recorder.emit(f'{action}_state_after', video=video, active=active,
+                               verification_attempt=attempt + 2, resolved_without_replay=True)
+            if active and time.monotonic() < deadline:
+                return True
+        return False
+
     def like_verified(self, video: int, before: Image.Image) -> bool:
         bounds = self.control_bounds["like"]
         visual_active = color_active_in_bounds(before, bounds, "red", 0.035)
@@ -2051,6 +2080,10 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         time.sleep(0.8)
         after = self.recorder.screenshot(self.device, f"video-{video}-like-after")
         after_active = color_active_in_bounds(after, bounds, "red", 0.035)
+        if getattr(self, 'observe_reactions_only', False):
+            if not self._observe_reaction(video, 'like', color='red', threshold=0.035):
+                raise RuntimeError('Like verification unresolved; no retry')
+            return True
         self.recorder.emit("like_state_after", video=video, active=after_active)
         if not after_active and not self._retry_confirmed_inactive_reaction_once(
             video, "like", color="red", threshold=0.035
@@ -2081,6 +2114,10 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             self.device, f"video-{video}-favorite-after"
         )
         after_active = color_active_in_bounds(after, bounds, "yellow", 0.025)
+        if getattr(self, 'observe_reactions_only', False):
+            if not self._observe_reaction(video, 'favorite', color='yellow', threshold=0.025):
+                raise RuntimeError('Favorite verification unresolved; no retry')
+            return True
         self.recorder.emit(
             "favorite_state_after", video=video, active=after_active
         )
