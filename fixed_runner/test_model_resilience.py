@@ -17,6 +17,56 @@ import test_model_providers as provider_fixtures
 
 
 class ModelResilienceTests(unittest.TestCase):
+    def business(self, kind):
+        options = dict(api_key='test', base_url=providers.QWEN_BASE_URL, model=providers.QWEN_MODEL)
+        if kind == 'topic':
+            return ai.analyze_topic(None, 'technology', **options)
+        if kind == 'comment':
+            return ai.generate_comment(None, **options)
+        return ai.review_comment_constraint(None, 'comment', 'constraint', **options)
+
+    def test_business_rejects_malformed_field_types_with_shared_repair(self):
+        cases = {
+            'topic': dict(relevance='unrelated', topic='other', evidence=[], reason='other', safe=True),
+            'comment': dict(decision='skip', comment='', reason='other', confidence=.9, commercial=False),
+            'constraint': dict(policy_version=ai.COMMENT_CONSTRAINT_PROMPT_VERSION, decision='allow', category='allowed', reason='other', confidence=.9),
+        }
+        for kind, valid in cases.items():
+            fields = [field for field in valid if field not in ('confidence', 'evidence', 'safe', 'commercial')]
+            if kind == 'comment':
+                fields += ['source_type', 'source_candidate_id']
+            malformed = [(field, value) for field in fields for value in ([], {'private': 'secret-marker'}, 19)]
+            malformed += [('confidence', value) for value in ([], {}, '0.9', 'Infinity', 'NaN', True, None, -1, 2, float('nan'), float('inf'))]
+            if kind == 'topic':
+                malformed += [('evidence', [19]), ('evidence', {}), ('safe', 'false')]
+            if kind == 'comment':
+                malformed += [('commercial', 'false')]
+            for field, value in malformed:
+                with self.subTest(kind=kind, field=field, value=value):
+                    invalid = json.dumps({**valid, field: value})
+                    with patch.object(ai, 'resolve_runtime_model', side_effect=lambda *a:a), patch.object(ai, 'encode_image', return_value=''), patch.object(ai, 'budgeted_post', side_effect=[self.stream(invalid), self.stream(invalid)]) as post:
+                        with self.assertRaises(ai.CloudModelError) as raised:
+                            self.business(kind)
+                    self.assertEqual(post.call_count, 2)
+                    self.assertEqual(raised.exception.kind, 'invalid_response')
+                    self.assertEqual(raised.exception.diagnostics['category'], 'field')
+                    self.assertEqual(raised.exception.attempts, 2)
+                    self.assertNotIn('secret-marker', str(raised.exception))
+
+    def test_malformed_enum_repairs_once_and_cannot_retry_after_transient(self):
+        valid = dict(relevance='unrelated', topic='other', evidence=[], reason='other', safe=True)
+        invalid = json.dumps({**valid, 'relevance': []})
+        for first, second, succeeds in ((self.stream(invalid), self.stream(json.dumps(valid)), True),
+                                        (providers.ProviderError('network_timeout'), self.stream(invalid), False)):
+            with patch.object(ai, 'resolve_runtime_model', side_effect=lambda *a:a), patch.object(ai, 'encode_image', return_value=''), patch.object(ai, 'budgeted_post', side_effect=[first, second]) as post, patch.object(ai.time, 'sleep'):
+                if succeeds:
+                    self.assertEqual(self.business('topic').relevance, 'unrelated')
+                else:
+                    with self.assertRaises(ai.CloudModelError) as raised:
+                        self.business('topic')
+                    self.assertEqual(raised.exception.diagnostics['category'], 'field')
+            self.assertEqual(post.call_count, 2)
+
     def topic(self):
         return ai.analyze_topic(None, 'technology', api_key='test',
                                 base_url=providers.QWEN_BASE_URL, model=providers.QWEN_MODEL)

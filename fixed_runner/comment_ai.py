@@ -914,6 +914,36 @@ def build_topic_request_payload(
     return payload
 
 
+def _valid_business_fields(value, parser):
+    """Validate untrusted JSON types before any parser can normalize them."""
+    if not isinstance(value, dict):
+        return False
+    if parser == parse_topic_decision:
+        fields = {"relevance": str, "topic": str, "evidence": list, "reason": str, "safe": bool}
+        enums = {"relevance": {"exact", "adjacent", "unrelated", "uncertain"}}
+    elif parser == parse_comment_constraint_decision:
+        fields = {"policy_version": str, "decision": str, "category": str, "reason": str, "confidence": (int, float)}
+        enums = {"decision": {"allow", "block"}, "category": set(COMMENT_CONSTRAINT_CATEGORIES)}
+    else:
+        fields = {"decision": str, "comment": str, "reason": str, "confidence": (int, float), "commercial": bool}
+        enums = {"decision": {"comment", "skip"}, "source_type": {"theme_pool", "common_pool", "free_generation"}}
+        for optional in ("source_type", "source_candidate_id"):
+            if optional in value:
+                fields[optional] = str
+    for field, expected in fields.items():
+        accepted = expected if isinstance(expected, tuple) else (expected,)
+        if field not in value or type(value[field]) not in accepted:
+            return False
+    if "confidence" in value:
+        confidence = value["confidence"]
+        # Exact numeric types exclude booleans; bounds also reject NaN/infinity.
+        if type(confidence) not in (int, float) or not 0 <= confidence <= 1:
+            return False
+    if parser == parse_topic_decision and any(type(item) is not str for item in value["evidence"]):
+        return False
+    return all(field not in value or value[field] in allowed for field, allowed in enums.items())
+
+
 def _request_business_json(*, parser, **kwargs):
     budget = _RequestBudget(kwargs["timeout_seconds"])
     payload = kwargs["payload"]
@@ -926,18 +956,12 @@ def _request_business_json(*, parser, **kwargs):
                 value = _extract_json(content)
             except (ValueError, TypeError):
                 raise CloudModelError("invalid_response", "Model JSON is invalid", diagnostics={"category": "json"}) from None
+            if not _valid_business_fields(value, parser):
+                raise CloudModelError("invalid_response", "Model fields are invalid", diagnostics={"category": "field"})
             decision = parser(content)
-            required = ({"relevance", "topic", "evidence", "reason", "safe"} if parser == parse_topic_decision else
-                        {"policy_version", "decision", "category", "reason", "confidence"} if parser == parse_comment_constraint_decision else
-                        {"decision", "comment", "reason", "confidence", "commercial"})
             bad_reason = decision.reason.startswith("invalid_model_response") or decision.reason in {
                 "invalid_category", "invalid_allow_category", "invalid_decision", "policy_version_mismatch"}
-            valid_fields = isinstance(value, dict)
-            if parser == parse_topic_decision:
-                valid_fields = valid_fields and value.get("relevance") in {"exact", "adjacent", "unrelated", "uncertain"} and type(value.get("safe")) is bool and isinstance(value.get("evidence"), list) and all(isinstance(item, str) for item in value.get("evidence", []))
-            elif parser == parse_comment_decision:
-                valid_fields = valid_fields and value.get("decision") in {"comment", "skip"} and type(value.get("commercial")) is bool
-            if not valid_fields or not required.issubset(value) or bad_reason:
+            if bad_reason:
                 raise CloudModelError("invalid_response", "Model fields are invalid", diagnostics={"category": "field"})
             return content
         except CloudModelError as exc:
