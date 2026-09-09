@@ -179,7 +179,10 @@ class _RequestBudget:
 
     def annotate(self, error, stage):
         error.attempts = self.attempts
-        error.diagnostics.update(stage=stage, elapsed_ms=round((time.monotonic()-self.started)*1000),
+        # This is total logical elapsed time, including retry/repair and backoff.
+        # Wrappers must retain a more specific stage already observed below them.
+        error.diagnostics.setdefault("stage", stage)
+        error.diagnostics.update(elapsed_ms=round((time.monotonic()-self.started)*1000),
                                  attempt=self.attempts)
         error.diagnostics.setdefault("category", error.kind)
         return error
@@ -210,6 +213,7 @@ def _request_streaming_json(
         if budget.attempts >= 2 or time.monotonic() >= budget.deadline:
             raise budget.annotate(CloudModelError("transient_network", "Model request deadline exceeded", retryable=True), "deadline")
         budget.attempts += 1
+        request_stage = "transport"
         try:
             with budgeted_post(
                 base_url + "/chat/completions",
@@ -220,6 +224,7 @@ def _request_streaming_json(
                 stream=True,
                 proxies=proxies,
             ) as response:
+                request_stage = "response"
                 if response.status_code >= 400:
                     kind, retryable = _http_error_kind(response.status_code)
                     diagnostics = {}
@@ -233,9 +238,10 @@ def _request_streaming_json(
                         diagnostics=diagnostics,
                     )
                 try:
+                    request_stage = "response_read"
                     content = parse_streaming_response(response.iter_lines())
                     if time.monotonic() >= budget.deadline:
-                        raise CloudModelError("transient_network", "Model request deadline exceeded", retryable=True)
+                        raise budget.annotate(CloudModelError("transient_network", "Model request deadline exceeded", retryable=True), "deadline")
                     return content
                 except CloudModelError:
                     raise
@@ -255,7 +261,7 @@ def _request_streaming_json(
                         attempts=attempt,
                     ) from exc
         except CloudModelError as exc:
-            budget.annotate(exc, "response")
+            budget.annotate(exc, request_stage)
             if not exc.retryable or budget.attempts >= 2 or attempt >= max_attempts:
                 raise
             time.sleep(min(_retry_delay(getattr(locals().get("response"), "headers", None), attempt), max(0, budget.deadline-time.monotonic())))
@@ -263,12 +269,16 @@ def _request_streaming_json(
             if attempt < max_attempts and budget.attempts < 2:
                 time.sleep(min(_retry_delay(None, attempt), max(0, budget.deadline-time.monotonic())))
                 continue
+            if isinstance(exc, requests.ConnectTimeout):
+                request_stage = "connect"
+            elif isinstance(exc, requests.ReadTimeout):
+                request_stage = "response_read"
             raise budget.annotate(CloudModelError(
                 "transient_network",
                 "Model transport failed",
                 retryable=True,
                 attempts=attempt,
-            ), "transport") from None
+            ), request_stage) from None
     raise AssertionError("unreachable cloud model request state")
 
 

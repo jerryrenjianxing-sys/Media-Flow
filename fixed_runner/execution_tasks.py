@@ -5,6 +5,7 @@ import json
 import random
 import re
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,6 +17,7 @@ from comment_ai import (
     analyze_topic,
     generate_comment,
     review_comment_constraint,
+    _redact_text,
 )
 from comment_assets import select_comment_assets
 from douyin_fixed_runner import DOUYIN_PACKAGE, PROFILE
@@ -95,8 +97,19 @@ def _interaction_safety_verification_visible(xml_source: str) -> bool:
 
 
 def _model_error_details(exc: Exception) -> dict[str, Any] | None:
+    if getattr(exc, "comment_model_error", None) is not None:
+        return exc.comment_model_error
     if isinstance(exc, CloudModelError):
-        return exc.public_dict()
+        details = exc.public_dict()
+        # Only structured diagnostics belong in persisted events/API evidence.
+        details["diagnostics"] = {
+            key: _redact_text(value) if isinstance(value, str) else value
+            for key, value in exc.diagnostics.items()
+            if key in {"stage", "elapsed_ms", "attempt", "category", "reason_code",
+                       "finish_reason", "provider_name"}
+            and type(value) in {str, int, float, bool}
+        }
+        return details
     message = str(exc)
     legacy = re.search(r"Cloud model HTTP\s+(\d{3})", message, re.IGNORECASE)
     if not legacy:
@@ -286,9 +299,15 @@ def process_current_comment(
     policy_review: dict[str, Any] | None = None
     asset_audit: dict[str, Any] | None = None
     sent = False
+    comment_error: Exception | None = None
+    evidence_id = f"video-{video}-comment-{uuid.uuid4().hex}"
+    input_path = recorder.run_dir / f"{evidence_id}-ai-input.png"
+    evidence = {"video_index": video, "attempt_id": evidence_id,
+                "input_screenshot_path": str(input_path),
+                "raw_response_path": None, "decision_path": None}
     runner.tap_control("comment-preview", "open_comments_for_ai_preview")
     time.sleep(1.0)
-    panel = recorder.screenshot(device, f"video-{video}-comment-ai-input")
+    panel = recorder.screenshot(device, f"{evidence_id}-ai-input")
     from douyin_fixed_runner import comment_panel_visible
 
     if not comment_panel_visible(panel):
@@ -310,7 +329,7 @@ def process_current_comment(
             used_candidate_ids=used_candidate_ids,
         )
         decision = generate_comment(
-            recorder.run_dir / f"video-{video}-comment-ai-input.png",
+            input_path,
             style_template=assets.template,
             candidates=assets.candidates,
         )
@@ -340,19 +359,20 @@ def process_current_comment(
             source_candidate_id=decision.source_candidate_id,
             asset_audit=asset_audit,
         )
-        raw_path = recorder.run_dir / "comment-ai-raw.txt"
+        raw_path = recorder.run_dir / f"{evidence_id}-ai-raw.txt"
         raw_path.write_text(decision.raw_response[:8000], encoding="utf-8")
-        decision_path = recorder.run_dir / "comment-decision.json"
+        decision_path = recorder.run_dir / f"{evidence_id}-decision.json"
+        evidence.update(raw_response_path=str(raw_path), decision_path=str(decision_path))
         decision_path.write_text(
-            json.dumps(decision.public_dict(), ensure_ascii=False, indent=2),
+            json.dumps({**decision.public_dict(), **evidence}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        recorder.emit("comment_ai_decision", **decision.public_dict())
+        recorder.emit("comment_ai_decision", **decision.public_dict(), **evidence)
         policy_allowed = True
         if comment_policy_enabled and decision.decision == "comment":
             try:
                 constraint = review_comment_constraint(
-                    recorder.run_dir / f"video-{video}-comment-ai-input.png",
+                    input_path,
                     decision.comment,
                     comment_policy_prompt,
                 )
@@ -373,17 +393,17 @@ def process_current_comment(
                 "candidate_comment": decision.comment,
                 **constraint.public_dict(),
             }
-            (recorder.run_dir / f"video-{video}-comment-constraint.json").write_text(
+            (recorder.run_dir / f"{evidence_id}-constraint.json").write_text(
                 json.dumps(policy_review, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
             if constraint.raw_response:
-                (recorder.run_dir / f"video-{video}-comment-constraint-raw.txt").write_text(
+                (recorder.run_dir / f"{evidence_id}-constraint-raw.txt").write_text(
                     constraint.raw_response[:8000], encoding="utf-8"
                 )
             recorder.emit("comment_constraint_decision", **policy_review)
         asset_audit["comment_policy_review"] = policy_review
-        (recorder.run_dir / f"video-{video}-comment-assets.json").write_text(
+        (recorder.run_dir / f"{evidence_id}-assets.json").write_text(
             json.dumps(asset_audit, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         recorder.emit("comment_asset_decision", **asset_audit)
@@ -398,8 +418,10 @@ def process_current_comment(
                 after_send=getattr(runner, 'after_comment_send', None),
             )
     except Exception as exc:
+        comment_error = exc
+        model_error = _model_error_details(exc)
         try:
-            evidence_name = f"video-{video}-comment-failure-before-recovery"
+            evidence_name = f"{evidence_id}-failure-before-recovery"
             recorder.screenshot(device, evidence_name)
             setattr(
                 exc,
@@ -411,25 +433,34 @@ def process_current_comment(
         try:
             evidence_ui = device.dump_hierarchy(compressed=True, pretty=False)
             evidence_ui_path = (
-                recorder.run_dir / f"video-{video}-comment-failure-before-recovery.xml"
+                recorder.run_dir / f"{evidence_id}-failure-before-recovery.xml"
             )
             evidence_ui_path.write_text(str(evidence_ui), encoding="utf-8")
             setattr(exc, "evidence_ui_tree_path", str(evidence_ui_path))
         except Exception:
             pass
-        recorder.emit(
-            "comment_failure_evidence",
-            video=video,
-            error_type=type(exc).__name__,
-            error=str(exc),
-            screenshot_path=getattr(exc, "evidence_screenshot_path", None),
-            ui_tree_path=getattr(exc, "evidence_ui_tree_path", None),
-        )
+        failure_path = recorder.run_dir / f"{evidence_id}-failure.json"
+        failure = {**evidence, "video": video, "error_type": type(exc).__name__,
+                   "error": f"cloud_model:{model_error['kind']}" if model_error else str(exc),
+                   "model_error": model_error, "failure_path": str(failure_path),
+                   "screenshot_path": getattr(exc, "evidence_screenshot_path", None),
+                   "ui_tree_path": getattr(exc, "evidence_ui_tree_path", None)}
+        setattr(exc, "comment_evidence", failure)
+        try:
+            failure_path.write_text(json.dumps(failure, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as evidence_error:
+            failure.update(failure_path=None, evidence_write_error=type(evidence_error).__name__)
+        recorder.emit("comment_failure_evidence", **failure)
         raise
     finally:
         try:
             runner.close_comment_panel(video, f"video-{video}-comment-ai-closed")
         except Exception as close_exc:
+            if comment_error is not None:
+                setattr(close_exc, "comment_model_error", _model_error_details(comment_error))
+                for name in ("evidence_screenshot_path", "evidence_ui_tree_path", "comment_evidence"):
+                    if hasattr(comment_error, name):
+                        setattr(close_exc, name, getattr(comment_error, name))
             if sent and decision is not None:
                 setattr(
                     close_exc,
@@ -1308,6 +1339,13 @@ def topic_session(
         except (DeviceFatalError, ModelChannelError, TaskWaiting):
             raise
         except Exception as exc:
+            model_error = _model_error_details(exc)
+            error_message = f"cloud_model:{model_error['kind']}" if model_error else str(exc)
+            if model_error:
+                error_kind = str(model_error['kind'])
+                summary['model_errors'] += 1
+                errors = summary['model_error_counts']
+                errors[error_kind] = int(errors.get(error_kind, 0)) + 1
             confirmed_comment = getattr(exc, "confirmed_comment_outcome", None)
             if confirmed_comment is not None:
                 comment, sent, policy_review = confirmed_comment[:3]
@@ -1470,7 +1508,7 @@ def topic_session(
                 "video_index": video,
                 "stage": stage,
                 "error_type": type(exc).__name__,
-                "error_message": str(exc),
+                "error_message": error_message,
                 "outcome": outcome,
                 "recovery_action": recovery_action,
                 "screenshot_path": screenshot_path,
@@ -1485,6 +1523,8 @@ def topic_session(
                     "reaction_actions_disabled": sorted(disabled_reactions),
                     "comment_circuit_opened": comment_circuit_opened_now,
                     "comment_actions_disabled": ["comment"] if comment_disabled else [],
+                    **({"model_error": model_error} if model_error else {}),
+                    **({"comment_evidence": exc.comment_evidence} if hasattr(exc, "comment_evidence") else {}),
                 },
             }
             recorder.emit("video_incident", **incident)
@@ -1501,8 +1541,9 @@ def topic_session(
                 {
                     "matched": bool(entry.get("matched", False)),
                     "actions": actions,
-                    "error": f"{type(exc).__name__}: {exc}",
+                    "error": f"{type(exc).__name__}: {error_message}",
                     "outcome": outcome,
+                    **({"model_error": model_error} if model_error else {}),
                 }
             )
             decisions.append(entry)
@@ -1522,14 +1563,9 @@ def topic_session(
             if resilient and not recovered:
                 persist()
                 raise TaskWaiting('waiting_device', 'required_feed_recovery_failed', result=summary) from exc
-            model_error = _model_error_details(exc) if resilient else None
             if resilient and not model_error:
                 model_failure_streak = 0
-            if model_error:
-                error_kind = str(model_error['kind'])
-                summary['model_errors'] += 1
-                errors = summary['model_error_counts']
-                errors[error_kind] = int(errors.get(error_kind, 0)) + 1
+            if resilient and model_error:
                 model_failure_streak = model_failure_streak + 1 if model_error.get('retryable') else 0
                 permanent = error_kind in {'authentication', 'balance', 'permanent_rejection', 'permission_denied', 'model_unavailable', 'invalid_request'}
                 if permanent or model_failure_streak >= 3:

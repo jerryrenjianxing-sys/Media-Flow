@@ -1,10 +1,12 @@
 from pathlib import Path
+import json
 import requests
 import sys
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import comment_ai as ai
 
 from PIL import Image
 
@@ -39,6 +41,73 @@ class FakeCloudResponse:
 
     def iter_lines(self):
         return iter(self._lines)
+
+
+class BusinessDiagnosticTest(unittest.TestCase):
+    def request(self):
+        return ai._request_business_json(parser=ai.parse_comment_decision,
+            base_url='https://offline.invalid', api_key='offline', timeout_seconds=60,
+            payload={'messages': [{}, {'content': [{'text': 'review'}]}]})
+
+    def test_transport_stage_and_total_elapsed_survive_business_wrapper(self):
+        for error, stage in ((requests.ConnectTimeout('private transport detail'), 'connect'),
+                             (requests.ReadTimeout('private transport detail'), 'response_read'),
+                             (requests.ConnectionError('private transport detail'), 'transport')):
+            with self.subTest(stage=stage):
+                clock = [0.0]
+                def fail(*args, **kwargs):
+                    clock[0] += 10
+                    raise error
+                with patch.object(ai, 'budgeted_post', side_effect=fail) as post, \
+                     patch.object(ai.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     patch.object(ai.time, 'sleep', side_effect=lambda delay: clock.__setitem__(0, clock[0]+delay)), \
+                     patch.object(ai, '_retry_delay', return_value=2):
+                    with self.assertRaises(CloudModelError) as caught: self.request()
+                self.assertEqual(caught.exception.diagnostics['stage'], stage)
+                self.assertEqual(caught.exception.diagnostics['elapsed_ms'], 22000)
+                self.assertEqual(caught.exception.attempts, 2)
+                self.assertEqual(post.call_count, 2)
+                self.assertNotIn('private transport detail', str(caught.exception))
+
+    def test_read_connection_error_has_observed_response_read_stage(self):
+        class BrokenStream(FakeCloudResponse):
+            def iter_lines(self): raise requests.ConnectionError('private response')
+        with patch.object(ai, 'budgeted_post', side_effect=lambda *a, **k: BrokenStream(200)), patch.object(ai.time, 'sleep'):
+            with self.assertRaises(CloudModelError) as caught: self.request()
+        self.assertEqual(caught.exception.diagnostics['stage'], 'response_read')
+        self.assertEqual(caught.exception.attempts, 2)
+
+    def test_business_schema_failure_retains_schema_stage_and_two_attempt_limit(self):
+        def response(*args, **kwargs):
+            return FakeCloudResponse(200, lines=[('data: '+json.dumps({'choices': [{'delta': {'content': '{}'}}]})).encode(), b'data: [DONE]'])
+        with patch.object(ai, 'budgeted_post', side_effect=response) as post:
+            with self.assertRaises(CloudModelError) as caught: self.request()
+        self.assertEqual(caught.exception.diagnostics['stage'], 'schema')
+        self.assertEqual(caught.exception.diagnostics['category'], 'field')
+        self.assertEqual(caught.exception.attempts, 2)
+        self.assertEqual(post.call_count, 2)
+
+    def test_expired_logical_deadline_is_not_relabelled_response(self):
+        clock = [0.0]
+        def fail(*args, **kwargs):
+            clock[0] = 60.0
+            raise requests.ConnectTimeout('private')
+        with patch.object(ai, 'budgeted_post', side_effect=fail) as post, \
+             patch.object(ai.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(ai.time, 'sleep'):
+            with self.assertRaises(CloudModelError) as caught: self.request()
+        self.assertEqual(caught.exception.diagnostics['stage'], 'deadline')
+        self.assertEqual(caught.exception.diagnostics['elapsed_ms'], 60000)
+        self.assertEqual(caught.exception.attempts, 1)
+        self.assertEqual(post.call_count, 1)
+
+    def test_lower_level_cloud_error_stage_is_preserved(self):
+        error = CloudModelError('transient_network', 'deadline reached', retryable=True,
+                                diagnostics={'stage': 'deadline'})
+        with patch.object(ai, 'budgeted_post', side_effect=error) as post, patch.object(ai.time, 'sleep'):
+            with self.assertRaises(CloudModelError) as caught: self.request()
+        self.assertEqual(caught.exception.diagnostics['stage'], 'deadline')
+        self.assertEqual(caught.exception.attempts, 2)
+        self.assertEqual(post.call_count, 2)
 
 
 class CommentDecisionTest(unittest.TestCase):
