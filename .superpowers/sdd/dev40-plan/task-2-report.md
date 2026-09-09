@@ -37,3 +37,23 @@ Status: implemented; focused desktop QA passed. Base: 86bb1f9. No device calls, 
 - Isolated synthetic new badge/state receipts exercise UI branches; saved real historical receipts remain unchanged. This is not a claim of live device availability or new badge recognition accuracy.
 - Existing source-presence tests that required removed old UI switches/recovery actions were removed or updated to the new active labels; rendered behavioral coverage replaces their obsolete assertions. Historical acceptance documents were not rewritten.
 - Root-owned batch-evidence-integrity specification remains unstaged; no root files included in this scoped implementation commit.
+
+## Review correction — 2026-09-09
+
+Baseline: `c1689b591f12072e3df67a8b0c6d4221a92212d5` (includes root documentation/specification work). Implementation head: `caf0509c94404c1159bd8be8ff8443c513926518`. This addendum is a separate report-only commit; the original acceptance evidence above remains historical.
+
+Read task-2-review-report.md completely and addressed both Important findings and the Minor mode-classification finding, plus the approved management-link naming correction. Receiving-code-review, TDD and verification-before-completion skills guided reproduction, bounded correction and fresh verification.
+
+- Restored shared build_preview to preview the caller's frozen inspection mode. A dedicated build_workbench_preview boundary selects home_badge without modifying the saved draft, and the workbench API now imports that boundary. UI submission remains home_badge. Compatibility AgentPlatform preview and confirmation now use the same legacy configuration, hash and eligibility gates.
+- Added real AgentPlatform temporary-store tests: unsupported legacy mode is blocked and confirmation creates no tasks/launcher calls; a standard isolated VM previews legacy with a distinct hash from home_badge, then confirmation freezes v3/legacy tasks with the previewed inspection count. Existing saved UI legacy draft preservation/home submission regression remains passing.
+- Unified inspection summary text for list/detail and inspection-only status labels. Counts come from inspection counters; cancelled/stopped are terminal, active running/pending/waiting status takes priority over older failure/degraded counts. Mixed groups use inspection_status rather than the whole group's video state. Absent mixed inspection status explicitly remains unrecorded.
+- Failure-only receipts without frozen mode remain unknown, display 检查失败/巡检模式未记录, retain the saved failure detail and never claim historical legacy. Receipt overview uses this diagnostic too. Management link now reads 消息巡检与历史记录; destination and behavior unchanged.
+
+### Fresh red → green and validation
+
+- Before fixes, both new AgentPlatform tests failed: unsupported legacy was ready, and legacy/home previews had identical hashes. After fixes, both pass through the real planning and confirmation methods using only a temporary SQLite store and mocked worker launcher.
+- Before display fixes, the new resolver and rendered unknown-card tests showed 旧版详细巡检 · 历史只读; the new actual TaskGroupList test showed cancelled inspection as 等待检查. After fixes, all pass. Aggregate test exercises 18 pure/mixed combinations: cancelled, stopped, partial_failed, partial_degraded, running, pending and waiting_model/device/user, including older failure/degradation counters alongside active states.
+- Python: `python -B -m unittest test_dev40_controls test_run_planning test_agent_platform test_automation.AutomationTests` — 55 passed, 0 failures. Same main .venv interpreter as original report, temporary stores only.
+- Frontend: `node --test --test-reporter=spec tests/*.test.mjs` — 61 passed, 0 failures. Focused inspection files — 19 passed. `npm run typecheck`, `npm run lint`, `npm run build` — passed. Typecheck initially found the new nullable aggregate status guard; corrected before the final passing run. `git diff --check` passed.
+- Rebuilt production candidate at the same `http://127.0.0.1:33040`. Stopped only owned prior session 45478; current exec session is **26637**, same standalone start command and working directory. Root has been notified and owns affected-view browser review and the already completed 144-case desktop matrix; this correction did not repeat that matrix or any 390px work.
+- No live API/database writes, device/model actions, migrations, historical receipt modifications, packaging, version bump, push or broader redesign. Concurrent root specification changes were left unstaged and excluded from the implementation commit.
