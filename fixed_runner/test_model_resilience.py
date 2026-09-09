@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import closing
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 import comment_ai as ai
 import model_providers as providers
@@ -17,6 +17,50 @@ import test_model_providers as provider_fixtures
 
 
 class ModelResilienceTests(unittest.TestCase):
+    def test_image_upload_has_own_socket_timeout_without_changing_connect_limit(self):
+        from model_budget import _BodyWriteConnection
+        from urllib3.connection import HTTPSConnection
+        conn = _BodyWriteConnection('example.invalid', timeout=5)
+        sock = Mock()
+        stages = []
+        def connect():
+            stages.append(('connect', conn.timeout))
+            conn.sock = sock
+        def send(data):
+            stages.append(('write', conn.timeout))
+            sock.settimeout.assert_called_with(25)
+            self.assertEqual(data, b'isolated fixture')
+        with patch.object(conn, 'connect', side_effect=connect), patch.object(HTTPSConnection, 'send', side_effect=send):
+            conn.send(b'isolated fixture')
+        self.assertEqual(stages, [('connect', 5), ('write', 5)])
+        self.assertEqual(conn.timeout, 5)
+        conn.sock = None
+
+    def test_upload_timeout_survives_wrapping_without_exposing_exception_text(self):
+        from model_budget import _BodyWriteConnection, _request_write_timeout
+        from urllib3.connection import HTTPSConnection
+        import requests
+        conn = _BodyWriteConnection('example.invalid', timeout=5)
+        conn.sock = Mock()
+        with patch.object(HTTPSConnection, 'send', side_effect=TimeoutError('private contents')):
+            with self.assertRaises(TimeoutError) as caught:
+                conn.send(b'fixture')
+        self.assertTrue(_request_write_timeout(requests.ConnectionError(caught.exception)))
+        self.assertFalse(_request_write_timeout(requests.ConnectTimeout('private contents')))
+        conn.sock = None
+
+    def test_upload_adapter_does_not_mutate_global_pools_or_retry(self):
+        from model_budget import _BodyWriteAdapter, _BodyWritePool
+        from urllib3.poolmanager import pool_classes_by_scheme
+        old = dict(pool_classes_by_scheme)
+        adapter = _BodyWriteAdapter(max_retries=0)
+        try:
+            self.assertIs(adapter.poolmanager.pool_classes_by_scheme['https'], _BodyWritePool)
+            self.assertEqual(pool_classes_by_scheme, old)
+            self.assertEqual(adapter.max_retries.total, 0)
+        finally:
+            adapter.close()
+
     def business(self, kind):
         options = dict(api_key='test', base_url=providers.QWEN_BASE_URL, model=providers.QWEN_MODEL)
         if kind == 'topic':
@@ -126,7 +170,7 @@ class ModelResilienceTests(unittest.TestCase):
         from model_budget import _openrouter_post
         receipt = {'usage': None}
         raw = FakeCloudResponse(200, lines=[b'data: {"usage":{"cost":0.1,"total_tokens":2}}', b'data: {"usage":{"total_tokens":3}}'])
-        with patch('model_budget.requests.post', return_value=raw):
+        with patch('model_budget._post_request', return_value=raw):
             with _openrouter_post('unused', receipt) as response:
                 list(response.iter_lines())
         self.assertEqual(receipt['usage'], {'cost': .1, 'total_tokens': 3})
@@ -213,7 +257,7 @@ class ConfigurationRecoveryTests(unittest.TestCase):
             db.execute("UPDATE state SET provider=?, active_key='fake', active_contract=?", (providers.QWEN, providers.QWEN_CONTRACT))
         first = FakeCloudResponse(200, lines=[b'data: {"choices":[{"delta":{"content":"bad"},"finish_reason":"stop"}],"usage":{"total_tokens":11}}', b'data: [DONE]'])
         second = FakeCloudResponse(200, lines=[b'data: {"choices":[{"delta":{"content":"bad"},"finish_reason":"stop"}],"usage":{"total_tokens":12}}', b'data: [DONE]'])
-        with patch.object(providers, '_key', return_value='test'), patch.object(ai, 'encode_image', return_value=''), patch('model_budget.requests.post', side_effect=[first, second]) as post:
+        with patch.object(providers, '_key', return_value='test'), patch.object(ai, 'encode_image', return_value=''), patch('model_budget._post_request', side_effect=[first, second]) as post:
             with self.assertRaises(ai.CloudModelError) as raised:
                 ai.analyze_topic(None, 'technology')
         self.assertEqual(post.call_count, 2)
@@ -228,7 +272,7 @@ class ConfigurationRecoveryTests(unittest.TestCase):
         from model_budget import budgeted_post
         with providers.database() as db:
             db.execute("UPDATE state SET provider=?, active_key='fake', active_contract=?", (providers.QWEN, providers.QWEN_CONTRACT))
-        with patch.object(providers, '_key', return_value='test'), patch('model_budget.requests.post', return_value=FakeCloudResponse(200)):
+        with patch.object(providers, '_key', return_value='test'), patch('model_budget._post_request', return_value=FakeCloudResponse(200)):
             for explicit in (False, True):
                 started = time.monotonic()
                 kwargs = {'request_deadline': started+20} if explicit else {}

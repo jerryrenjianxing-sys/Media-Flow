@@ -38,7 +38,7 @@ class ModelTransportTests(unittest.TestCase):
             db.executescript("CREATE TABLE budget(id INTEGER PRIMARY KEY,ceiling TEXT); INSERT INTO budget VALUES(1,'5'); CREATE TABLE charges(id TEXT,model TEXT,reserved TEXT,actual TEXT,created REAL); INSERT INTO charges VALUES('old','test','7',NULL,0);")
         before = path.read_bytes()
         payload = {'model': 'test', 'messages': []}
-        with patch.dict(os.environ, {'MEDIAFLOW_MODEL_BUDGET_PATH': str(path)}), patch('model_budget.requests.get', side_effect=AssertionError('no pricing lookup')), patch('model_budget.requests.post', return_value=self.response({'result': 'sent'})) as post:
+        with patch.dict(os.environ, {'MEDIAFLOW_MODEL_BUDGET_PATH': str(path)}), patch('model_budget.requests.get', side_effect=AssertionError('no pricing lookup')), patch('model_budget._post_request', return_value=self.response({'result': 'sent'})) as post:
             with budgeted_post('https://openrouter.ai/api/v1/chat/completions', json=payload) as response:
                 self.assertEqual(response.json()['result'], 'sent')
         self.assertEqual(post.call_args.kwargs['json'], payload)
@@ -47,7 +47,7 @@ class ModelTransportTests(unittest.TestCase):
 
     def test_actual_cost_and_tokens_recorded_without_budget_configuration(self):
         response = self.response({'usage': {'cost': 12.5, 'total_tokens': 900, 'secret': 'omit'}})
-        with patch.dict(os.environ, {'MEDIAFLOW_MODEL_BUDGET_PATH': ''}), patch('model_budget.requests.post', return_value=response):
+        with patch.dict(os.environ, {'MEDIAFLOW_MODEL_BUDGET_PATH': ''}), patch('model_budget._post_request', return_value=response):
             with budgeted_post('https://openrouter.ai/api/v1/chat/completions', json={'model': 'test'}) as result:
                 result.json()
         self.assertEqual(self.usages(), [{'cost': 12.5, 'total_tokens': 900}])
@@ -55,7 +55,7 @@ class ModelTransportTests(unittest.TestCase):
     def test_stream_usage_records_final_cost_and_unknown_stays_unknown(self):
         response = self.response()
         response.iter_lines.return_value = [b'data: {"usage":{"cost":0}}', b'data: {"usage":{"cost":0.12,"total_tokens":8}}']
-        with patch('model_budget.requests.post', return_value=response):
+        with patch('model_budget._post_request', return_value=response):
             with budgeted_post('https://openrouter.ai/api/v1/chat/completions', json={}) as stream:
                 list(stream.iter_lines())
             with budgeted_post('https://openrouter.ai/api/v1/chat/completions', json={}):
@@ -63,7 +63,7 @@ class ModelTransportTests(unittest.TestCase):
         self.assertEqual(self.usages(), [{'cost': .12, 'total_tokens': 8}, None])
 
     def test_expired_request_never_transmits(self):
-        with patch('model_budget.requests.post') as post:
+        with patch('model_budget._post_request') as post:
             with self.assertRaises(providers.ProviderError) as raised:
                 with budgeted_post('https://openrouter.ai/api/v1/chat/completions', json={}, request_deadline=time.monotonic()-1):
                     self.fail('expired request')

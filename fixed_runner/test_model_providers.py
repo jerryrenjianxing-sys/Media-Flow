@@ -57,7 +57,7 @@ class TokenPlanTests(unittest.TestCase):
         return response
 
     def test_save_is_local_and_does_not_activate(self):
-        with patch("model_budget.requests.post") as post, patch("model_connection.requests.get") as get:
+        with patch("model_budget._post_request") as post, patch("model_connection.requests.get") as get:
             state = self.save()
         post.assert_not_called(); get.assert_not_called()
         self.assertEqual(state["model_test_status"], "untested")
@@ -72,7 +72,7 @@ class TokenPlanTests(unittest.TestCase):
         for exception, code in ((requests.ConnectTimeout, 'connect_timeout'),
                                 (requests.ReadTimeout, 'read_timeout'),
                                 (requests.exceptions.SSLError, 'tls_error')):
-            with patch('model_budget.requests.post', side_effect=exception('SECRET should never escape')):
+            with patch('model_budget._post_request', side_effect=exception('SECRET should never escape')):
                 with self.assertRaises(providers.ProviderError) as caught:
                     with budgeted_post(providers.QWEN_BASE_URL+'/chat/completions', candidate_ref=ref,
                                        json={'model': providers.QWEN_MODEL}, headers={'Authorization':'Bearer dummy'}):
@@ -138,7 +138,7 @@ class TokenPlanTests(unittest.TestCase):
 
     def test_consent_missing_never_calls_model(self):
         self.save()
-        with patch("model_budget.requests.post") as post:
+        with patch("model_budget._post_request") as post:
             with self.assertRaises(providers.ProviderError):
                 providers.test_candidate(consent=False)
         post.assert_not_called()
@@ -147,7 +147,7 @@ class TokenPlanTests(unittest.TestCase):
     def test_real_probe_contract_not_just_http_success(self):
         self.save()
         good = {"choices": [{"message": {"content": json.dumps({"number": "1234", "color": "red", "text_check": "OK"})}}]}
-        with patch("model_providers.secrets.randbelow", return_value=234), patch("model_budget.requests.post", return_value=self.response(value=good)) as post:
+        with patch("model_providers.secrets.randbelow", return_value=234), patch("model_budget._post_request", return_value=self.response(value=good)) as post:
             state = providers.test_candidate(consent=True)
         self.assertEqual(state["model_test_status"], "passed")
         self.assertEqual(providers.selection()["provider"], "openrouter")
@@ -155,7 +155,7 @@ class TokenPlanTests(unittest.TestCase):
         self.assertTrue(request["messages"][0]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,"))
         self.assertFalse(request["enable_thinking"])
         self.assertEqual(request["response_format"], {"type": "json_object"})
-        with patch("model_budget.requests.post", return_value=self.response()):
+        with patch("model_budget._post_request", return_value=self.response()):
             result = providers.test_candidate(consent=True)
         self.assertEqual(result["model_test_status"], "failed")
         self.assertEqual(result["requests_used"], 2)
@@ -163,7 +163,7 @@ class TokenPlanTests(unittest.TestCase):
     def test_qwen_payload_and_usage_are_separate_from_usd_budget(self):
         ref = self.passed()
         response = self.response(value={"usage": {"total_tokens": 50, "secret": "bad", "cost": 100}})
-        with patch.dict(os.environ, {"MEDIAFLOW_MODEL_BUDGET_PATH": "must-not-touch.db"}), patch("model_budget.requests.get", side_effect=AssertionError('no pricing lookup')), patch("model_budget.requests.post", return_value=response) as post:
+        with patch.dict(os.environ, {"MEDIAFLOW_MODEL_BUDGET_PATH": "must-not-touch.db"}), patch("model_budget.requests.get", side_effect=AssertionError('no pricing lookup')), patch("model_budget._post_request", return_value=response) as post:
             with budgeted_post(providers.QWEN_BASE_URL+"/chat/completions", candidate_ref=ref,
                                data=json.dumps({"model": providers.QWEN_MODEL, "provider": {"foo": 1}, "usage": {}, "stream": True}), headers={"Authorization": "Bearer dummy", "X-OpenRouter-Metadata": "enabled"}) as stream:
                 stream.json()
@@ -205,7 +205,7 @@ class TokenPlanTests(unittest.TestCase):
         def slow(*args, **kwargs):
             time.sleep(.08)
             return good
-        with patch("model_providers.secrets.randbelow", return_value=234), patch("model_budget.requests.post", side_effect=slow), patch("control_vision._bounded_call", side_effect=lambda call, seconds: _bounded_call(call, .02)):
+        with patch("model_providers.secrets.randbelow", return_value=234), patch("model_budget._post_request", side_effect=slow), patch("control_vision._bounded_call", side_effect=lambda call, seconds: _bounded_call(call, .02)):
             result = providers.test_candidate(consent=True)
             time.sleep(.12)
         self.assertEqual(result["model_test_status"], "failed")
@@ -219,7 +219,7 @@ class TokenPlanTests(unittest.TestCase):
             candidate = providers._candidate(c)
             candidate.update(model_test_status="testing", testing_pid=os.getpid())
             providers._write_candidate(c, candidate)
-        with patch("model_budget.requests.post") as post:
+        with patch("model_budget._post_request") as post:
             with self.assertRaisesRegex(ValueError, "正在进行"):
                 providers.test_candidate(consent=True)
         post.assert_not_called()
@@ -267,7 +267,7 @@ class TokenPlanTests(unittest.TestCase):
         try:
             code, initial = request("/api/model?provider=qwen_token_plan")
             self.assertEqual((code, initial["active_provider"]), (200, "openrouter"))
-            with patch("model_budget.requests.post") as post, patch("model_connection.requests.get") as get:
+            with patch("model_budget._post_request") as post, patch("model_connection.requests.get") as get:
                 code, saved = request("/api/model-key", {"provider": providers.QWEN, "api_key": "sk-sp-" + "x"*32})
                 self.assertEqual(code, 200)
                 self.assertTrue(saved["accepted"])
@@ -297,7 +297,7 @@ class TokenPlanTests(unittest.TestCase):
         response = self.response()
         def lines_for(value):
             return [("data: " + json.dumps({"choices": [{"delta": {"content": json.dumps(value)}}]})).encode(), b"data: [DONE]"]
-        with patch("model_budget.requests.post", return_value=response) as post:
+        with patch("model_budget._post_request", return_value=response) as post:
             response.iter_lines.return_value = lines_for({"decision": "skip", "comment": "", "reason": "unclear", "confidence": .1, "commercial": False})
             generate_comment(image)
             response.iter_lines.return_value = lines_for({"matches": False, "relevance": "uncertain", "topic": "test", "evidence": [], "reason": "unclear", "confidence": .1, "safe": False})

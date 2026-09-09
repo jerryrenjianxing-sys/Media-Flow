@@ -14,6 +14,65 @@ from types import SimpleNamespace
 from contextlib import contextmanager
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPSConnection
+from urllib3.connectionpool import HTTPSConnectionPool
+
+
+class _BodyWriteConnection(HTTPSConnection):
+    """Keep TLS/connect short without applying that timeout to image uploads."""
+    def send(self, data):
+        if self.sock is None:
+            self.connect()  # self.timeout remains the original connect limit.
+        self.sock.settimeout(25)
+        try:
+            return super().send(data)
+        except TimeoutError as error:
+            error.mediaflow_phase = 'request_write'
+            raise
+
+
+class _BodyWritePool(HTTPSConnectionPool):
+    ConnectionCls = _BodyWriteConnection
+
+
+class _BodyWriteAdapter(HTTPAdapter):
+    @staticmethod
+    def _configure(manager):
+        # PoolManager's default dictionary is shared: never mutate it globally.
+        manager.pool_classes_by_scheme = {
+            **manager.pool_classes_by_scheme, 'https': _BodyWritePool}
+        return manager
+
+    def init_poolmanager(self, *args, **kwargs):
+        super().init_poolmanager(*args, **kwargs)
+        self._configure(self.poolmanager)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        return self._configure(super().proxy_manager_for(*args, **kwargs))
+
+
+def _post_request(url, **kwargs):
+    from model_providers import QWEN_BASE_URL
+    if url != QWEN_BASE_URL + '/chat/completions':
+        return requests.post(url, **kwargs)
+    # Same lifetime as requests.post; response streams remain owned by caller.
+    with requests.Session() as session:
+        session.mount(QWEN_BASE_URL + '/', _BodyWriteAdapter(max_retries=0))
+        return session.post(url, **kwargs)
+
+
+def _request_write_timeout(error):
+    pending, seen = [error], set()
+    while pending:
+        exc = pending.pop()
+        if not isinstance(exc, BaseException) or id(exc) in seen:
+            continue
+        seen.add(id(exc))
+        if getattr(exc, 'mediaflow_phase', None) == 'request_write':
+            return True
+        pending.extend([exc.__cause__, exc.__context__, *exc.args])
+    return False
 
 
 def _before_deadline(operation, deadline, close=None):
@@ -92,7 +151,7 @@ class _MeteredResponse:
 def _openrouter_post(url: str, receipt, **kwargs):
     deadline = kwargs.pop("request_deadline", time.monotonic()+20)
     # No catalogue request, price ceiling, reservation or configured local cap.
-    response = _before_deadline(lambda: requests.post(url, **kwargs), deadline)
+    response = _before_deadline(lambda: _post_request(url, **kwargs), deadline)
     try:
         yield _MeteredResponse(_TokenPlanResponse(response, {"usage": None}, deadline), receipt)
     finally:
@@ -186,7 +245,7 @@ def budgeted_post(url: str, **kwargs):
         kwargs["timeout"] = (min(5, remaining), min(25, remaining))
         stage = 'connect_or_headers'
         try:
-            response = _before_deadline(lambda: requests.post(url, **kwargs), deadline)
+            response = _before_deadline(lambda: _post_request(url, **kwargs), deadline)
             try:
                 stage = 'response_read'
                 if 300 <= response.status_code < 400:
@@ -201,11 +260,13 @@ def budgeted_post(url: str, **kwargs):
             error = ProviderError("network_timeout")
             # Only our finite diagnostic vocabulary crosses this boundary;
             # exception messages can contain URLs, proxy credentials or keys.
-            category = ('connect_timeout' if isinstance(exc, requests.ConnectTimeout)
+            category = ('write_timeout' if _request_write_timeout(exc)
+                        else 'connect_timeout' if isinstance(exc, requests.ConnectTimeout)
                         else 'read_timeout' if isinstance(exc, requests.ReadTimeout)
                         else 'tls_error' if isinstance(exc, requests.exceptions.SSLError)
                         else 'proxy_error' if isinstance(exc, requests.exceptions.ProxyError)
                         else 'connection_error' if isinstance(exc, requests.ConnectionError)
                         else 'request_error')
-            error.diagnostics.update(stage=stage, transport_error=category)
+            error.diagnostics.update(stage='request_write' if category == 'write_timeout' else stage,
+                                     transport_error=category)
             raise error from None

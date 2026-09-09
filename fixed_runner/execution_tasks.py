@@ -113,7 +113,7 @@ def _model_error_details(exc: Exception) -> dict[str, Any] | None:
             key: _redact_text(value) if isinstance(value, str) else value
             for key, value in exc.diagnostics.items()
             if key in {"stage", "elapsed_ms", "attempt", "category", "reason_code",
-                       "finish_reason", "provider_name"}
+                       "finish_reason", "provider_name", "transport_error"}
             and type(value) in {str, int, float, bool}
         }
         return details
