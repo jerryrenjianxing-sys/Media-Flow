@@ -5,6 +5,8 @@
 
 ## Requirements
 
+> 适用范围（现行）：以下完整初始化/三条自检条款保留为旧显式维护流程兼容契约，不是新设备管理、选择或任务提交的统一门槛。普通任务按需准备，以 windows-distribution 的“平台携带标准虚拟机配置 Skill”和 execution-architecture 的外部Skill流程为准；登录只在实际业务遇到时处理。不得因此新建旧巡检校准或默认运行整套自检。
+
 ### Requirement: 独立初始化生命周期
 系统 SHALL 为每台设备保存独立初始化记录，状态 MUST 为 `queued`、`running`、`waiting_user`、`ready`、`stale`、`failed` 或 `cancelled` 之一，且不得把初始化记录混入普通社媒任务。
 

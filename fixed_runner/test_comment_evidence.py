@@ -62,6 +62,30 @@ class CommentEvidenceTest(unittest.TestCase):
             self.assertEqual(saved['reason'], text)
             self.assertEqual(saved['video_index'], event['video_index'])
 
+    def test_panel_delayed_then_ready_uses_single_open_and_current_video(self):
+        runner = CommentFeed()
+        with patch.object(runner, 'tap_control') as tap, \
+             patch('douyin_fixed_runner.comment_panel_visible', side_effect=[False, False, True]), \
+             patch('execution_tasks.generate_comment', return_value=CommentDecision('skip', '', 'test', .9, False, '{}')) as generate:
+            process_current_comment(Device(), self.recorder, runner, video=31, send=False)
+        tap.assert_called_once()
+        context_path = generate.call_args.kwargs['video_image_path']
+        self.assertIn('video-31-', str(context_path))
+        self.assertTrue(context_path.is_file())
+
+    def test_panel_open_failure_gets_evidence_and_cleanup_without_generation(self):
+        runner = CommentFeed()
+        with patch.object(runner, 'close_comment_panel') as close, \
+             patch.object(runner, 'tap_control') as tap, \
+             patch('douyin_fixed_runner.comment_panel_visible', return_value=False), \
+             patch('execution_tasks.generate_comment') as generate:
+            with self.assertRaisesRegex(RuntimeError, 'Comment panel'):
+                process_current_comment(Device(), self.recorder, runner, video=32, send=False)
+        tap.assert_called_once()
+        close.assert_called_once()
+        generate.assert_not_called()
+        self.assertEqual(len(self.events('comment_failure_evidence')), 1)
+
     def test_second_invalid_response_has_current_input_and_no_stale_raw_attribution(self):
         with patch('execution_tasks.generate_comment', side_effect=[CommentDecision('skip', '', 'first', .9, False, 'first raw'), self.error()]):
             self.comment(1)

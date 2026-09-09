@@ -1,7 +1,7 @@
 # execution-architecture Specification
 
 ## Purpose
-TBD - created by archiving change modularize-execution-core. Update Purpose after archive.
+描述MediaFlow外部Skill、本地业务服务、固定执行器及开发带测之间的职责，保证通用流程、设备独占和真实结果可追溯，不把历史聊天机制作为业务前置条件。
 
 ## Requirements
 
@@ -36,7 +36,7 @@ TBD - created by archiving change modularize-execution-core. Update Purpose afte
 
 #### Scenario: 代办入口重试
 - **WHEN** 内容计划、预设、模型测试/启用或提醒确认通过automation执行
-- **THEN** 复用原业务服务与持久化请求回执，保留版本、额度、上传同意和忙碌约束；重复或结果未知不重放，不返回凭据
+- **THEN** 复用原业务服务与持久化请求回执，保留版本、服务商真实额度、上传同意和忙碌约束；平台不设本地次数或金额预算，重复或结果未知不重放，不返回凭据
 
 ### Requirement: Skill 首次接入是独立只读路径
 系统 SHALL 提供无需 Python 的首次连接检查，并从已有数据库只读返回平台及登记设备摘要。该路径 SHALL NOT 创建业务上下文、收口任务、连接 ADB、扫描或操作虚拟机；历史设备状态 SHALL 带检测时间且不得解释为当前在线。
@@ -56,7 +56,7 @@ TBD - created by archiving change modularize-execution-core. Update Purpose afte
 - **THEN** Agent SHALL 明确限制并给出用户可执行的检查步骤，不查询云端回环地址冒充本机检查
 
 ### Requirement: 固定执行器拥有唯一设备动作平面
-系统 SHALL 只允许固定执行器持有设备连接并执行点击、滑动、输入和返回；AI、纠错分析器、控制接口和网页 SHALL NOT 直接操作设备。AI 结果 SHALL 仅作为固定执行器验证的结构化主题、安全或只读纠错数据。
+正式业务系统 SHALL 只允许固定执行器持有设备连接并执行点击、滑动、输入和返回；业务AI、纠错分析器、控制接口和网页 SHALL NOT 直接操作设备。AI 结果 SHALL 仅作为固定执行器验证的结构化主题、安全或只读纠错数据。此处不禁止用户明确授权的开发MBH带测：开发者须与Worker交接同一设备锁，观察、单步验证并将稳定方法交回固定程序，不形成第二条常驻生产执行链。
 
 #### Scenario: AI 返回建议
 - **WHEN** AI 完成主题、安全或纠错分析

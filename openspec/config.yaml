@@ -6,7 +6,7 @@ context: |
   Keep OpenSpec structural headings and SHALL/MUST keywords in English.
   Read PROJECT.md before planning. Read STATUS.md for current state and RUNBOOK.md for operations.
   The production path is console -> local API -> SQLite queue -> per-device Worker -> uiautomator2 -> Android.
-  MBH/Codex are development tools; AI returns decisions or candidates and never clicks devices directly.
+  Production AI only returns decisions/candidates. User-authorized MBH development sessions may control devices after taking the shared device lock; release it before fixed-runner verification.
   Preserve runtime data and evidence. Device actions default to preview and require explicit authorization for writes.
 
 rules:

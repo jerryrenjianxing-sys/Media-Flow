@@ -1,7 +1,7 @@
 # windows-distribution Specification
 
 ## Purpose
-TBD - created by archiving change package-windows-installer. Update Purpose after archive.
+定义MediaFlow Windows软件与完整平台Skill的可移植交付要求，区分程序、运行环境和用户数据，保证版本可追溯、失败可回退，不以历史安装包代替当前验收。
 
 ## Requirements
 

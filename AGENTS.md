@@ -1,10 +1,11 @@
-# RiskFlow Agent 规则
+# MediaFlow Agent 规则
 
 ## 开始工作
 
 1. 先读 `PROJECT.md`；涉及当前状态时再读 `STATUS.md`，涉及运行或排障时读 `RUNBOOK.md`。
 2. 运行 `openspec list`，读取相关主规格和活动 change，再核对实际代码与测试。
-3. `outputs/`、`research/`、历史聊天和已标记的历史文档只作证据；当前要求以主规格和 `docs/decisions/` 为准。
+3. `outputs/`、`research/`、历史聊天和已标记的历史文档只作证据；当前要求以主规格和 `docs/decisions/` 为准。先读现行索引，不把历史流程恢复为默认；要求与实现冲突记入待修清单，不伪造通过。
+4. MBH 入口与锁交接见 `docs/mbh-development.md`；没有MCP工具项不表示本机技能不存在。用户已确认的后续范围见 `docs/current-followup.md`，不重新索要已有参数。
 
 ## 变更门槛
 
@@ -19,5 +20,6 @@
 - 设备动作默认使用预览或无写入路径。只有离线、接口和页面检查不足时，才申请最小设备预演。
 - 验收顺序固定为：OpenSpec 严格校验 → Python 测试 → 控制台测试 → API → 浏览器页面 → 必要设备预演。
 - 所有必需验证通过且任务完成后，同步主规格、归档 change，并更新 `STATUS.md` 或 `CHANGELOG.md` 中受影响的内容。
+- 现行状态只维护在STATUS；新增或移动说明更新 `docs/context-inventory.json`，执行 `scripts/check-context.py`。历史验收不改写，文档修改不为制造证据操作手机。
 
 OpenSpec 项目技能位于 `.agents/skills/`；在新 Codex 任务中使用 `$openspec-explore`、`$openspec-propose`、`$openspec-apply-change`、`$openspec-update-change`、`$openspec-sync-specs` 和 `$openspec-archive-change`。

@@ -101,6 +101,29 @@ class LongExecutionTest(unittest.TestCase):
         self.assertEqual(result['unknown_actions'], 0)
         self.assertEqual(result['comment_actions_disabled'], [])
 
+    def test_confirmed_not_applied_does_not_count_write_or_disable_capability(self):
+        from task_store import TaskStore
+        from session_checkpoint import SessionCheckpoint
+        from douyin_uia2_runner import ReactionVerificationError, ReactionObservation
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory)/'tasks.db')
+            task_id = store.submit('healthcheck', 'phone', {'resilience_version':'v1'})
+            store.claim_next('phone', 'worker')
+            cp = SessionCheckpoint(store, task_id)
+            error = ReactionVerificationError('like', ReactionObservation('not_applied','state_still_inactive',8000))
+            with patch.object(Feed, 'like_verified', side_effect=error) as click:
+                result, _ = self.run_session([Topic()] * 2,
+                    {**self.config(2), 'like_probability':1}, checkpoint=cp)
+            self.assertEqual(click.call_count, 2)  # one per different slot, no retry
+            self.assertEqual(result['likes'], 0)
+            self.assertEqual(result['unknown_actions'], 0)
+            self.assertEqual(result['reaction_actions_disabled'], [])
+            with store.connection() as db:
+                import json
+                state = json.loads(db.execute('select state_json from task_checkpoints where task_id=?',(task_id,)).fetchone()[0])
+            self.assertEqual(state.get('confirmed_action_counts',{}).get('likes',0),0)
+            self.assertTrue(all(r['confirmed'] and r['outcome'] is False for r in state['action_receipts']))
+
     def test_comment_transient_failure_three_videos_waits_after_page_recovery(self):
         with patch('execution_tasks.process_current_comment', side_effect=CloudModelError('transient_network', 'timeout', retryable=True)):
             with self.assertRaises(TaskWaiting) as caught:

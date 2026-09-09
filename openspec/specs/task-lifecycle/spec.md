@@ -5,6 +5,8 @@ TBD - created by archiving change stabilize-runtime-lifecycle. Update Purpose af
 
 ## Requirements
 
+> 适用范围（现行）：自检后自动提交条款仅适用于旧显式维护流程，不是普通提交门槛。dev.39长批次按原检查点等待和恢复，单条失败不取消整批；当前已实施要求见 [长批次变更规格](../../changes/stabilize-long-running-batches/specs/task-lifecycle/spec.md)。旧failed/stopped/cancelled终态不迁回等待，未知写入不重放。历史看门狗收口条款不能用于抹掉新检查点。
+
 ### Requirement: 实际轮末休息
 新计划 SHALL 冻结 `round_interval_basis=completion`，每台设备在本轮结束后休息配置分钟再开始下一轮；本轮安排的检查先运行，检查收口后计休息。等待时间 MUST 持久化、阻止后续轮次越过，并隔离其他设备及批次。历史缺少字段 SHALL 保留 scheduled 排程。
 

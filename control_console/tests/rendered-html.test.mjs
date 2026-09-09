@@ -17,6 +17,17 @@ async function source(path) {
   return readFile(new URL(path, import.meta.url), "utf8");
 }
 
+test("device preparation guide explains on-demand capabilities without legacy eligibility gates", async () => {
+  const response = await render('/devices/guide');
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(html, /真机按需准备/);
+  assert.match(html, /未登录不阻断管理和参数准备/);
+  assert.match(html, /消息巡检只看首页角标/);
+  assert.match(html, /href="\/devices"/);
+  assert.doesNotMatch(html, /抖音已安装并登录|运行3条零写入冒烟|完成后才把这台真机/);
+});
+
 test("chat viewport height reaches the page wrapper so the composer remains visible", async () => {
   const css = await source('../app/agent-studio.css');
   assert.match(cssRule(css,'.mf-chat-shell .agent-home'), /height:100%/);

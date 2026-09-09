@@ -536,12 +536,14 @@ class ExistingReactionRegressionTest(unittest.TestCase):
         recorder = Mock()
         recorder.screenshot.side_effect = [inactive, inactive, active]
         device = self.Device()
-        device.dump_hierarchy = Mock(return_value='<hierarchy/>')
+        device.screenshot = Mock(side_effect=[inactive, inactive, active])
+        device.dump_hierarchy = Mock(return_value='<hierarchy>' + node(
+            description='喜欢3，按钮', bounds='[900,900][1040,1100]', clickable='true') + '</hierarchy>')
         runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
         runner.observe_reactions_only = True
         runner.control_bounds['like'] = (900,900,1040,1100)
         runner.control_states['like'] = False
-        with patch('douyin_uia2_runner.time.sleep'), patch.object(runner, 'main_feed_confirmed', return_value=True):
+        with patch('douyin_uia2_runner.time.sleep'), patch('douyin_uia2_runner.foreground_package', return_value=PACKAGE), patch.object(runner, 'main_feed_confirmed', return_value=True):
             self.assertTrue(runner.like_verified(1, inactive))
         self.assertEqual(len(device.clicks), 1)
 
@@ -552,6 +554,8 @@ class ExistingReactionRegressionTest(unittest.TestCase):
         recorder = Mock()
         recorder.screenshot.return_value = red
         device = self.Device()
+        device.screenshot = Mock(return_value=red)
+        device.dump_hierarchy = Mock(return_value='<hierarchy/>')
         runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=0)
         runner.observe_reactions_only = True
         runner.control_bounds['like'] = (900,900,1040,1100)
@@ -791,6 +795,36 @@ class HomeTabRecoveryRegressionTest(unittest.TestCase):
 
 
 class TopicSearchRegressionTest(unittest.TestCase):
+    def test_partial_nodes_allow_authorized_read_only_visual_classification(self):
+        image = Image.new('RGB', (1080, 2400), 'black')
+        source = '<hierarchy>' + node(text='加载中') + '</hierarchy>'
+        device, recorder = Mock(), Mock()
+        device.screenshot.return_value = image
+        device.dump_hierarchy.return_value = source
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=3)
+        runner.visual_navigation_enabled = True
+        runner._visual_feed_kind = Mock(return_value='search_video')
+        with patch('douyin_uia2_runner.foreground_package', return_value=PACKAGE):
+            self.assertTrue(runner.search_feed_confirmed(source, image, allow_visual_fallback=True))
+            self.assertFalse(runner.search_feed_confirmed(source, image, allow_visual_fallback=False))
+        runner._visual_feed_kind.assert_called_once()
+        saved = recorder.save_observation.call_args.args
+        self.assertEqual(saved[0].tobytes(), image.tobytes())
+        self.assertEqual(saved[1], source)
+        device.click.assert_not_called()
+
+    def test_partial_nodes_do_not_accept_visual_home_as_search(self):
+        image = Image.new('RGB', (1080, 2400), 'black')
+        device, recorder = Mock(), Mock()
+        device.screenshot.return_value = image
+        device.dump_hierarchy.return_value = page_xml('普通首页')
+        runner = Uia2DouyinRunner(device, recorder, PROFILE, max_gate_skips=3)
+        runner.visual_navigation_enabled = True
+        runner._visual_feed_kind = Mock(return_value='home')
+        with patch('douyin_uia2_runner.foreground_package', return_value=PACKAGE):
+            self.assertFalse(runner.search_feed_confirmed(page_xml('普通首页'), image, allow_visual_fallback=True))
+        device.click.assert_not_called()
+
     def test_search_continuation_keeps_context_when_top_search_bar_collapses(self) -> None:
         source = page_xml("塑料袋").replace(
             node(

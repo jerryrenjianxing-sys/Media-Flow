@@ -34,6 +34,7 @@ from feed_orchestration import FeedPhase, HybridFeedPlanner
 from session_checkpoint import SessionCheckpoint, tuple_tree
 from task_resilience import TaskWaiting
 from task_store import TaskRecord
+from control_vision import _bounded_call
 
 PauseWaiter = Callable[[], None]
 IncidentSink = Callable[[dict[str, Any]], None]
@@ -282,6 +283,33 @@ def comment_preview(
     }
 
 
+def _wait_comment_panel(device, recorder, evidence_id, *, seconds=8):
+    """Single-open observation; record paired evidence only after freezing result."""
+    from douyin_fixed_runner import comment_panel_visible
+    deadline = time.monotonic() + seconds
+    latest = None
+    ready = False
+    for _ in range(17):
+        if time.monotonic() >= deadline:
+            break
+        def read():
+            frame = device.screenshot(format='pillow').convert('RGB')
+            source = device.dump_hierarchy(compressed=True, pretty=False)
+            return frame, source
+        latest = _bounded_call(read, deadline - time.monotonic())
+        frame, source = latest
+        ready = time.monotonic() < deadline and comment_panel_visible(frame)
+        if ready:
+            break
+        if time.monotonic() < deadline:
+            time.sleep(min(.5, deadline - time.monotonic()))
+    if latest is not None:
+        recorder.save_observation(*latest, f'{evidence_id}-ai-input', acquired_ms=round((seconds-(deadline-time.monotonic()))*1000))
+    if not ready:
+        raise RuntimeError('Comment panel did not open before observation deadline')
+    return latest
+
+
 def process_current_comment(
     device,
     recorder: Uia2RunRecorder,
@@ -302,18 +330,17 @@ def process_current_comment(
     comment_error: Exception | None = None
     evidence_id = f"video-{video}-comment-{uuid.uuid4().hex}"
     input_path = recorder.run_dir / f"{evidence_id}-ai-input.png"
+    video_path = recorder.run_dir / f"{evidence_id}-video-context.png"
     evidence = {"video_index": video, "attempt_id": evidence_id,
                 "input_screenshot_path": str(input_path),
+                "video_screenshot_path": str(video_path),
                 "raw_response_path": None, "decision_path": None}
-    runner.tap_control("comment-preview", "open_comments_for_ai_preview")
-    time.sleep(1.0)
-    panel = recorder.screenshot(device, f"{evidence_id}-ai-input")
-    from douyin_fixed_runner import comment_panel_visible
-
-    if not comment_panel_visible(panel):
-        raise RuntimeError("Comment panel did not open for AI preview")
+    opened = False
     try:
-        panel_source = device.dump_hierarchy(compressed=True, pretty=False)
+        recorder.screenshot(device, f'{evidence_id}-video-context')
+        opened = True  # A tap exception can still mean the tap was delivered.
+        runner.tap_control("comment-preview", "open_comments_for_ai_preview")
+        panel, panel_source = _wait_comment_panel(device, recorder, evidence_id)
         if _empty_comment_panel(str(panel_source)):
             decision = CommentDecision(
                 "skip", "", "评论区为空", 1.0, False, ""
@@ -330,6 +357,7 @@ def process_current_comment(
         )
         decision = generate_comment(
             input_path,
+            video_image_path=video_path,
             style_template=assets.template,
             candidates=assets.candidates,
         )
@@ -455,7 +483,8 @@ def process_current_comment(
         raise
     finally:
         try:
-            runner.close_comment_panel(video, f"video-{video}-comment-ai-closed")
+            if opened:
+                runner.close_comment_panel(video, f"video-{video}-comment-ai-closed")
         except Exception as close_exc:
             if comment_error is not None:
                 setattr(close_exc, "comment_model_error", _model_error_details(comment_error))
@@ -1243,6 +1272,7 @@ def topic_session(
                 wait_for_resume()
                 stage = "like"
                 like_frame, like_gate = runner.capture_gate(video, "like")
+                entry.setdefault('action_gates', {})['like'] = {'allowed': like_gate.allowed, 'reasons': list(like_gate.reasons)}
                 if like_gate.allowed:
                     persist(in_progress=True)
                     progress.before_action(summary['processed_slots'], 'like')
@@ -1254,6 +1284,9 @@ def topic_session(
                 elif any(reason in {"visual_main_feed_check_failed", "search_context_drift"} for reason in like_gate.reasons):
                     raise FeedContextDriftError("Page drifted before like")
                 if like_gate.allowed:
+                    observation = getattr(runner, 'last_reaction_observation', None)
+                    if observation is not None and hasattr(observation, 'outcome'):
+                        entry.setdefault('action_verifications', {})['like'] = vars(observation)
                     progress.after_action(True, 'like' in actions)
                     persist(in_progress=True)
 
@@ -1265,6 +1298,7 @@ def topic_session(
                 wait_for_resume()
                 stage = "favorite"
                 favorite_frame, favorite_gate = runner.capture_gate(video, "favorite")
+                entry.setdefault('action_gates', {})['favorite'] = {'allowed': favorite_gate.allowed, 'reasons': list(favorite_gate.reasons)}
                 if favorite_gate.allowed:
                     persist(in_progress=True)
                     progress.before_action(summary['processed_slots'], 'favorite')
@@ -1276,6 +1310,9 @@ def topic_session(
                 elif any(reason in {"visual_main_feed_check_failed", "search_context_drift"} for reason in favorite_gate.reasons):
                     raise FeedContextDriftError("Page drifted before favorite")
                 if favorite_gate.allowed:
+                    observation = getattr(runner, 'last_reaction_observation', None)
+                    if observation is not None and hasattr(observation, 'outcome'):
+                        entry.setdefault('action_verifications', {})['favorite'] = vars(observation)
                     progress.after_action(True, 'favorite' in actions)
                     persist(in_progress=True)
 
@@ -1287,6 +1324,7 @@ def topic_session(
                 wait_for_resume()
                 stage = "comment"
                 _, comment_gate = runner.capture_gate(video, "comment-preview")
+                entry.setdefault('action_gates', {})['comment'] = {'allowed': comment_gate.allowed, 'reasons': list(comment_gate.reasons)}
                 if comment_gate.allowed:
                     def before_comment_send():
                         persist(in_progress=True)
@@ -1379,8 +1417,25 @@ def topic_session(
                 summary['failed_slots'] += 1
             if resilient and stage in {'like', 'favorite', 'comment'} and progress.action_pending():
                 confirmed = confirmed_comment is not None and bool(confirmed_comment[1])
-                progress.after_action(confirmed, 'confirmed_before_cleanup_error' if confirmed else None)
-                if not confirmed:
+                action_outcome = getattr(exc, 'action_outcome', None)
+                if stage in {'like', 'favorite'}:
+                    entry.setdefault('action_verifications', {})[stage] = dict(
+                        getattr(exc, 'action_verification', None) or {'outcome':'unknown', 'reason':'action_result_unknown'})
+                elif stage == 'comment' and not confirmed:
+                    entry['comment_result'] = {'decision':'unknown', 'sent':False, 'reason':'send_result_unknown'}
+                known_reaction = stage in {'like', 'favorite'} and action_outcome in {'confirmed', 'not_applied', 'already_active'}
+                if known_reaction:
+                    entry['action_verification'] = dict(getattr(exc, 'action_verification', {}))
+                    if action_outcome == 'confirmed' and stage not in actions:
+                        actions.append(stage)
+                        summary['likes' if stage == 'like' else 'favorites'] += 1
+                        if hybrid_planner is not None:
+                            summary['phase_summaries'][active_phase_name]['likes' if stage == 'like' else 'favorites'] += 1
+                # The persistent ledger's outcome is a write-success boolean,
+                # not the diagnostic label ("not_applied" is truthy in Python).
+                progress.after_action(confirmed or known_reaction,
+                                      bool(confirmed or action_outcome == 'confirmed') if confirmed or known_reaction else None)
+                if not (confirmed or known_reaction):
                     summary['unknown_actions'] += 1
                     progress.disable(stage)
                     if stage == 'comment':
@@ -1589,6 +1644,8 @@ def topic_session(
         model_valid_decisions / model_attempts if model_attempts else 1.0, 4
     )
     summary["model_valid_response_rate"] = model_valid_response_rate
+    from execution_review import review_actions
+    summary['action_review'] = review_actions(decisions)
     # Quality is reported, never used to cancel a completed round or batch.
     degraded = bool(summary['model_errors'] or (resilient and (
         summary['failed_slots'] or summary['video_errors'] or summary['unavailable_slots'] or summary['unknown_actions'])))
@@ -1657,6 +1714,9 @@ def _record_comment_outcome(
     video: int,
 ) -> None:
     """Persist a confirmed comment outcome before later UI cleanup can fail."""
+    entry['comment_result'] = {'decision': decision.decision, 'sent': bool(sent),
+                              'reason': str(getattr(decision, 'reason', '')),
+                              'policy_allowed': policy_review.get('allowed') if policy_review else None}
     if asset_audit is not None:
         summary.setdefault("comment_asset_reviews", []).append(asset_audit)
         entry["comment_asset_review"] = asset_audit

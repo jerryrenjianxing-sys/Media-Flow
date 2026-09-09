@@ -1,4 +1,4 @@
-# RiskFlow Domain Context
+# MediaFlow Domain Context
 
 ## Topic Specification（主题规格）
 
@@ -37,7 +37,7 @@
 
 ## Formal Agreement（正式一致率）
 
-RiskFlow 判断与人工确认标签一致的样本数，占全部人工已确认样本的比例。未确认候选样本不进入分母；类别或困难负样本覆盖不足时只能称为暂定结果。
+MediaFlow 判断与人工确认标签一致的样本数，占全部人工已确认样本的比例。未确认候选样本不进入分母；类别或困难负样本覆盖不足时只能称为暂定结果。
 
 ## Evidence Retention Policy（证据保留政策）
 

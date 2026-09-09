@@ -1,18 +1,7 @@
-# MediaFlow Windows distribution
+# MediaFlow Windows 交付
 
-Build prerequisites are kept under `packaging/tools/` and generated artifacts under
-`packaging/out/`; both are ignored by Git.
+交付目标是平台、必要运行环境、控制组件和完整Skill；巨大虚拟机镜像不再是默认必需项，旧私人模板及打包能力保留。当前源码与实际已交付包范围见[STATUS](../STATUS.md)。
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\bootstrap-velopack.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\build-windows-release.ps1 -Version 0.1.1
-```
+版本唯一来源为version.json；发布使用干净提交、不可变版本与哈希，不照搬旧版本示例。不包含真实Key、数据库、设备档案、截图和日志。模型由用户在安装后配置，不限于旧OpenRouter。
 
-The release directory is a self-contained local build. The build emits the branded
-`MediaFlow-Installer.exe`, a fast `MediaFlow-Setup.exe`, `MediaFlow-x64.msi`, a
-portable zip, full package, and release metadata. The branded installer lets the
-user choose the program location and delegates installation to Velopack.
-Runtime data is stored outside the version directory at
-`%LocalAppData%\MediaFlow\data` and is not included in release artifacts.
-New installations configure their own OpenRouter key and device profiles. The
-internal build is unsigned; add Authenticode signing before public distribution.
+工具与产物分别在忽略的tools和out目录。运行数据独立于程序目录；本轮不打包、不更新远端，不据文档宣称新电脑安装通过。历史说明见[旧交付文档](../docs/history/2026-09-09/packaging/README.md)。

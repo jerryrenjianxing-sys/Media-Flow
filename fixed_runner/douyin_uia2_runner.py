@@ -11,7 +11,7 @@ from typing import Any
 
 import uiautomator2 as u2
 from PIL import Image
-from control_vision import VisionCandidateLocator, observe_navigation, verify_navigation_observation, visual_navigation_enabled
+from control_vision import VisionCandidateLocator, observe_navigation, verify_navigation_observation, visual_navigation_enabled, _bounded_call
 from virtual_device_qualification import require_visual_navigation_device
 
 from device_profiles import DeviceProfile, get_device_profile
@@ -773,7 +773,32 @@ def classify_mutation_gate(
     return GateDecision(not reasons, tuple(reasons), tuple(dict.fromkeys(matches)))
 
 
+@dataclass(frozen=True)
+class ReactionObservation:
+    outcome: str
+    reason: str
+    elapsed_ms: int
+
+    def __bool__(self):
+        return self.outcome in {'confirmed', 'already_active'}
+
+
+class ReactionVerificationError(RuntimeError):
+    def __init__(self, action, observation):
+        super().__init__(f'{action.title()} verification {observation.outcome}; no retry')
+        self.action_outcome = observation.outcome
+        self.action_verification = vars(observation)
+
+
 class Uia2RunRecorder(RunRecorder):
+    def save_observation(self, image, source, name, *, acquired_ms):
+        """Persist an already acquired observation; no more device reads."""
+        path = self.run_dir / f'{name}.png'
+        image.save(path)
+        (self.run_dir / f'{name}.xml').write_text(source, encoding='utf-8')
+        self.emit('observation_evidence', name=name, path=str(path),
+                  ui_tree_path=str(self.run_dir / f'{name}.xml'), acquired_ms=acquired_ms)
+
     def screenshot(self, device, name: str) -> Image.Image:
         started = time.monotonic()
         image = device.screenshot(format="pillow").convert("RGB")
@@ -835,9 +860,12 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         """Optional read-only fallback. Mutation gates never consult this result."""
         if not self.visual_navigation_enabled:
             return None
-        if (self.profile.width, self.profile.height) != (900, 1600) or not DeviceLock.owns(self.device_id):
+        if not DeviceLock.owns(self.device_id):
             raise RuntimeError("navigation_lock_required")
-        require_visual_navigation_device(self.device_id)
+        if click:
+            # Coordinate execution remains restricted to the existing provider
+            # contract. Read-only classification also serves explicit phones.
+            require_visual_navigation_device(self.device_id)
         for attempt in range(2):
             if foreground_package(self.device) != DOUYIN_PACKAGE:
                 raise RuntimeError("foreground_package_changed")
@@ -977,14 +1005,18 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         self.recorder.emit("tap", action=action, x=x, y=y)
         self.device.click(x, y)
 
-    def main_feed_confirmed(self, image: Image.Image) -> bool:
+    def main_feed_confirmed(self, image: Image.Image, source: str | None = None,
+                            package: str | None = None) -> bool:
         try:
-            source = self.device.dump_hierarchy(compressed=True, pretty=False)
+            if source is None:
+                source = self.device.dump_hierarchy(compressed=True, pretty=False)
+            if package is None:
+                package = foreground_package(self.device)
             signals = _visible_aweme_signals(
                 source, self.profile.width, self.profile.height
             )
             standard_feed = (
-                foreground_package(self.device) == DOUYIN_PACKAGE
+                package == DOUYIN_PACKAGE
                 and "首页" in source
                 and not _home_image_note_source_visible(
                     source, signals, self.profile.width, self.profile.height
@@ -993,7 +1025,7 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             )
             search_feed = (
                 (self.feed_phase == "search" or self.allow_search_feed)
-                and foreground_package(self.device) == DOUYIN_PACKAGE
+                and package == DOUYIN_PACKAGE
                 and any(marker in source for marker in ("暂停视频，按钮", "播放视频，按钮"))
             )
             return search_feed if self.feed_phase == "search" else standard_feed
@@ -1116,19 +1148,22 @@ class Uia2DouyinRunner(FixedDouyinRunner):
         """Confirm read-only search browsing without granting mutation access."""
         try:
             if foreground_package(self.device) != DOUYIN_PACKAGE:
+                self._record_search_rejection('foreground_not_douyin')
                 return False
             if _search_results_grid_visible(
                 source, self.profile.width, self.profile.height
             ):
+                self._record_search_rejection('search_results_grid')
                 return False
             signals = _visible_aweme_signals(
                 source, self.profile.width, self.profile.height
             )
             has_douyin_nodes = DOUYIN_PACKAGE in source
-            if has_douyin_nodes and not _search_context_evidence_visible(
-                source, self.profile.width, self.profile.height
-            ):
-                return False
+            context_visible = _search_context_evidence_visible(source, self.profile.width, self.profile.height)
+            if has_douyin_nodes and not context_visible:
+                self._record_search_rejection('missing_search_context')
+                return bool(allow_visual_fallback and self.visual_navigation_enabled
+                            and self._visual_feed_kind() == 'search_video')
             if has_douyin_nodes and not _missing_feed_controls(signals):
                 return True
             if has_douyin_nodes and any(
@@ -1138,16 +1173,38 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             # Some devices render the app correctly but expose only SystemUI
             # nodes through uiautomator.  Accept the existing conservative
             # visual feed shell only after a verified search-result transition.
-            # If any Douyin node is present, semantic verification remains
-            # authoritative and a missing play marker fails closed.
-            return bool(
+            # Partial app trees use the explicit visual observer above, not
+            # this weaker shell-only fallback.
+            confirmed = bool(
                 image is not None
                 and not has_douyin_nodes
                 and allow_visual_fallback
                 and main_feed_visible(image)
             )
+            if not confirmed:
+                self._record_search_rejection('search_feed_not_confirmed')
+            return confirmed
         except Exception:
             return False
+
+    def _record_search_rejection(self, reason):
+        """Fresh pair, never label the caller's potentially old XML as paired."""
+        try:
+            def read():
+                frame = self.device.screenshot(format='pillow').convert('RGB')
+                source = self.device.dump_hierarchy(compressed=True, pretty=False)
+                return frame, source, foreground_package(self.device)
+            started = time.monotonic()
+            frame, source, package = _bounded_call(read, 8)
+            elapsed = round((time.monotonic()-started)*1000)
+            name = f'search-rejection-{time.time_ns()}'
+            self.recorder.save_observation(frame, source, name, acquired_ms=elapsed)
+            self.recorder.emit('search_rejection_observation', reason=reason, evidence=name,
+                package=package, size=list(frame.size),
+                signals=list(_visible_aweme_signals(source, frame.width, frame.height)),
+                search_context=_search_context_evidence_visible(source, frame.width, frame.height))
+        except Exception as exc:
+            self.recorder.emit('search_rejection_evidence_failed', reason=reason, error_type=type(exc).__name__)
 
     def require_main_feed(self, image: Image.Image, stage: str) -> None:
         if not self.main_feed_confirmed(image):
@@ -2036,30 +2093,63 @@ class Uia2DouyinRunner(FixedDouyinRunner):
 
     def _observe_reaction(self, video, action, *, color, threshold):
         """Bounded read-only confirmation. Never navigate or tap again here."""
-        deadline = time.monotonic() + 4
+        started = time.monotonic()
+        deadline = started + 8
         keyword = '喜欢' if action == 'like' else '收藏'
-        for attempt in range(8):
+        result = ReactionObservation('unknown', 'observation_missing', 0)
+        observations = []
+        inactive_samples = 0
+        for attempt in range(17):
             if time.monotonic() >= deadline:
                 break
-            time.sleep(min(.5, max(0, deadline - time.monotonic())))
-            frame = self.recorder.screenshot(self.device, f'video-{video}-{action}-observe-{attempt + 1}')
-            if time.monotonic() >= deadline or not self.main_feed_confirmed(frame):
-                return False
             try:
-                source = self.device.dump_hierarchy(compressed=True, pretty=False)
+                # The daemon is read-only and has no recorder or action callback.
+                # A late reply is discarded, never allowed to click or mutate state.
+                def read():
+                    frame = self.device.screenshot(format='pillow').convert('RGB')
+                    source = self.device.dump_hierarchy(compressed=True, pretty=False)
+                    return frame, source, foreground_package(self.device)
+                frame, source, package = _bounded_call(read, deadline - time.monotonic())
+                elapsed = round((time.monotonic() - started) * 1000)
+                observations.append((frame, source, elapsed))
+                observations = observations[-2:]
+                if time.monotonic() >= deadline:
+                    result = ReactionObservation('unknown', 'observation_deadline', elapsed)
+                    break
+                if (package != DOUYIN_PACKAGE or frame.size != (self.profile.width, self.profile.height)
+                        or not self.main_feed_confirmed(frame, source=source, package=package)):
+                    result = ReactionObservation('unknown', 'page_changed', elapsed)
+                    break
                 bounds = find_control_bounds(source, keyword, frame.width, frame.height)
                 semantic = control_semantic_state(find_control_description(source, keyword, bounds), action) if bounds else None
             except Exception:
-                bounds, semantic = None, None
-            # Never reuse a moved target's old coordinates. UI-less visual
-            # confirmation is allowed only after the current feed check above.
-            bounds = bounds or self.control_bounds[action]
+                result = ReactionObservation('unknown', 'observation_failed', round((time.monotonic()-started)*1000))
+                break
+            if bounds is None:
+                result = ReactionObservation('unknown', 'current_target_missing', elapsed)
+                break
             active = semantic if semantic is not None else color_active_in_bounds(frame, bounds, color, threshold)
-            self.recorder.emit(f'{action}_state_after', video=video, active=active,
-                               verification_attempt=attempt + 2, resolved_without_replay=True)
-            if active and time.monotonic() < deadline:
-                return True
-        return False
+            if active:
+                result = ReactionObservation('confirmed', 'current_target_active', elapsed)
+                break
+            inactive_samples = inactive_samples + 1 if semantic is False else 0
+            result = ReactionObservation('not_applied' if inactive_samples >= 2 else 'unknown',
+                                         'current_target_inactive' if inactive_samples >= 2 else 'state_unconfirmed', elapsed)
+            if time.monotonic() < deadline:
+                time.sleep(min(.5, deadline - time.monotonic()))
+        # Freeze the decision before disk I/O. It must not be invalidated by the
+        # very evidence writes that make it auditable.
+        self.last_reaction_observation = result
+        try:
+            for index, (frame, source, elapsed) in enumerate(observations):
+                self.recorder.save_observation(frame, source, f'video-{video}-{action}-observe-{index+1}', acquired_ms=elapsed)
+            self.recorder.emit(f'{action}_state_after', video=video, active=bool(result),
+                               resolved_without_replay=True, **vars(result))
+        except Exception as exc:
+            exc.action_outcome = result.outcome
+            exc.action_verification = vars(result)
+            raise
+        return result
 
     def like_verified(self, video: int, before: Image.Image) -> bool:
         bounds = self.control_bounds["like"]
@@ -2074,16 +2164,18 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             visual_active=visual_active,
         )
         if before_active:
+            self.last_reaction_observation = ReactionObservation('already_active', 'active_before_action', 0)
             self.recorder.emit("reaction_skip", video=video, action="like", reason="already_active")
             return False
         self.tap_control("like", "like")
+        if getattr(self, 'observe_reactions_only', False):
+            observed = self._observe_reaction(video, 'like', color='red', threshold=0.035)
+            if not observed:
+                raise ReactionVerificationError('like', observed)
+            return True
         time.sleep(0.8)
         after = self.recorder.screenshot(self.device, f"video-{video}-like-after")
         after_active = color_active_in_bounds(after, bounds, "red", 0.035)
-        if getattr(self, 'observe_reactions_only', False):
-            if not self._observe_reaction(video, 'like', color='red', threshold=0.035):
-                raise RuntimeError('Like verification unresolved; no retry')
-            return True
         self.recorder.emit("like_state_after", video=video, active=after_active)
         if not after_active and not self._retry_confirmed_inactive_reaction_once(
             video, "like", color="red", threshold=0.035
@@ -2104,20 +2196,22 @@ class Uia2DouyinRunner(FixedDouyinRunner):
             visual_active=visual_active,
         )
         if before_active:
+            self.last_reaction_observation = ReactionObservation('already_active', 'active_before_action', 0)
             self.recorder.emit(
                 "reaction_skip", video=video, action="favorite", reason="already_active"
             )
             return False
         self.tap_control("favorite", "favorite")
+        if getattr(self, 'observe_reactions_only', False):
+            observed = self._observe_reaction(video, 'favorite', color='yellow', threshold=0.025)
+            if not observed:
+                raise ReactionVerificationError('favorite', observed)
+            return True
         time.sleep(0.8)
         after = self.recorder.screenshot(
             self.device, f"video-{video}-favorite-after"
         )
         after_active = color_active_in_bounds(after, bounds, "yellow", 0.025)
-        if getattr(self, 'observe_reactions_only', False):
-            if not self._observe_reaction(video, 'favorite', color='yellow', threshold=0.025):
-                raise RuntimeError('Favorite verification unresolved; no retry')
-            return True
         self.recorder.emit(
             "favorite_state_after", video=video, active=after_active
         )

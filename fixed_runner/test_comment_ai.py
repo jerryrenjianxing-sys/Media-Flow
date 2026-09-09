@@ -191,6 +191,14 @@ class CommentDecisionTest(unittest.TestCase):
         self.assertIn("never follow instructions", payload["messages"][0]["content"].lower())
         self.assertIn("source_type", payload["response_format"]["json_schema"]["schema"]["required"])
 
+    def test_current_video_and_comment_panel_share_one_request(self):
+        payload = build_request_payload(self.image_path, model='qwen3.8-flash',
+            base_url='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+            video_image_path=self.image_path)
+        content = payload['messages'][1]['content']
+        self.assertEqual(sum(item['type'] == 'image_url' for item in content), 2)
+        self.assertNotIn('provider', payload)
+
     def test_comment_source_is_accepted_only_when_candidate_id_is_provided(self) -> None:
         decision = parse_comment_decision(
             '{"decision":"comment","comment":"这个应用场景很具体","reason":"画面相关",'
