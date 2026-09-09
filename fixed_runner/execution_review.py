@@ -10,7 +10,9 @@ def review_actions(decisions):
     """
     report = {}
     for action in ('like', 'favorite', 'comment'):
-        row = dict(opportunities=0, expected=0.0, drawn=0, confirmed_new=0,
+        row = dict(opportunities=0, expected=0.0, eligible_expected=0.0,
+                   requested_expected_unavailable=0, safety_blocked=0,
+                   drawn=0, confirmed_new=0,
                    already_active=0, not_applied=0, unknown=0, gate_blocked=0,
                    rule_skip=0, not_executed_or_unresolved=0, attempts=0)
         for entry in decisions:
@@ -19,7 +21,13 @@ def review_actions(decisions):
                 continue
             p = float(probabilities[action])
             row['opportunities'] += 1
-            row['expected'] += p
+            requested = entry.get('requested_probabilities', {}).get(action)
+            if requested is None and entry.get('action_routes', {}).get(action) == 'safety_blocked':
+                row['requested_expected_unavailable'] += 1
+            row['expected'] += float(requested) if requested is not None else p
+            row['eligible_expected'] += p
+            if entry.get('action_routes', {}).get(action) == 'safety_blocked':
+                row['safety_blocked'] += 1
             if float(draws[action]) >= p:
                 continue
             row['drawn'] += 1
@@ -57,10 +65,11 @@ def review_actions(decisions):
                 row['not_executed_or_unresolved'] += 1
         expected = row['expected']
         row.update(expected=round(expected, 4),
+                   eligible_expected=round(row['eligible_expected'], 4),
                    draw_relative_error=round(abs(row['drawn']-expected)/expected,4) if expected else None,
                    actual_relative_error=round(abs(row['confirmed_new']-expected)/expected,4) if expected else None,
                    confirmation_rate=round(row['confirmed_new']/row['attempts'],4) if row['attempts'] else None,
                    draw_to_new_rate=round(row['confirmed_new']/row['drawn'],4) if row['drawn'] else None,
-                   acceptance='not_verified' if row['opportunities'] < 100 or row['not_executed_or_unresolved'] else 'review_required')
+                   acceptance='not_verified' if row['opportunities'] < 100 or row['not_executed_or_unresolved'] or row['requested_expected_unavailable'] else 'review_required')
         report[action] = row
     return report

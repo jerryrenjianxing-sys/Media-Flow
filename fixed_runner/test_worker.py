@@ -507,6 +507,26 @@ class CommentSendTest(unittest.TestCase):
         self.assertTrue(runner.closed)
         generate.assert_not_called()
 
+    def test_real_565_comments_with_invitation_is_not_empty(self):
+        class PopulatedPanelDevice(FakeDevice):
+            def dump_hierarchy(self, **kwargs):
+                return ('<hierarchy><node package="com.ss.android.ugc.aweme" text="565条评论"/>'
+                        '<node package="com.ss.android.ugc.aweme" text="回复"/>'
+                        '<node package="com.ss.android.ugc.aweme" text="期待你的评论"/></hierarchy>')
+        class CommentRunner:
+            profile = type('Profile', (), {'width':1080, 'height':2400})()
+            def tap_control(self, *args): pass
+            def close_comment_panel(self, *args): pass
+        generated = CommentDecision('comment', '动作很有趣', '当前画面', .95, False, '{}')
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('douyin_fixed_runner.comment_panel_visible', return_value=True), \
+             patch('execution_tasks.generate_comment', return_value=generated) as generate:
+            decision, sent, _ = process_current_comment(PopulatedPanelDevice(),
+                Uia2RunRecorder(Path(directory), 'fixture'), CommentRunner(), video=13, send=False)
+        generate.assert_called_once()
+        self.assertEqual(decision.decision, 'comment')
+        self.assertFalse(sent)
+
     def test_comment_failure_attaches_pre_close_evidence(self) -> None:
         class PanelDevice(FakeDevice):
             panel_open = True

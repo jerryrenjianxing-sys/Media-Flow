@@ -209,7 +209,33 @@ def minor_mode_overlay_visible(xml_source: str) -> bool:
 
 
 def comment_panel_source_visible(xml_source: str) -> bool:
-    return any(marker in xml_source for marker in COMMENT_PANEL_MARKERS)
+    # Search videos also expose an inline comment invitation. It is not an
+    # open panel: a substring test used to unwind a perfectly valid video.
+    try:
+        nodes = [n for n in ET.fromstring(xml_source).iter('node')
+                 if n.get('package') == DOUYIN_PACKAGE
+                 and n.get('visible-to-user', 'true') == 'true']
+    except ET.ParseError:
+        return False
+    labels = [' '.join(n.get(a, '').split()) for n in nodes
+              for a in ('text', 'content-desc') if n.get(a)]
+    invitation = any(value.startswith(marker) for value in labels
+                     for marker in COMMENT_PANEL_MARKERS)
+    if not invitation:
+        return False
+    has_video_controls = all(any(word in value and '按钮' in value for value in labels)
+                             for word in ('喜欢', '评论', '收藏'))
+    if not has_video_controls:
+        return True
+    panel_title = any(re.fullmatch(r'(?:全部|共)?\s*\d+(?:\.\d+)?[万wW]?\s*条评论|评论\s*\d+(?:\.\d+)?[万wW]?', value)
+                      for value in labels)
+    bounds = [(n, BOUNDS_PATTERN.fullmatch(n.get('bounds', ''))) for n in nodes]
+    height = max((int(b.group(4)) for _, b in bounds if b), default=0)
+    panel_close = any(b and int(b.group(2)) > height * .12
+                      and n.get('clickable') == 'true'
+                      and any(n.get(a, '').strip() == '关闭' for a in ('text', 'content-desc'))
+                      for n, b in bounds)
+    return bool(panel_title or panel_close)
 
 
 def find_bottom_navigation_bounds(
@@ -2130,8 +2156,12 @@ class Uia2DouyinRunner(FixedDouyinRunner):
                     break
                 bounds = find_control_bounds(source, keyword, frame.width, frame.height)
                 semantic = control_semantic_state(find_control_description(source, keyword, bounds), action) if bounds else None
-            except Exception:
-                result = ReactionObservation('unknown', 'observation_failed', round((time.monotonic()-started)*1000))
+            except Exception as exc:
+                # A final wall-time probe must not erase two earlier explicit
+                # inactive observations. Still never repeat the original tap.
+                if not (str(exc) == 'visual_deadline_exceeded'
+                        and result.outcome == 'not_applied'):
+                    result = ReactionObservation('unknown', 'observation_failed', round((time.monotonic()-started)*1000))
                 break
             if bounds is None:
                 result = ReactionObservation('unknown', 'current_target_missing', elapsed)

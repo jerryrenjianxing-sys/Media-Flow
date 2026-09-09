@@ -13,6 +13,7 @@ from douyin_uia2_runner import (  # noqa: E402
     GateDecision,
     UIA2_HTTP_TIMEOUT_SECONDS,
     Uia2DouyinRunner,
+    comment_panel_source_visible,
     comment_input_activation_source_confirmed,
     classify_douyin_page_source,
     classify_mutation_gate,
@@ -564,6 +565,24 @@ class ExistingReactionRegressionTest(unittest.TestCase):
         with patch('douyin_uia2_runner.time.sleep'), patch.object(runner, 'main_feed_confirmed', return_value=False):
             with self.assertRaisesRegex(RuntimeError, 'Like verification'):
                 runner.like_verified(1, inactive)
+        self.assertEqual(len(device.clicks), 1)
+
+
+    def test_last_probe_timeout_preserves_confirmed_inactive_without_retap(self):
+        frame = Image.new('RGB', (1080, 2400), 'black')
+        source = '<hierarchy>'+node(description='未点赞，喜欢2416，按钮',
+                    bounds='[900,972][1080,1173]', clickable='true')+'</hierarchy>'
+        device = self.Device()
+        runner = Uia2DouyinRunner(device, Mock(), PROFILE, max_gate_skips=0)
+        runner.observe_reactions_only = True
+        runner.control_bounds['like'] = (900,972,1080,1173)
+        runner.control_states['like'] = False
+        with patch('douyin_uia2_runner.time.sleep'), patch.object(runner, 'main_feed_confirmed', return_value=True), \
+             patch('douyin_uia2_runner._bounded_call', side_effect=[(frame,source,PACKAGE),
+                   (frame,source,PACKAGE),RuntimeError('visual_deadline_exceeded')]):
+            with self.assertRaisesRegex(RuntimeError, 'Like verification'):
+                runner.like_verified(4, frame)
+        self.assertEqual(runner.last_reaction_observation.outcome, 'not_applied')
         self.assertEqual(len(device.clicks), 1)
 
 
@@ -1529,6 +1548,29 @@ class CommentPanelRecoveryRegressionTest(unittest.TestCase):
             runner.close_comment_panel(1, "closed")
 
         self.assertEqual(device.back_presses, 0)
+
+
+class InlineCommentInvitationTest(unittest.TestCase):
+    def test_search_video_invitation_is_not_an_open_panel(self):
+        for invitation in ('有什么想法，展开说说', '分享你此刻的想法', '爱评论的人运气不会差'):
+            source = page_xml(invitation).replace(
+                node(text="首页", description="首页", bounds="[0,2100][220,2280]", clickable="true"),
+                search_shell_nodes())
+            self.assertFalse(comment_panel_source_visible(source))
+            self.assertEqual(classify_douyin_page_source(source, PACKAGE), 'search_feed')
+
+    def test_actual_panel_over_video_still_requires_close_or_header(self):
+        for proof in (node(text='共85条评论'),
+                      node(description='关闭', bounds='[950,750][1060,850]', clickable='true')):
+            source = page_xml('有什么想法，展开说说').replace('</hierarchy>', proof+'</hierarchy>')
+            self.assertTrue(comment_panel_source_visible(source))
+            self.assertEqual(classify_douyin_page_source(source, PACKAGE), 'comment_panel')
+
+    def test_hidden_or_incidental_caption_is_not_a_panel(self):
+        source = page_xml('有人问有什么想法，我们聊聊工厂')
+        hidden = node(text='有什么想法').replace('visible-to-user="true"', 'visible-to-user="false"')
+        self.assertFalse(comment_panel_source_visible(source.replace('</hierarchy>', hidden+'</hierarchy>')))
+        self.assertTrue(comment_panel_source_visible('<hierarchy>'+node(text='暂无评论')+'</hierarchy>'))
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import random
 import re
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Callable
 
@@ -35,6 +36,11 @@ from session_checkpoint import SessionCheckpoint, tuple_tree
 from task_resilience import TaskWaiting
 from task_store import TaskRecord
 from control_vision import _bounded_call
+from product_version import product_version
+
+# Freeze the executing process identity, not whatever checkout exists later
+# while a supervised run is diagnosing the next candidate patch.
+_EXECUTION_BUILD = dict(product_version())
 
 PauseWaiter = Callable[[], None]
 IncidentSink = Callable[[dict[str, Any]], None]
@@ -182,14 +188,18 @@ def _recover_required_feed(runner, reason: str) -> bool:
 
 
 def _empty_comment_panel(source: str) -> bool:
-    normalized = "".join(source.split())
-    return bool(
-        re.search(r"评论0(?:[^0-9]|$)", normalized)
-        or any(
-            marker in source
-            for marker in ("暂无评论", "来发表第一条评论", "期待你的评论")
-        )
-    )
+    try:
+        labels = [''.join(n.get(a, '').split()) for n in ET.fromstring(source).iter('node')
+                  if n.get('package') == DOUYIN_PACKAGE and n.get('visible-to-user', 'true') == 'true'
+                  for a in ('text', 'content-desc') if n.get(a)]
+    except ET.ParseError:
+        return False  # No tree is not proof of an empty list; image review remains.
+    counts = [re.fullmatch(r'(?:共|全部)?(\d+(?:\.\d+)?)(?:万|w)?条评论|评论(\d+(?:\.\d+)?)(?:万|w)?', v) for v in labels]
+    counts = [float(m.group(1) or m.group(2)) for m in counts if m]
+    if any(count > 0 for count in counts) or '回复' in labels:
+        return False
+    return any(count == 0 for count in counts) or any(
+        v in {'暂无评论', '还没有评论', '来发表第一条评论'} for v in labels)
 
 
 def healthcheck(device, recorder: Uia2RunRecorder) -> dict[str, Any]:
@@ -912,6 +922,8 @@ def topic_session(
         dwell = round(rng.uniform(float(config["dwell_min"]), float(config["dwell_max"])), 2)
         entry: dict[str, Any] = {
             "video": video,
+            "execution_build": dict(_EXECUTION_BUILD),
+            "evidence_dir": str(recorder.run_dir),
             "dwell_s": dwell,
             "feed_phase": active_phase_name,
             "phase_target": active_phase_target,
@@ -1225,6 +1237,8 @@ def topic_session(
                 "comment": round(rng.random(), 6),
             }
             entry["random_draws"] = draws
+            entry["requested_probabilities"], _ = routed_action_plan(
+                config, matched=matched, safe=True, feed_phase=active_phase_name)
             probabilities, action_routes = routed_action_plan(
                 config,
                 matched=matched,

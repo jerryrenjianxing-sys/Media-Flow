@@ -66,6 +66,21 @@ class TokenPlanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             providers.activate(providers.QWEN)
 
+    def test_transport_diagnostics_preserve_stage_without_upstream_text(self):
+        import requests
+        ref = self.passed()
+        for exception, code in ((requests.ConnectTimeout, 'connect_timeout'),
+                                (requests.ReadTimeout, 'read_timeout'),
+                                (requests.exceptions.SSLError, 'tls_error')):
+            with patch('model_budget.requests.post', side_effect=exception('SECRET should never escape')):
+                with self.assertRaises(providers.ProviderError) as caught:
+                    with budgeted_post(providers.QWEN_BASE_URL+'/chat/completions', candidate_ref=ref,
+                                       json={'model': providers.QWEN_MODEL}, headers={'Authorization':'Bearer dummy'}):
+                        pass
+            self.assertEqual(caught.exception.diagnostics['transport_error'], code)
+            self.assertEqual(caught.exception.diagnostics['stage'], 'connect_or_headers')
+            self.assertNotIn('SECRET', str(caught.exception)+json.dumps(caught.exception.diagnostics))
+
     def test_doctor_uses_selected_qwen_without_requiring_openrouter(self):
         import runtime_control
         self.passed()

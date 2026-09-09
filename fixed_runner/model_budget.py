@@ -184,9 +184,11 @@ def budgeted_post(url: str, **kwargs):
         kwargs["allow_redirects"] = False
         remaining = max(.1, deadline-time.monotonic())
         kwargs["timeout"] = (min(5, remaining), min(25, remaining))
+        stage = 'connect_or_headers'
         try:
             response = _before_deadline(lambda: requests.post(url, **kwargs), deadline)
             try:
+                stage = 'response_read'
                 if 300 <= response.status_code < 400:
                     raise ProviderError("provider_failure")
                 wrapped = _TokenPlanResponse(response, receipt, deadline)
@@ -195,5 +197,15 @@ def budgeted_post(url: str, **kwargs):
             finally:
                 if hasattr(response, "close"):
                     threading.Thread(target=response.close, daemon=True).start()
-        except requests.RequestException:
-            raise ProviderError("network_timeout") from None
+        except requests.RequestException as exc:
+            error = ProviderError("network_timeout")
+            # Only our finite diagnostic vocabulary crosses this boundary;
+            # exception messages can contain URLs, proxy credentials or keys.
+            category = ('connect_timeout' if isinstance(exc, requests.ConnectTimeout)
+                        else 'read_timeout' if isinstance(exc, requests.ReadTimeout)
+                        else 'tls_error' if isinstance(exc, requests.exceptions.SSLError)
+                        else 'proxy_error' if isinstance(exc, requests.exceptions.ProxyError)
+                        else 'connection_error' if isinstance(exc, requests.ConnectionError)
+                        else 'request_error')
+            error.diagnostics.update(stage=stage, transport_error=category)
+            raise error from None

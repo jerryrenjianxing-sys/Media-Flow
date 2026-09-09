@@ -32,6 +32,19 @@ class ExecutionReviewTest(unittest.TestCase):
         self.assertIsNone(result['confirmation_rate'])
         self.assertIsNone(result['actual_relative_error'])
 
+    def test_safety_filter_does_not_zero_user_expected_count(self):
+        entry = {'probabilities': {'like': 0}, 'requested_probabilities': {'like': .7},
+                 'random_draws': {'like': .1}, 'action_routes': {'like': 'safety_blocked'}}
+        result = review_actions([entry])['like']
+        self.assertEqual(result['expected'], .7)
+        self.assertEqual(result['eligible_expected'], 0)
+        self.assertEqual(result['safety_blocked'], 1)
+        self.assertEqual(result['actual_relative_error'], 1)
+        entry.pop('requested_probabilities')
+        result = review_actions([entry])['like']
+        self.assertEqual(result['requested_expected_unavailable'], 1)
+        self.assertEqual(result['acceptance'], 'not_verified')
+
     def test_unknown_comment_is_failed_confirmation_not_rule_skip(self):
         entry = self.entry(None, 'comment')
         entry['comment_result'] = {'decision': 'unknown', 'sent': False}
