@@ -232,7 +232,7 @@ test("task workbench preserves precise controls behind progressive disclosure", 
   assert.match(page, /高级设置/);
   assert.match(page, /连续异常停止阈值/);
   assert.match(page, /轮次间隔/);
-  assert.match(page, /消息提醒检查/);
+  assert.match(page, /消息巡检/);
   assert.match(page, /评论发送前约束/);
   assert.match(page, /search_trust_results/);
   assert.match(page, /matched_like_probability/);
@@ -240,29 +240,6 @@ test("task workbench preserves precise controls behind progressive disclosure", 
   assert.match(page, /matched_comment_probability/);
   assert.match(page, /device_ids: config\.device_ids/);
   assert.match(page, /preview_only: config\.preview_only/);
-  assert.match(page, /旧版详细巡检/);
-  assert.match(page, /不会进入普通私信/);
-  assert.match(page, /请先在抖音隐私设置中打开访客记录/);
-  assert.match(page, /\/api\/engagement-preflight/);
-  assert.match(page, /visitor-acknowledgement/);
-});
-
-test("home message checking is explicit while detailed inspection stays an intentional legacy choice", async () => {
-  const page = await source("../app/workbench/page.tsx");
-  const types = await source("../app/components/workbench-types.ts");
-  assert.match(types, /inspection_mode\?:\s*"home_badge"\s*\|\s*"legacy"/);
-  assert.match(page, /消息提醒检查/);
-  assert.match(page, /只截取抖音首页/);
-  assert.match(page, /看得到角标数字会一并记录/);
-  assert.match(page, /不推测看不清的数量/);
-  assert.match(page, /旧版详细巡检/);
-  assert.match(page, /setInspectionMode\("home_badge"\)/);
-  assert.match(page, /setInspectionMode\("legacy"\)/);
-  assert.match(page, /inspectionMode === "legacy"/);
-  assert.match(page, /visitorRequestGeneration/);
-  assert.match(page, /inspectionModeRef\.current !== "legacy"/);
-  assert.match(page, /每 \{config\.inspection_every_rounds\} 轮检查一次/);
-  assert.doesNotMatch(page, /event\.target\.checked \? void prepareVisitorReminder\(true\)/);
 });
 
 test("visual system uses real capsule switches, responsive layout and reduced motion", async () => {
@@ -353,7 +330,6 @@ test("interaction alert acknowledgement fails closed and v3 omits private-messag
   assert.match(interactions, /unified_activity/);
   assert.match(interactions, /互动消息聚合页/);
   assert.match(groups, /workflow_version === "v3"/);
-  assert.match(groups, /不会进入普通私信/);
 });
 
 test("task result and notification surfaces distinguish home messages from historical detailed inspection", async () => {
@@ -371,9 +347,9 @@ test("task result and notification surfaces distinguish home messages from histo
   assert.match(interactions, /summary\.home_badge/);
   assert.match(interactions, /未能确认/);
   assert.match(interactions, /本次没有可显示的截图证据/);
-  assert.match(groups, /inspectionTaskLabel\(inspection\)/);
+  assert.match(groups, /resolveInspection\(inspection\)/);
   assert.match(groups, /result\.home_badge/);
-  assert.match(run, /inspectionTaskLabel\(task\.payload\)/);
+  assert.match(run, /resolveInspection\(task\)/);
   assert.match(plans, /inspectionTaskLabel\(plan\.config\)/);
 });
 
@@ -385,15 +361,11 @@ test("task details retain verified action and recovery evidence", async () => {
   assert.match(groups, /action_routing/);
   assert.match(groups, /搜索来源可信/);
   assert.match(groups, /主题不符已拦截/);
-  assert.match(groups, /互动消息记录/);
+  assert.match(groups, /消息巡检记录/);
   assert.match(groups, /刷视频记录/);
   assert.match(groups, /task-phase-grid/);
   assert.match(groups, /搜索视频流/);
   assert.match(groups, /主页视频流/);
-  assert.match(groups, /开始只读自动复验/);
-  assert.match(groups, /处理后继续复验/);
-  assert.match(groups, /const continuation = .*"\/continue"/);
-  assert.match(groups, /\/api\/tasks\/\$\{encodeURIComponent\(inspection\.id\)\}\/recover\$\{continuation\}/);
   assert.doesNotMatch(groups, /href=\{[^\n]*screenshot_path/);
 });
 
@@ -420,16 +392,14 @@ test("device workspace defaults to the standard virtual pool and gates physical 
   assert.match(page, /virtualDevice\.user_message/);
   assert.match(page, /virtualDevice\.suggested_action/);
   assert.match(page, /recheck_home_badge/);
-  assert.match(page, /重新检查消息提醒/);
+  assert.match(page, /重新检查消息巡检/);
   assert.match(page, /inspection_recheck:\s*Boolean\(inspectionMode\)/);
   assert.match(page, /inspection_mode:\s*inspectionMode/);
   assert.match(page, /initializationRequest\(onlineDevice\.device_id, "start", "home_badge"\)/);
-  assert.match(page, /initializationRequest\(onlineDevice\.device_id, "start", "legacy"\)/);
   assert.match(page, /安装完成，继续检查/);
   assert.match(page, /查看连接与能力诊断/);
   assert.doesNotMatch(page, /查看就绪检查（/);
   assert.match(page, /LocalTemplatePanel/);
-  assert.match(page, /重新检查并恢复旧版巡检/);
   assert.match(page, /诊断编号/);
   assert.match(page, /启用真机支持/);
   assert.match(page, /physical_devices_enabled/);

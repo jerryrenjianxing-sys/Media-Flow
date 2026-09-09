@@ -14,10 +14,44 @@ test("task labels require an explicit home-badge payload and keep historical tas
   const display = await displayModule();
   const label = (payload) => display.inspectionTaskLabel?.(payload) ?? "missing display helper";
 
-  assert.equal(label({ inspection_mode: "home_badge" }), "消息提醒检查");
-  assert.equal(label({ inspection_workflow_version: "home_badge" }), "消息提醒检查");
+  assert.equal(label({ inspection_mode: "home_badge" }), "消息巡检");
+  assert.equal(label({ inspection_workflow_version: "home_badge" }), "消息巡检");
   assert.equal(label({ inspection_workflow_version: "v3" }), "旧版详细巡检");
   assert.equal(label({}), "旧版详细巡检");
+});
+
+test("frozen mode and observed result resolve without inventing legacy sections", async () => {
+  const { resolveInspection } = await displayModule();
+  assert.equal(typeof resolveInspection, "function");
+  for (const payload of [{ inspection_mode: "home_badge" }, {}]) {
+    const pending = resolveInspection({ payload, status: "pending", result: null });
+    assert.equal(pending.phase, "pending");
+    assert.equal(pending.message, "尚未检查");
+    assert.equal(pending.showLegacySections, false);
+  }
+  const running = resolveInspection({ payload: { inspection_mode: "home_badge" }, status: "running", result: { navigation_message: "正在读取首页角标" } });
+  assert.equal(running.message, "正在读取首页角标");
+  assert.equal(running.showLegacySections, false);
+  const conflict = resolveInspection({ payload: { inspection_mode: "home_badge" }, status: "completed", result: { workflow_version: "v3", sections: { received_likes: { status: "available" } } } });
+  assert.equal(conflict.mode, "conflict");
+  assert.equal(conflict.showLegacySections, false);
+  assert.match(conflict.message, /版本冲突/);
+  assert.equal(resolveInspection({ status: "failed", result: null }).showLegacySections, false);
+  assert.equal(resolveInspection({ status: "completed", result: { workflow_version: "v3", sections: { received_likes: {} } } }).showLegacySections, true);
+});
+
+test("quantity status distinguishes unreadable digits and absent historic metadata", async () => {
+  const display = await displayModule();
+  assert.equal(display.homeBadgePresentation({ state: "present", quantity_status: "unreadable", message: "有消息" }).message, "已发现角标，数字尚未识别");
+  assert.equal(display.homeBadgePresentation({ state: "present", badge_text: "3", message: "首页显示红点" }).message, "有消息，3条");
+  assert.equal(display.homeBadgeQuantityNote?.({ state: "present" }), "此回执未记录可靠数量；可查看原图与角标裁剪核对。");
+});
+
+test("receipt summaries expose conflicting versions as diagnostics in overview and details", async () => {
+  const display = await displayModule();
+  const receipt = display.inspectionReceiptPresentation({ workflow_version: "v3", status: "completed", result_kind: "alert", summary: { home_badge: { state: "present", badge_text: "3" } } });
+  assert.equal(receipt.label, "版本冲突");
+  assert.equal(receipt.kind, "incomplete");
 });
 
 test("home-badge presentation has two normal outcomes and treats unknown as a failed check", async () => {

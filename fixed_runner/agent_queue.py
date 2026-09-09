@@ -131,7 +131,9 @@ class AgentQueueMixin:
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute("UPDATE agent_task_batches SET state='cancelled' WHERE session_id=?", (session_id,))
-            return db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_session_stopped; not replayed' WHERE status IN ('pending','waiting_model','waiting_user','waiting_device') AND id IN (SELECT a.task_id FROM agent_batch_tasks a JOIN agent_task_batches b ON b.id=a.batch_id WHERE b.session_id=?)", (now_iso(), session_id)).rowcount
+            stopped = db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_session_stopped; not replayed' WHERE status IN ('pending','waiting_model','waiting_user','waiting_device') AND id IN (SELECT a.task_id FROM agent_batch_tasks a JOIN agent_task_batches b ON b.id=a.batch_id WHERE b.session_id=?) RETURNING id", (now_iso(), session_id)).fetchall()
+            db.executemany('DELETE FROM task_waits WHERE task_id=?', [(row[0],) for row in stopped])
+            return len(stopped)
 
     def control_agent_batch(self, batch_id, session_id, *, stop=False):
         from task_store import now_iso
@@ -143,7 +145,8 @@ class AgentQueueMixin:
             if row['state'] != 'cancelled':
                 db.execute('UPDATE agent_task_batches SET state=? WHERE id=?', ('cancelled' if stop else 'paused', batch_id))
             if stop:
-                db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_batch_stopped; not replayed' WHERE status IN ('pending','waiting_model','waiting_user','waiting_device') AND id IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?)", (now_iso(), batch_id))
+                stopped = db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_batch_stopped; not replayed' WHERE status IN ('pending','waiting_model','waiting_user','waiting_device') AND id IN (SELECT task_id FROM agent_batch_tasks WHERE batch_id=?) RETURNING id", (now_iso(), batch_id)).fetchall()
+                db.executemany('DELETE FROM task_waits WHERE task_id=?', [(task[0],) for task in stopped])
         return {**self.agent_batch_receipt(batch_id, session_id),
                 'message': '本批次已请求安全停止，当前动作在检查点收口' if stop else '本批次已暂停后续领取，当前视频仍可完成'}
 

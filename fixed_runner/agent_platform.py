@@ -126,12 +126,15 @@ class AgentPlatform:
                     workers = []
                 if not workers or not all(row.get('running') for row in workers):
                     message = '原任务已恢复排队，但执行者启动尚未确认；请查询原任务'
+        elif action == 'stop_task' and task.status in {'stopped', 'cancelled'}:
+            message = '该任务已停止，保留原结果；没有创建或重放任务'
+            control_reason = 'task_already_stopped'
         else:
             message = '该任务不是可恢复的等待任务；历史终态不会重建或重放'
         task = self.store.get(task_id)
         progress = self.store.task_progress(task_id)
         return {'status': ('stop_requested' if action == 'stop_task' else 'queued') if changed else
-                    (task.status if waiting else 'blocked'),
+                    (task.status if waiting or control_reason == 'task_already_stopped' else 'blocked'),
                 'reason_code': ('worker_start_unconfirmed' if changed and action == 'resume_task' and
                     (not workers or not all(row.get('running') for row in workers)) else
                     control_reason or progress.get('waiting_reason') or ('task_control_applied' if changed else 'task_not_resumable')),

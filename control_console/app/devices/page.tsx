@@ -42,9 +42,9 @@ const initializationLabels: Record<string, string> = {
 const capabilityLabels: Record<string, string> = {
   adb_view: "ADB与看屏",
   browse_home: "首页浏览",
-  home_badge: "消息提醒检查",
+  home_badge: "消息巡检",
   search_input: "搜索与中文输入",
-  engagement_v3: "互动消息巡检",
+  engagement_v3: "旧版详细巡检（历史能力）",
   topic_analysis: "主题识别",
   like_favorite: "点赞与收藏",
   comment_preview: "评论预览",
@@ -125,10 +125,10 @@ export default function DevicesPage() {
         const nextConfig = await configResponse.json() as Config;
         setConfig(nextConfig); setSelected(nextConfig.device_ids || []);
         await Promise.all([readStatus(false), readBackups(), readUnmanaged()]);
-      } catch (error) { setNotice(error instanceof Error ? error.message : "本机控制服务未启动"); }
+      } catch (error) { setNotice(error instanceof Error ? error.message : "设备状态读取失败，已有数据为上次观察，请刷新重试"); }
     };
     const initial = window.setTimeout(() => void load(), 0);
-    const timer = window.setInterval(() => { void readStatus(false).catch(() => setNotice("本机控制服务未启动")); }, 5000);
+    const timer = window.setInterval(() => { void readStatus(false).catch(() => setNotice("设备状态读取失败，已有数据为上次观察，请刷新重试")); }, 5000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
   }, [readBackups, readStatus, readUnmanaged]);
 
@@ -318,7 +318,7 @@ export default function DevicesPage() {
     finally { setVirtualBusy((current) => { const next = new Set(current); next.delete(virtualDevice.virtual_device_id); return next; }); }
   };
 
-  const initializationRequest = async (deviceId: string, action: "start" | "continue" | "cancel", inspectionMode?: "home_badge" | "legacy") => {
+  const initializationRequest = async (deviceId: string, action: "start" | "continue" | "cancel", inspectionMode?: "home_badge") => {
     setInitializing((current) => new Set(current).add(deviceId));
     try {
       const write = Boolean(writeAcceptance[deviceId]);
@@ -450,8 +450,7 @@ export default function DevicesPage() {
             {onlineDevice && <div className="virtual-inventory-actions">
               {virtualDevice.available_actions?.includes("cancel_initialization") && <button type="button" className="secondary" disabled={busy} onClick={() => void initializationRequest(onlineDevice.device_id, "cancel")}>安全取消设备准备</button>}
               {virtualDevice.task_ready && <a className="primary" href="/workbench">选择任务</a>}
-              {virtualDevice.available_actions?.includes("recheck_home_badge") && <button type="button" className="secondary" disabled={busy || onlineDevice.initialization?.status === "running"} onClick={() => void initializationRequest(onlineDevice.device_id, "start", "home_badge")}>重新检查消息提醒</button>}
-              {virtualDevice.available_actions?.includes("recheck_inspection") && <button type="button" className="secondary" disabled={busy || onlineDevice.initialization?.status === "running"} onClick={() => void initializationRequest(onlineDevice.device_id, "start", "legacy")}>重新检查并恢复旧版巡检</button>}
+              {virtualDevice.available_actions?.includes("recheck_home_badge") && <button type="button" className="secondary" disabled={busy || onlineDevice.initialization?.status === "running"} onClick={() => void initializationRequest(onlineDevice.device_id, "start", "home_badge")}>重新检查消息巡检</button>}
             </div>}
             <div className="virtual-inventory-actions">{onlineDevice ? <><button type="button" className="primary" onClick={() => setFocused({ device: onlineDevice, mode: "read_only" })}>打开画面</button>{virtualDevice.available_actions?.includes("continue_onboarding") && <button type="button" className="primary" disabled={busy} onClick={() => void continueVirtualOnboarding(virtualDevice)}>安装完成，继续检查</button>}{virtualDevice.available_actions?.includes("continue_initialization") && <button type="button" className="primary" disabled={busy} onClick={() => void initializationRequest(onlineDevice.device_id, onlineDevice.initialization?.status === "waiting_user" ? "continue" : "start")}>继续复验</button>}<button type="button" className="secondary" disabled={!canControl} title={canControl ? "取得设备独占锁后操作" : "任务或初始化期间只能观看"} onClick={() => setFocused({ device: onlineDevice, mode: "control" })}>{canControl ? "人工接管" : "当前只能观看"}</button>{virtualDevice.available_actions?.includes("configure_model") && <a className="secondary" href="/content#model-settings">前往配置模型</a>}</> : <button type="button" className="primary" disabled={busy || unavailable || virtualDevice.can_start === false} onClick={() => void startVirtual(virtualDevice)}>{busy ? `${virtualOperationStageLabel(virtualDevice.active_operation?.stage)}…` : ["running", "starting", "adb_ready", "waiting_app"].includes(virtualDevice.state) ? "重试连接" : virtualDevice.profile_status === "ready" ? "启动" : "启动并接入"}</button>}</div>
             {!!virtualDevice.readiness_steps?.length && <details className="virtual-readiness"><summary>查看连接与能力诊断（无需逐项校准）</summary><ol>{virtualDevice.readiness_steps.map((step) => <li className={step.status} key={step.id}><span>{step.status === "ready" ? "✓" : step.status === "blocked" ? "!" : "·"}</span><p><strong>{step.label}</strong><small>{step.message}</small></p></li>)}</ol><footer>诊断编号 {virtualDevice.diagnostic_id || "—"}</footer></details>}
@@ -499,7 +498,7 @@ export default function DevicesPage() {
               <div className="device-screen-meta"><span>{device.device_id}</span><b>{isMuMu ? "MuMu · 实时/截图自动切换" : "真机 · 每5秒截图"}</b></div>
               <div className="initialization-panel">{init && <><div className="initialization-progress"><span style={{ width: `${progress}%` }}/></div><p><strong>{initializationLabels[state] || state}</strong><small>{init.message}</small></p>{init.error && state !== "waiting_user" && <em>{init.error}</em>}</>}<label className="write-acceptance-toggle"><input type="checkbox" checked={Boolean(writeAcceptance[device.device_id])} disabled={state === "queued" || state === "running"} onChange={(event) => setWriteAcceptance((current) => ({ ...current, [device.device_id]: event.target.checked }))}/><span>完整写入验收</span><small>默认关闭；开启会发送 1 条真实测试评论且不会自动删除</small></label><div className="initialization-actions">{!isMuMu && <a className="secondary" href="/devices/guide">查看Agent初始化指南</a>}{state === "waiting_user" ? <button type="button" className="primary" disabled={busy} onClick={() => void initializationRequest(device.device_id, "continue")}>{isMuMu ? "继续初始化" : "继续人工步骤"}</button> : state === "queued" || state === "running" ? <button type="button" className="secondary" disabled={busy} onClick={() => void initializationRequest(device.device_id, "cancel")}>安全取消</button> : <button type="button" className="primary" disabled={busy} onClick={() => void initializationRequest(device.device_id, "start")}>{state === "ready" ? "重新校准" : isMuMu ? "开始初始化" : "按指南开始初始化"}</button>}{init?.report_path && <a className="secondary" href={`${API}/api/devices/${encodeURIComponent(device.device_id)}/initialization/report`} target="_blank" rel="noreferrer">查看报告</a>}</div></div>
             </article>;
-          })}{!visibleOnline.length && <div className="empty-screen-grid"><strong>{activeTab === "virtual" ? "还没有在线MuMu虚拟机" : "还没有在线真机"}</strong><span>{activeTab === "virtual" ? "可在上方启动现有实例，或用标准池创建新实例。" : "连接并授权真机后点击刷新。"}</span></div>}</div>
+          })}{status && !visibleOnline.length && <div className="empty-screen-grid"><strong>{activeTab === "virtual" ? "还没有在线MuMu虚拟机" : "还没有在线真机"}</strong><span>{activeTab === "virtual" ? "可在上方启动现有实例，或用标准池创建新实例。" : "连接并授权真机后点击刷新。"}</span></div>}</div>
         </section>
       </section>
       <footer><span>MediaFlow · 设备工作区</span><span>只读画面 · 不触发设备动作</span></footer>

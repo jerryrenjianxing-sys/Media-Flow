@@ -10,7 +10,7 @@ import InteractionAlertBanner from "./interaction-alert-banner";
 
 const PlatformStatusContext=createContext<{status:PlatformSnapshot|null;error:boolean;refresh:()=>Promise<void>}>({status:null,error:false,refresh:async()=>{}});
 export const usePlatformStatus=()=>useContext(PlatformStatusContext);
-const links=[["/manage","总览"],["/devices","设备"],["/workbench","任务台"],["/run","运行"],["/records","结果与证据"],["/interactions","互动记录"],["/content","资产配置"],["/governance","数据治理"]];
+const links=[["/manage","总览"],["/devices","设备"],["/workbench","任务台"],["/run","运行"],["/records","结果与证据"],["/interactions","消息巡检"],["/content","资产配置"],["/governance","数据治理"]];
 export default function ConsoleShell({children}:{children:React.ReactNode}){
   const path=usePathname();
   const [status,setStatus]=useState<PlatformSnapshot|null>(null),[error,setError]=useState(false),[dark,setDark]=useState(false);

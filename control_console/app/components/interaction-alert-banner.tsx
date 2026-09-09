@@ -88,10 +88,10 @@ export default function InteractionAlertBanner() {
     return `${sourceLabels[name] || name}${count === null ? "" : count >= 99 ? "99+" : count}`;
   }).join("｜");
   const legacyDevices = Array.from(new Set(legacyAlerts.map((alert) => alert.device_name))).join("、");
-  const bannerDetails = [...homeDetails, ...(sourceDetails ? [`${legacyDevices}｜${sourceDetails}`] : [])].join("｜");
+  const bannerDetails = [...homeDetails, ...(sourceDetails ? [`${legacyDevices}｜${sourceDetails}`] : [])].join("｜") || "有待查看的平台提醒";
   return (
     <button className="interaction-banner" type="button" onClick={acknowledgeAndOpen} disabled={busy} aria-label={`查看 ${alerts.length} 条消息或互动提醒`}>
-      <span className="interaction-banner-label">消息提醒</span>
+      <span className="interaction-banner-label">消息提醒 {alerts.length}</span>
       <span className="interaction-banner-track"><span>{bannerDetails}｜共 {alerts.length} 条未查看平台提醒｜点击查看截图证据｜平台确认不会清除抖音角标</span></span>
       {error ? <span className="interaction-banner-error">{error}</span> : null}
     </button>

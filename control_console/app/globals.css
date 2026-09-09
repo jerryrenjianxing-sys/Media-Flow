@@ -352,17 +352,20 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .task-status.degraded, .task-status.partial_degraded { color: #e1b66d; background: rgba(215,155,59,.08); }
 .task-status.stopped { color: #e1b66d; }
 .task-status.cancelled { color: var(--ink-subtle); }
-.task-group-row { grid-template-columns: 8px minmax(0, 1fr) auto !important; }
+.task-group-row { grid-template-columns: 8px minmax(0, 1fr) auto !important; align-items: start; }
 .task-group-main { min-width: 0; }
-.task-group-title { display: flex; align-items: center; gap: 7px; }
+.task-group-title { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .task-group-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-group-title > span { padding: 2px 5px; border: 1px solid var(--hairline); border-radius: 4px; color: var(--ink-subtle); background: var(--surface-2); font-size: 12px; white-space: nowrap; }
-.task-group-metrics { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 5px; }
+.task-group-main > p { margin: 8px 0 0; color: var(--ink-muted); font-size: 12px; overflow-wrap: anywhere; }
+.task-group-metrics { margin-top: 4px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 5px; }
 .task-group-metrics span { padding: 3px 5px; border-radius: 4px; color: var(--ink-muted); background: var(--surface-2); font-size: 12px; }
 .task-group-metrics b { color: var(--ink); font-weight: 500; }
 .task-group-metrics .danger, .task-group-metrics .danger b { color: #e98484; }
 .task-group-metrics .warning, .task-group-metrics .warning b { color: #e1b66d; }
-.task-group-actions { display: flex; align-items: flex-end; flex-direction: column; gap: 6px; }
+.task-group-actions { min-width: max-content; display: flex; align-items: flex-end; flex-direction: column; gap: 6px; }
+.task-group-actions .task-status { white-space: nowrap; }
+.task-group-metrics > span, .task-group-metrics > span.warning { height: auto; margin: 0; padding: 3px 5px; border: 0; font-size: 12px; line-height: 1.5; white-space: nowrap; }
 .task-detail-button { padding: 4px 6px; border: 1px solid rgba(94,106,210,.3); border-radius: 4px; color: var(--primary-hover); background: rgba(94,106,210,.07); font-size: 12px; white-space: nowrap; }
 .task-detail-button:hover { color: var(--ink); border-color: rgba(94,106,210,.55); }
 .correction-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 8px; }
@@ -907,7 +910,7 @@ footer { padding: 24px 0 34px; display: flex; justify-content: space-between; co
 .interaction-banner:disabled { cursor: wait; opacity: .88; }
 .interaction-banner-label { flex: 0 0 auto; padding: 3px 8px; border: 1px solid rgba(255,255,255,.45); border-radius: 999px; font-size: 12px; font-weight: 750; }
 .interaction-banner-track { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; }
-.interaction-banner-track > span { display: inline-block; min-width: 100%; animation: interaction-marquee 14s linear infinite; }
+.interaction-banner-track > span { display: block; overflow: hidden; text-overflow: ellipsis; }
 .interaction-banner-error { flex: 0 0 auto; font-size: 12px; }
 .banner-error { justify-content: center; background: #785d66; cursor: default; }
 @keyframes interaction-marquee { from { transform: translateX(100%); } to { transform: translateX(-100%); } }
@@ -1077,10 +1080,12 @@ footer { padding: 24px 0 34px; display: flex; justify-content: space-between; co
 }
 
 @media (max-width: 520px) {
-  .interaction-banner-label { display: none; }
+  .interaction-banner-label { display: inline-block; }
+  .interaction-banner { flex-wrap: wrap; gap: 6px; padding: 10px 14px; }
+  .interaction-banner-track { flex-basis: 100%; }
   .interaction-card-head { align-items: flex-start; flex-direction: column; }
   .interaction-filter { width: 100%; }
-  .interaction-filter button { flex: 1; }
+  .interaction-filter button { flex: 1 1 calc(50% - 8px); white-space: nowrap; }
   .interaction-filter { flex-wrap: wrap; }
   .interaction-latest, .interaction-receipt footer { align-items: flex-start; flex-direction: column; }
   .interaction-section-grid, .interaction-detail-sections, .interaction-evidence-gallery { grid-template-columns: 1fr; }

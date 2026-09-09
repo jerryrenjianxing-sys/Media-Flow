@@ -137,7 +137,11 @@ class AutomationService:
             status = 'unknown' if unknown else status
             blocked = status in {'blocked', 'failed', 'unknown', 'waiting_user', 'waiting_model', 'waiting_device', 'expired', 'cancelled',
                                  'timeout', 'interrupted'}
-            if action in {'resume_task', 'stop_task'} and not result.get('changed'):
+            if action == 'stop_batch' and status == 'cancelled' and result.get('batch_id') and not unknown:
+                blocked = False
+            if action == 'stop_task' and status in {'stopped', 'cancelled'} and (result.get('task') or {}).get('status') == status and not unknown:
+                blocked = False
+            elif action in {'resume_task', 'stop_task'} and not result.get('changed'):
                 blocked = True
             message = (operation.get('message') or operation.get('error') or result.get('user_message')
                 or result.get('message') or result.get('error') or '已读取实际业务回执')

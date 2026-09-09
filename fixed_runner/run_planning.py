@@ -176,7 +176,9 @@ def build_preview(
     paused: bool,
     model_status: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    config = normalized_config(dict(draft.get("config") or {}))
+    # UI submissions use the homepage workflow. Reading a saved draft never
+    # rewrites it; compatibility planners still retain their explicit old mode.
+    config = normalized_config({**dict(draft.get("config") or {}), "inspection_mode": "home_badge"})
     device_rows, eligible_ids = _device_preview(
         store, config["device_ids"], devices, config
     )
@@ -315,7 +317,7 @@ def submit_previewed_draft(
     if preview.get("requires_confirmation") and not confirm_writes:
         actions = "、".join(preview.get("write_actions") or [])
         raise ValueError(f"本任务可能执行{actions}，请确认后再开始")
-    config = normalized_config(dict(draft.get("config") or {}))
+    config = normalized_config({**dict(draft.get("config") or {}), "inspection_mode": "home_badge"})
     eligible_ids = list(preview.get("eligible_device_ids") or [])
     controlled_ids = [
         device_id

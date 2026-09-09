@@ -200,7 +200,7 @@ class RunPlanningTests(unittest.TestCase):
         )
         self.assertIsNone(preview["segments"])
 
-    def test_v3_preview_rejects_physical_or_nonstandard_device(self) -> None:
+    def test_ui_preview_uses_home_badge_without_legacy_physical_restriction(self) -> None:
         draft = get_or_create_draft(
             self.store,
             {**base_config(), "engagement_inspection_enabled": True},
@@ -213,8 +213,8 @@ class RunPlanningTests(unittest.TestCase):
                 self.store, draft, devices=self.devices, paused=True
             )
 
-        self.assertFalse(preview["ready"])
-        self.assertIn(
+        self.assertTrue(preview["ready"])
+        self.assertNotIn(
             "互动巡检 v3 仅支持已复验的900×1600标准虚拟机",
             preview["blockers"],
         )
