@@ -17,6 +17,31 @@ def original_three():
     return image,source
 
 class RealBadgeTests(unittest.TestCase):
+    def test_gray_three_uses_recognized_glyph_even_without_bright_white_ink(self):
+        image,source=original_three()
+        for y in range(1431,1467):
+            for x in range(527,563):
+                color=image.getpixel((x,y))
+                if min(color)>180 and max(color)-min(color)<75:
+                    image.putpixel((x,y),(200,200,200))
+        result=analyze_badge(image,source)
+        self.assertEqual(result['message_count'],3)
+        self.assertEqual(result['quantity_status'],'recognized')
+        self.assertEqual(result['quantity_source'],'local_glyph')
+
+    def test_gray_unreadable_ink_is_not_a_pure_dot(self):
+        for brightness in (100,200):
+            with self.subTest(brightness=brightness):
+                image,source=original_three()
+                draw=ImageDraw.Draw(image)
+                draw.rectangle((527,1431,562,1466),fill='#fa294d')
+                draw.line((536,1440,553,1456),fill=(brightness,)*3,width=3)
+                draw.line((536,1456,553,1440),fill=(brightness,)*3,width=3)
+                result=analyze_badge(image,source)
+                self.assertEqual(result['quantity_status'],'unreadable')
+                self.assertEqual(result['state'],'present')
+                self.assertIsNone(result['badge_text'])
+
     def test_original_three_pixels_have_exact_count_without_ui_number(self):
         image,source=original_three()
         result=analyze_badge(image,source)

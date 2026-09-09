@@ -107,6 +107,7 @@ class HomeBadgeTests(unittest.TestCase):
             self.assertEqual(result['home_badge']['state'],'present')
             self.assertIsNone(result['home_badge']['badge_text'])
             self.assertEqual(result['home_badge']['message'],'有消息')
+            self.assertEqual(result['home_badge']['quantity_status'],'dot')
 
     def test_tight_message_text_bounds_still_include_badge_above_right(self):
         from home_badge import analyze_badge
@@ -213,6 +214,21 @@ class HomeBadgeTests(unittest.TestCase):
                     {'page_type':page,'state':'absent','region':region,'evidence':'claim'})):
                 result,_,_=self.inspect(Device(tree_error=True),Path(d),policy={'visual_navigation_enabled':True})
                 self.assertEqual(result['home_badge']['state'],'unknown')
+
+    def test_visual_null_quantity_without_local_tree_is_unreadable_not_dot(self):
+        from unittest.mock import patch
+        from control_vision import VisionCandidateLocator
+        import json
+        answer={'page_type':'home','state':'present','region':[.65,.88,.82,.96],
+                'evidence':'首页消息角标存在，数字无法辨认','badge_text':None}
+        with TemporaryDirectory() as d, patch.object(VisionCandidateLocator,'_request',return_value=json.dumps(answer)):
+            device=Device(True,tree_error=True)
+            result,_,_=self.inspect(device,Path(d),policy={'visual_navigation_enabled':True})
+            self.assertEqual(result['home_badge']['quantity_status'],'unreadable')
+            self.assertEqual(result['home_badge']['state'],'present')
+            self.assertIsNone(result['home_badge']['badge_text'])
+            self.assertIsNone(result['home_badge']['message_count'])
+            self.assertEqual(device.actions,[])
 
     def test_concurrent_devices_share_only_their_own_episode(self):
         from concurrent.futures import ThreadPoolExecutor

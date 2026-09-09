@@ -14,7 +14,8 @@ RULE_VERSION = 'home-badge-glyph-v1'
 def _templates():
     return json.loads((Path(__file__).parent/'assets/home_badge_glyphs_v1.json').read_text(encoding='utf-8'))['templates']
 
-def read_glyphs(badge: Image.Image) -> str | None:
+def glyph_ink_mask(badge: Image.Image) -> Image.Image:
+    """Share the enclosed ink evidence used for reading and dot classification."""
     badge=badge.convert('RGB')
     mask=Image.new('L',badge.size)
     # White ink must be enclosed horizontally by the badge, excluding nearby
@@ -26,6 +27,10 @@ def read_glyphs(badge: Image.Image) -> str | None:
             color=badge.getpixel((x,y))
             if min(color)>180 and max(color)-min(color)<75:
                 mask.putpixel((x,y),255)
+    return mask
+
+def read_glyphs(badge: Image.Image) -> str | None:
+    mask=glyph_ink_mask(badge)
     segments=[];start=None
     for x in range(mask.width+1):
         on=x<mask.width and mask.crop((x,0,x+1,mask.height)).getbbox()

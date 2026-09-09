@@ -9,7 +9,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from PIL import Image
-from badge_glyphs import RULE_VERSION, read_glyphs
+from badge_glyphs import RULE_VERSION, glyph_ink_mask, read_glyphs
 from task_store import now_iso
 
 
@@ -105,9 +105,6 @@ def analyze_badge(image: Image.Image, source: str) -> dict:
                 and len(component)/(cw*ch) >= .35
                 and min(xs)>0 and min(ys)>0 and max(xs)<crop.width-1 and max(ys)<crop.height-1):
             badges.append([region[0]+min(xs),region[1]+min(ys),region[0]+max(xs)+1,region[1]+max(ys)+1])
-            inner = [(x,y) for y in range(min(ys)+int(ch*.2), max(ys)-int(ch*.2)+1)
-                     for x in range(min(xs)+int(cw*.2),max(xs)-int(cw*.2)+1)]
-            answer["numeric_appearance"] = bool(answer.get("numeric_appearance")) or cw/ch>1.4 or sum(1 for x,y in inner if min(pixels[x,y])>210) >= 3*scale*scale
     # Red islands in closed glyph counters (0/6/8/9) belong to the enclosing
     # badge; they are not additional notification candidates.
     badges=[box for box in badges if not any(other!=box and other[0]<=box[0] and other[1]<=box[1]
@@ -118,8 +115,16 @@ def analyze_badge(image: Image.Image, source: str) -> dict:
         answer["badge_bounds"]=badges[0]
         answer.update(state="present", reason_code="visible_message_badge", message="有消息")
         counts = set(re.findall(r"(?<!\d)([1-9]\d{0,5}\+?)(?!\d)", " ".join(semantics)))
-        local_text=read_glyphs(image.crop(badges[0]))
-        if answer.get("numeric_appearance"):
+        badge_crop=image.crop(badges[0])
+        local_text=read_glyphs(badge_crop)
+        # A pure dot needs positive solid-red interior evidence. Ink below the
+        # reader's brightness threshold must still be unreadable, never a dot.
+        interior=badge_crop.convert("RGB").crop((int(badge_crop.width*.2),int(badge_crop.height*.2),
+                                                int(badge_crop.width*.8),int(badge_crop.height*.8)))
+        channels=iter(interior.tobytes())
+        solid_red=all(r>150 and r-g>65 and r-b>30 for r,g,b in zip(channels,channels,channels))
+        answer["numeric_appearance"] = bool(glyph_ink_mask(badge_crop).getbbox()) or not solid_red or badge_crop.width/badge_crop.height>1.4
+        if local_text or answer["numeric_appearance"]:
             if len(counts)>1 or (counts and local_text and local_text not in counts):
                 answer.update(reason_code="badge_evidence_conflict",quantity_status="conflict",message="有消息，角标数量证据冲突")
             elif local_text or len(counts)==1:
@@ -244,10 +249,13 @@ def inspect_home_badge(inspector, policy) -> dict:
                     apply_badge_text(result, observed.get("badge_text"))
                     if result.get("badge_text"):
                         result.update(quantity_status="recognized",quantity_source="vision")
-                    elif result.get("numeric_appearance"):
-                        result.update(reason_code="badge_quantity_unreadable",quantity_status="unreadable",message="有消息，数字未能确认")
-                    else:
+                    elif result.get("quantity_status") == "dot":
                         result.update(quantity_status="dot",quantity_source="vision")
+                    else:
+                        # Vision's null contract means either dot or illegible
+                        # digits; only prior positive local dot evidence can
+                        # distinguish them. Presence alone supplies no quantity.
+                        result.update(reason_code="badge_quantity_unreadable",quantity_status="unreadable",message="有消息，数字未能确认")
                 else:
                     result.update(quantity_status="none",quantity_source="vision")
         except Exception as exc:
