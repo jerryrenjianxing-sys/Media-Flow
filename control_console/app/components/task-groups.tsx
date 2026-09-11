@@ -1,11 +1,12 @@
 "use client";
+import { modelDiagnosticText, type ModelError } from '../lib/model-diagnostics.mjs';
 /* eslint-disable @next/next/no-img-element -- local runtime evidence is loaded on demand */
 
 import { useEffect, useState } from "react";
 import { fetchLocalApi } from "../lib/local-api";
 import { navigationReason } from "../lib/navigation-feedback";
 import { homeBadgeQuantityNote, homeBadgeSourceLabel, resolveInspection, type HomeBadge } from "../lib/inspection-display.mjs";
-import { isWaitingTask, taskStatusLabel, type TaskProgress } from "../lib/task-progress.mjs";
+import { isWaitingTask, taskStatusLabel, progressCount, type TaskProgress } from "../lib/task-progress.mjs";
 import { TaskProgressPanel } from "./task-progress";
 
 const API = "http://127.0.0.1:48138";
@@ -44,6 +45,7 @@ export type TaskGroup = {
   started_at?: string | null;
   finished_at?: string | null;
   rounds_total: number;
+  result_available?: boolean;
   completed_rounds: number;
   degraded_rounds: number;
   failed_rounds: number;
@@ -92,6 +94,7 @@ type TaskIncident = {
   error_message: string;
   outcome: "recovered" | "skipped" | "device_fatal" | "model_failed" | "model_circuit_open";
   context?: { model_error?: { kind?: string; retryable?: boolean; status_code?: number | null } };
+  model_error?: ModelError | null;
   has_screenshot: boolean;
   has_ui_tree?: boolean;
   analysis_status?: string;
@@ -124,7 +127,7 @@ export const groupStatusText = (group: TaskGroup) => {
   if (!group.rounds_total && group.inspection_total) {
     return `消息巡检 · ${inspectionGroupText(group)}`;
   }
-  if (isWaitingTask(group.status)) return taskStatusLabel(group.status);
+  if (isWaitingTask(group.status)) return taskStatusLabel(group.status, group.tasks.find(task => task.status === group.status));
   if (group.status === "running") return `${group.running_rounds} 轮执行中`;
   if (group.status === "pending") return `${group.pending_rounds} 轮等待`;
   if (group.status === "partial_failed") return `${group.completed_rounds} 成功 · ${group.failed_rounds} 失败`;
@@ -173,8 +176,8 @@ export function TaskGroupList({ groups, now, onOpen }: { groups: TaskGroup[]; no
     <div className="task-group-main">
       <div className="task-group-title"><strong>{group.device_name}</strong><span>{group.rounds_total} 轮{group.inspection_total ? ` · ${group.inspection_total} 次巡检` : ""}</span></div>
       <small>{group.rounds_total ? "刷视频" : "消息巡检"} · {new Date(group.created_at).toLocaleString("zh-CN", { hour12: false })} · {group.started_at ? `总耗时 ${formatDuration(group.started_at, group.finished_at, now)}` : group.status === "pending" ? "尚未开始" : "开始时间未记录"}</small>
-      <div className="task-group-metrics">{group.rounds_total > 0 && <><span>视频 <b>{group.videos_seen}</b></span>{group.non_video_feed_items > 0 && <span>图文跳过 <b>{group.non_video_feed_items}</b></span>}{group.feed_phase_reentries > 0 && <span>阶段重入 <b>{group.feed_phase_reentries}</b></span>}<span>点赞 <b>{group.likes}</b></span><span>收藏 <b>{group.favorites}</b></span><span>评论 <b>{group.comments_sent}</b></span></>}{group.inspection_total > 0 && <><span className={group.failed_inspections ? "danger" : group.degraded_inspections ? "warning" : ""}>巡检 <b>{inspectionGroupText(group)}</b></span></>}{group.recovered_preconditions ? <span className="warning">自动复验 <b>{group.recovered_preconditions}</b></span> : null}{group.rounds_total > 0 && group.model_attempts > 0 && <span>模型有效 <b>{Math.round(group.model_valid_response_rate * 100)}%</b></span>}{group.rounds_total > 0 && group.model_errors > 0 && <span className="warning">模型错误 <b>{group.model_errors}</b></span>}{group.rounds_total > 0 && group.video_errors > 0 && <span className="danger">页面异常 <b>{group.video_errors}</b></span>}</div>
-      {group.rounds_total > 0 && group.progress?.schema_supported === true && <p>已处理 {group.progress.processed_slots} · 成功 {group.progress.successful_slots} · 失败 {group.progress.failed_slots} · 不可用 {group.progress.unavailable_slots}</p>}
+      <div className="task-group-metrics">{group.result_available === false ? <span>尚无结果 · 已保存进度见下方</span> : <>{group.rounds_total > 0 && <><span>视频 <b>{group.videos_seen}</b></span>{group.non_video_feed_items > 0 && <span>图文跳过 <b>{group.non_video_feed_items}</b></span>}{group.feed_phase_reentries > 0 && <span>阶段重入 <b>{group.feed_phase_reentries}</b></span>}<span>点赞 <b>{group.likes}</b></span><span>收藏 <b>{group.favorites}</b></span><span>评论 <b>{group.comments_sent}</b></span></>}{group.inspection_total > 0 && <><span className={group.failed_inspections ? "danger" : group.degraded_inspections ? "warning" : ""}>巡检 <b>{inspectionGroupText(group)}</b></span></>}{group.recovered_preconditions ? <span className="warning">自动复验 <b>{group.recovered_preconditions}</b></span> : null}{group.rounds_total > 0 && group.model_attempts > 0 && <span>模型有效 <b>{Math.round(group.model_valid_response_rate * 100)}%</b></span>}{group.rounds_total > 0 && group.model_errors > 0 && <span className="warning">模型错误 <b>{group.model_errors}</b></span>}{group.rounds_total > 0 && group.video_errors > 0 && <span className="danger">页面异常 <b>{group.video_errors}</b></span>}</>}</div>
+      {group.rounds_total > 0 && group.progress?.schema_supported === true && <p>已处理 {progressCount(group.progress.processed_slots)} · 成功 {progressCount(group.progress.successful_slots)} · 失败 {progressCount(group.progress.failed_slots)} · 不可用 {progressCount(group.progress.unavailable_slots)}</p>}
     </div>
     <div className="task-group-actions"><b className={`task-status ${group.status}`}>{groupStatusText(group)}</b><button type="button" className="task-detail-button" onClick={() => onOpen(group)}>查看详情</button></div>
   </article>)}</>;
@@ -262,8 +265,8 @@ function TaskGroupDetailDialog({ group, onClose }: { group: TaskGroup; onClose: 
 
   return <div className="task-detail-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="task-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="task-detail-title">
-      <header className="task-detail-header"><div><p className="section-index">DEVICE RUN DETAIL</p><h2 id="task-detail-title">{group.device_name}</h2><p>{groupStatusText(group)}{group.rounds_total > 0 ? ` · 共 ${group.rounds_total} 轮 · ${group.videos_seen} 条视频` : ""} · {group.inspection_total} 次消息巡检</p></div><button type="button" className="task-detail-close" aria-label="关闭任务详情" onClick={onClose}>×</button></header>
-{group.rounds_total > 0 && <div className="task-detail-summary"><div><span>完整成功</span><b>{group.completed_rounds}</b></div><div><span>降级轮次</span><b className={group.degraded_rounds ? "warning" : ""}>{group.degraded_rounds}</b></div><div><span>失败轮次</span><b className={group.failed_rounds ? "danger" : ""}>{group.failed_rounds}</b></div><div><span>消息巡检</span><b className={group.failed_inspections ? "danger" : group.degraded_inspections ? "warning" : ""}>{group.inspection_total}</b></div><div><span>模型有效率</span><b>{Math.round((group.model_valid_response_rate ?? 1) * 100)}%</b></div><div><span>有效视频</span><b>{group.videos_seen}</b></div></div>}
+      <header className="task-detail-header"><div><p className="section-index">DEVICE RUN DETAIL</p><h2 id="task-detail-title">{group.device_name}</h2><p>{groupStatusText(group)}{group.rounds_total > 0 ? ` · 共 ${group.rounds_total} 轮 · ${group.result_available === false ? "尚无结果" : group.videos_seen} 条视频` : ""} · {group.inspection_total} 次消息巡检</p></div><button type="button" className="task-detail-close" aria-label="关闭任务详情" onClick={onClose}>×</button></header>
+{group.rounds_total > 0 && <div className="task-detail-summary"><div><span>完整成功</span><b>{group.completed_rounds}</b></div><div><span>降级轮次</span><b className={group.degraded_rounds ? "warning" : ""}>{group.degraded_rounds}</b></div><div><span>失败轮次</span><b className={group.failed_rounds ? "danger" : ""}>{group.failed_rounds}</b></div><div><span>消息巡检</span><b className={group.failed_inspections ? "danger" : group.degraded_inspections ? "warning" : ""}>{group.inspection_total}</b></div><div><span>模型有效率</span><b>{group.model_attempts > 0 ? `${Math.round(group.model_valid_response_rate * 100)}%` : "尚无结果"}</b></div><div><span>有效视频</span><b>{group.result_available === false ? "尚无结果" : group.videos_seen}</b></div></div>}
       {loading && <p className="task-detail-loading">正在读取各轮结果与截图…</p>}
       {error && <p className="task-detail-error">{error}</p>}
       {inspections.length > 0 && <section className="inspection-detail-block"><div className="inspection-detail-title"><strong>消息巡检记录</strong><span>{inspectionGroupText(group)}</span></div><div className="inspection-list">{inspections.map((inspection) => <InspectionCard key={inspection.id} inspection={inspection}/>)}</div></section>}
@@ -279,10 +282,10 @@ function TaskGroupDetailDialog({ group, onClose }: { group: TaskGroup; onClose: 
           <TaskProgressPanel taskId={round.id} status={round.status} progress={round.progress} onChanged={() => setRefreshVersion((value) => value + 1)}/>
           {round.content_plan && <div className="task-content-plan"><strong>{round.content_plan.theme_name}</strong><span>{round.content_plan.plan_name} · v{round.content_plan.revision_number} · 主题 {round.content_plan.theme_queue_index}/{round.content_plan.theme_queue_size}</span>{round.content_plan.search_query && <small>搜索词：{round.content_plan.search_query}</small>}</div>}
           {Array.isArray(round.result?.comment_asset_reviews) && round.result.comment_asset_reviews.length > 0 && <div className="task-comment-assets"><strong>评论资产</strong>{(round.result.comment_asset_reviews as Array<Record<string, unknown>>).map((item, index) => <span key={`${String(item.video_index)}-${index}`}>第 {String(item.video_index)} 条 · {item.source_type === "theme_pool" ? "主题词池" : item.source_type === "common_pool" ? "通用词池" : "自由生成"} · {String(item.final_comment || "已跳过")}</span>)}</div>}
-          {visiblePhases.length > 0 && <div className="task-phase-grid">{visiblePhases.map((phase) => { const item = phaseSummaries[phase]; return <section key={phase} className={`task-phase-card ${phase}`}><div><strong>{item.label || (phase === "search" ? "搜索视频流" : "主页视频流")}</strong><span>有效视频 {Number(item.videos || 0)}</span></div><p>主题精确 {Number(item.topic_exact || 0)} · 点赞 {Number(item.likes || 0)} · 收藏 {Number(item.favorites || 0)} · 评论 {Number(item.comments_sent || 0)}</p><small>模型 {Number(item.model_valid_decisions || 0)}/{Number(item.model_attempts || 0)} · 已知跳过 {Number(item.known_safe_skips || 0)} · 漂移 {Number(item.unknown_blocked_pages || 0)} · 恢复 {Number(item.recoveries || 0)}</small></section>; })}</div>}
+          {visiblePhases.length > 0 && <div className="task-phase-grid">{visiblePhases.map((phase) => { const item = phaseSummaries[phase]; return <section key={phase} className={`task-phase-card ${phase}`}><div><strong>{item.label || (phase === "search" ? "搜索视频流" : "主页视频流")}</strong><span>有效视频 {progressCount(item.videos)}</span></div><p>主题精确 {progressCount(item.topic_exact)} · 点赞 {progressCount(item.likes)} · 收藏 {progressCount(item.favorites)} · 评论 {progressCount(item.comments_sent)}</p><small>模型 {progressCount(item.model_valid_decisions)}/{progressCount(item.model_attempts)} · 已知跳过 {progressCount(item.known_safe_skips)} · 漂移 {progressCount(item.unknown_blocked_pages)} · 恢复 {progressCount(item.recoveries)}</small></section>; })}</div>}
           <div className="task-round-metrics">{evidenceKinds.map(({ kind, label, resultKey }) => {
             const images = round.evidence_groups?.[kind] || [];
-            const metric = <>{label} {Number(round.result?.[resultKey] || 0)}{images.length > 0 && <small>截图 {images.length}</small>}</>;
+            const metric = <>{label} {progressCount(round.result?.[resultKey])}{images.length > 0 && <small>截图 {images.length}</small>}</>;
             if (!images.length) return <span key={kind}>{metric}</span>;
             const active = selectedKind === kind;
             return <button key={kind} type="button" className={`has-evidence${active ? " active" : ""}`} aria-expanded={active} onClick={() => setActiveEvidence(active ? null : { taskId: round.id, kind })}>{metric}</button>;
@@ -299,8 +302,8 @@ function TaskGroupDetailDialog({ group, onClose }: { group: TaskGroup; onClose: 
             <div className="task-action-evidence-header"><strong>{selectedLabel}截图 · {selectedImages.length} 张</strong><button type="button" onClick={() => setActiveEvidence(null)}>收起</button></div>
             <div className="task-image-grid">{selectedImages.map((image) => <a key={image.name} href={`${API}/api/task-image?task_id=${encodeURIComponent(round.id)}&name=${encodeURIComponent(image.name)}`} target="_blank" rel="noreferrer"><img loading="lazy" src={`${API}/api/task-image?task_id=${encodeURIComponent(round.id)}&name=${encodeURIComponent(image.name)}`} alt={image.label}/><span>{image.feed_phase === "search" ? "搜索流 · " : image.feed_phase === "home" ? "主页流 · " : ""}{image.label}</span></a>)}</div>
           </div>}
-          {round.error && <div className="task-round-error"><strong>失败原因</strong><p>{round.error}</p></div>}
-          {round.incidents.length > 0 && <div className="task-round-incidents"><strong>异常与恢复</strong>{round.incidents.map((incident) => <div key={incident.id}><span>第 {incident.video_index ?? "-"} 条 · {incident.stage} · {incidentStatusText(incident)}</span><p>{incident.error_type}: {incident.error_message}</p>{incident.has_screenshot && <a href={`${API}/api/incident-image?id=${encodeURIComponent(incident.id)}`} target="_blank" rel="noreferrer">查看报错截图</a>}</div>)}</div>}
+          {round.error && <div className="task-round-error"><strong>{isWaitingTask(round.status) ? "等待原因" : "失败原因"}</strong><p>{navigationReason(round.error) || round.error}</p></div>}
+          {round.incidents.length > 0 && <div className="task-round-incidents"><strong>异常与恢复</strong>{round.incidents.map((incident) => <div key={incident.id}><span>第 {incident.video_index ?? "-"} 条 · {incident.stage} · {incidentStatusText(incident)}</span><p>{incident.error_type}: {incident.error_message}</p>{incident.model_error && <p>{modelDiagnosticText(incident.model_error)}</p>}{incident.has_screenshot && <a href={`${API}/api/incident-image?id=${encodeURIComponent(incident.id)}`} target="_blank" rel="noreferrer">查看报错截图</a>}</div>)}</div>}
         </article>;
       })}</div>
     </section>

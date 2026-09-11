@@ -20,6 +20,38 @@ def claim_probe_in_process(arguments):
 
 
 class ResilienceStoreTest(unittest.TestCase):
+    def test_read_only_receipts_keep_missing_counts_and_interruption_distinct(self):
+        ids = self.batch()
+        first = self.store.claim_next('phone1', 'worker')
+        self.store.save_task_checkpoint(first.id, {'summary': {'processed_slots': 3, 'successful_slots': 2, 'failed_slots': 1}})
+        self.store.wait_task(first.id, 'waiting_device', 'worker_interrupted')
+        self.store.control_agent_batch('batch', 'session', stop=False)
+        with self.store.connection() as db:
+            before = list(db.iterdump())
+        for _ in range(2):
+            receipt = self.store.agent_batch_receipt('batch', 'session')
+            self.assertEqual(receipt['state'], 'paused')
+            p = self.store.task_progress(first.id)
+            self.assertEqual(p['execution_state'], 'interrupted')
+            self.assertEqual(p['device_connection'], 'unverified')
+            self.assertEqual(p['batch_state'], 'paused')
+            self.assertEqual(p['processed_slots'], 3)
+            self.assertIsNone(p['unknown_actions'])
+            self.assertIsNone(self.store.task_progress(ids[-1])['processed_slots'])
+            self.assertFalse(receipt['progress']['counts_complete'])
+            self.assertEqual(receipt['progress']['processed_slots'], 3)
+        with self.store.connection() as db:
+            self.assertEqual(before, list(db.iterdump()))
+
+    def test_expired_receipt_query_does_not_cancel_tasks(self):
+        self.batch()
+        with self.store.connection() as db:
+            db.execute("UPDATE agent_batch_policies SET stop_policy='deadline'")
+            before = list(db.iterdump())
+        self.store.agent_batch_receipt('batch', 'session')
+        with self.store.connection() as db:
+            self.assertEqual(before, list(db.iterdump()))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

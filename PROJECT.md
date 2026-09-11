@@ -19,6 +19,7 @@
 | 五机带测和已发现缺陷 | [后续纠错记录](docs/current-followup.md) |
 | 前端布局与桌面验收 | [现行设计](control_console/DESIGN.md) |
 | 历史事实和资料处置 | [清理清单](docs/context-cleanup.md) |
+| dev.42退役代码、保留边界与验证 | [代码清退清单](docs/dev42-cleanup.md) |
 
 STATUS 只维护当前状态，不再混排数十代操作方案。历史材料不能覆盖已确认的新要求；发现要求、实现与证据不一致时记录差距，不伪造一致或让用户重新解释已确认参数。
 

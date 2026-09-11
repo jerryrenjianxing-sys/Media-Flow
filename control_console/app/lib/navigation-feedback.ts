@@ -1,4 +1,5 @@
 export const navigationFeedback: Record<string, string> = {
+  worker_interrupted: "执行者中断，进度已保存；这不代表设备离线。核对后台与设备连接后，可恢复原任务，不重放未知动作。",
   visual_standard_mumu_required: "视觉增强仅适用于已登记的900×1600、320 DPI MuMu；请刷新库存并复核显示配置。",
   visual_navigation_unsafe_page: "当前是会话、个人主页或受保护页面，已停止识别点击；请查看异常现场并恢复安全主页。",
   model_network: "模型网络连接失败；请检查网络后重试，ADB连接和看屏不受影响。",

@@ -1,6 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { taskStatusLabel, isWaitingTask, controlTask, supportedTaskProgress, taskControlActions } from '../app/lib/task-progress.mjs';
+import { progressCount, taskWaitingLabel } from '../app/lib/task-progress.mjs';
+import { modelDiagnosticText } from '../app/lib/model-diagnostics.mjs';
+
+test('model diagnostics preserve phase, elapsed and actual retries without raw text', () => {
+  const text = modelDiagnosticText({ kind:'transient_network', attempts:2, diagnostics:{stage:'request_write',elapsed_ms:25000,body:'secret'} });
+  assert.match(text, /上传请求.*25.0 秒.*重试 1 次/);
+  assert.doesNotMatch(text, /鉴权|secret/);
+  assert.equal(modelDiagnosticText({kind:'not-valid'}), '');
+});
+
+test('missing progress is not zero and interrupted executor is not an offline phone', () => {
+  for (const value of [null, undefined, -1, NaN, '3']) assert.equal(progressCount(value), '尚无结果');
+  assert.equal(progressCount(0), '0');
+  assert.equal(progressCount(3), '3');
+  assert.match(taskWaitingLabel('waiting_device', { waiting_reason: 'worker_interrupted' }), /执行者中断/);
+  assert.doesNotMatch(taskWaitingLabel('waiting_device', { waiting_reason: 'worker_interrupted' }), /设备离线|手机离线/);
+});
 
 test('waiting tasks remain actionable and degraded differs from user stop', () => {
   for (const status of ['waiting_model', 'waiting_device', 'waiting_user']) assert.equal(isWaitingTask(status), true);

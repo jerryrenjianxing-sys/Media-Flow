@@ -244,6 +244,7 @@ def budgeted_post(url: str, **kwargs):
         remaining = max(.1, deadline-time.monotonic())
         kwargs["timeout"] = (min(5, remaining), min(25, remaining))
         stage = 'connect_or_headers'
+        started = time.monotonic()
         try:
             response = _before_deadline(lambda: _post_request(url, **kwargs), deadline)
             try:
@@ -268,5 +269,11 @@ def budgeted_post(url: str, **kwargs):
                         else 'connection_error' if isinstance(exc, requests.ConnectionError)
                         else 'request_error')
             error.diagnostics.update(stage='request_write' if category == 'write_timeout' else stage,
-                                     transport_error=category)
+                                     transport_error=category, elapsed_ms=round((time.monotonic()-started)*1000))
             raise error from None
+        except ProviderError as error:
+            # Wall-clock expiry and upstream errors also retain their observed
+            # phase; do not relabel them as JSON parsing or authentication.
+            error.diagnostics.setdefault('stage', stage)
+            error.diagnostics.setdefault('elapsed_ms', round((time.monotonic()-started)*1000))
+            raise

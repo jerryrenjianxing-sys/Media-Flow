@@ -1188,15 +1188,15 @@ def _live_task_progress(task: Any) -> dict[str, Any]:
         "feed_phase_reentries": 0,
     }
     if not task.run_dir:
-        return progress
+        return {}
     try:
         run_dir = Path(task.run_dir).resolve()
         if DEFAULT_ARTIFACTS.resolve() not in run_dir.parents:
-            return progress
+            return {}
         events_path = run_dir / "events.jsonl"
         lines = events_path.read_text(encoding="utf-8", errors="replace").splitlines()
     except (OSError, RuntimeError):
-        return progress
+        return {}
     liked: set[int] = set()
     favorited: set[int] = set()
     commented: set[int] = set()
@@ -1521,9 +1521,9 @@ def _virtual_device_guidance(
 
 
 def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, Any]:
-    store.reconcile_orphaned_initializations(worker_id_is_running)
-    config = _clear_legacy_development_selection(store, config)
-    reconciled_tasks = store.reconcile_orphaned_running(worker_id_is_running)
+    # Polling must not terminalize tasks or overwrite saved configuration.
+    # Worker startup and explicit execution/maintenance paths reconcile leases.
+    reconciled_tasks = []
     managed_virtual_devices = [
         item
         for item in store.list_managed_virtual_devices()
@@ -1748,11 +1748,8 @@ def build_status_payload(store: TaskStore, config: dict[str, Any]) -> dict[str, 
                                   blocking_scope="home_badge", user_message="消息提醒检查已暂停；首页安全时视频任务不受影响",
                                   suggested_action="查看现场后，重新检查消息提醒")
             virtual_device["available_actions"] = list(dict.fromkeys(virtual_device["available_actions"] + ["recheck_home_badge"]))
-        if (store.get_profile(inspection_suspension_key(adb_endpoint)) or {}).get("suspended"):
-            virtual_device.update(reason_code="inspection_suspended", issue_status="partially_available",
-                                  blocking_scope="engagement_v3", user_message="互动巡检已暂停；安全恢复首页后视频任务可继续",
-                                  suggested_action="查看已有现场，点击重新检查并恢复巡检")
-            virtual_device["available_actions"] = list(dict.fromkeys(virtual_device["available_actions"] + ["recheck_inspection"]))
+        # Legacy inspection suspension remains historical; do not advertise a
+        # retired recheck action on current devices.
         preparation_issue = store.get_profile("preparation-issue:" + adb_endpoint) or {}
         if store.is_stop_requested(adb_endpoint) and preparation_issue:
             virtual_device.update(reason_code="preparation_waiting_user", issue_status="waiting_user",
@@ -2379,6 +2376,7 @@ def _summarize_task_group(group_id: str, tasks: list) -> dict[str, Any]:
             (task.finished_at for task in ordered_all if task.finished_at), default=None
         ),
         "rounds_total": len(ordered_videos),
+        "result_available": any(bool(task.result) for task in ordered_videos),
         "completed_rounds": sum(task.status == "completed" for task in ordered_videos),
         "degraded_rounds": sum(task.status == "degraded" for task in ordered_videos),
         "failed_rounds": sum(task.status == "failed" for task in ordered_videos),
@@ -2483,14 +2481,13 @@ def group_tasks_for_display(tasks: list) -> list[dict[str, Any]]:
 
 
 def _enrich_group_progress(store, groups):
+    from task_resilience import summarize_progress
     for group in groups:
         progress = []
         for task in group['tasks'] + group['inspections']:
             task['progress'] = store.task_progress(task['id'])
             progress.append(task['progress'])
-        group['progress'] = {key: sum(item.get(key, 0) for item in progress) for key in
-            ('processed_slots', 'successful_slots', 'failed_slots', 'unavailable_slots', 'unknown_actions', 'skipped_slots')}
-        group['progress']['schema_supported'] = bool(progress) and all(item.get('schema_supported') is True for item in progress)
+        group['progress'] = summarize_progress(progress)
 
 
 def paged_task_groups_payload(
@@ -2898,6 +2895,8 @@ def _public_incident(incident, *, include_analysis: bool = True) -> dict[str, An
     item.pop("screenshot_path", None)
     item.pop("ui_tree_path", None)
     item.pop("context", None)
+    from model_errors import public_model_error
+    item['model_error'] = public_model_error((incident.context or {}).get('model_error'))
     if not include_analysis:
         item.pop("analysis", None)
     return item

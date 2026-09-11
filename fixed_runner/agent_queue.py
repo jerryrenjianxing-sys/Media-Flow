@@ -95,17 +95,15 @@ class AgentQueueMixin:
 
     def agent_batch_receipt(self, batch_id, session_id):
         with self.connection() as db:
-            self.expire_agent_batches(db)
             batch = db.execute("SELECT b.*,COALESCE(p.stop_policy,'deadline') AS stop_policy FROM agent_task_batches b "
                                "LEFT JOIN agent_batch_policies p ON p.batch_id=b.id WHERE b.id=? AND b.session_id=?", (batch_id, session_id)).fetchone()
             if not batch:
                 return None
             rows = db.execute('SELECT t.id,t.status,t.device_id FROM tasks t JOIN agent_batch_tasks a ON a.task_id=t.id WHERE a.batch_id=? ORDER BY a.position', (batch_id,)).fetchall()
             tasks = [{**dict(row), 'progress': self.task_progress(row['id'])} for row in rows]
-            counters = ('processed_slots', 'successful_slots', 'failed_slots', 'unavailable_slots', 'unknown_actions', 'skipped_slots')
             def total(items):
-                return {'schema_supported': bool(items) and all(task['progress'].get('schema_supported') for task in items),
-                        **{key: sum(task['progress'].get(key, 0) for task in items) for key in counters}}
+                from task_resilience import summarize_progress
+                return summarize_progress([task['progress'] for task in items])
             return {'batch_id': batch_id, 'state': batch['state'], 'stop_policy': batch['stop_policy'],
                     'deadline': batch['deadline'] if batch['stop_policy'] == 'deadline' else None,
                     'tasks': tasks, 'progress': total(tasks),

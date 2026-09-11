@@ -465,6 +465,12 @@
       "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
     },
     {
+      "path": "docs/history/2026-09-11/STATUS-before-dev42.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
       "path": "docs/mbh-development.md",
       "role": "current",
       "action": "update",

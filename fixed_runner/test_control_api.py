@@ -2124,9 +2124,10 @@ class ControlApiTest(unittest.TestCase):
         self.assertEqual(progress["feed_phase_reentries"], 1)
         self.assertEqual(progress["navigation_message"], "视觉识别（最多20秒）")
 
-    def test_status_payload_closes_task_whose_worker_is_gone(self) -> None:
+    def test_status_payload_keeps_task_and_device_separate_without_reconciling(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = TaskStore(Path(directory) / "tasks.db")
+            store.save_profile('device-preferences', {'physical_devices_enabled': True})
             task_id = store.submit("healthcheck", "device-1")
             store.claim_next("device-1", "host-98765")
             with (
@@ -2144,12 +2145,15 @@ class ControlApiTest(unittest.TestCase):
                     store,
                     normalized_config({**DEFAULT_CONFIG, "device_ids": ["device-1"]}),
                 )
-
+                self.assertEqual(store.get(task_id).status, 'running')
+                self.assertEqual(payload['reconciled_tasks'], [])
         task = next(item for item in payload["tasks"] if item["id"] == task_id)
-        self.assertEqual(task["status"], "failed")
-        self.assertIsNotNone(task["finished_at"])
-        self.assertEqual(payload["task_summary"]["running"], 0)
-        self.assertEqual(payload["task_summary"]["failed"], 1)
+        self.assertEqual(task["status"], "running")
+        self.assertIsNone(task["finished_at"])
+        self.assertEqual(payload["task_summary"]["running"], 1)
+        self.assertEqual(payload["task_summary"]["failed"], 0)
+        self.assertFalse(payload['workers'][0]['running'])
+        self.assertEqual(payload['devices'][0]['state'], 'device')
 
     def test_comment_screenshot_path_accepts_registered_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

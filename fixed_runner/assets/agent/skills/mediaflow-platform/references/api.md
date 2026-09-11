@@ -132,7 +132,7 @@ Bash命令工具（Windows同样适用）在Skill目录调用：
 
 `list_tasks.result.tasks[]`、`task_evidence.result.task`、`plan_status.result.result.tasks[]` 的 `progress` 保留原任务/本轮检查点计数：`processed_slots,successful_slots,failed_slots,unavailable_slots,unknown_actions,skipped_slots`，以及 `waiting_reason,next_check_at,last_progress_at,next_slot,affected_device,affected_capabilities,available_actions,evidence_dirs`。批次回执中的每个任务均带 `progress`；按设备/批次汇总时明确范围，不把单轮数量当整个计划数量。`next_check_at` 是 Unix 秒；`null` 表示没有定时复查。证据目录只引用回执已有值。
 
-`progress.schema_supported=true` 才可使用名额计数；false或缺失表示旧任务不支持，读取原 `result_summary`，不能报告新计数为0。批次/设备汇总的 schema_supported=false 表示成员包含不支持的新计数范围。
+`progress.schema_supported=true` 才可使用名额计数；false或缺失表示旧任务不支持，读取原 `result_summary`，不能报告新计数为0。单项计数仍可为null（尚无结果），`counts_complete=false`表示有缺项；汇总只合计已保存值并保留不完整标志。批次/设备汇总的 schema_supported=false 表示成员包含不支持的新计数范围。`task_status`、`batch_state`与`execution_state`分开；`execution_state=interrupted`说明执行者已发生中断，`device_connection=unverified`不表示设备离线。`waiting_updated_at`是最近等待原因的Unix秒时间。
 
 已处理名额 = 成功 + 失败 + 不可用；20 条中失败 2 条就是成功 18、失败 2，不补刷到成功20条。`skipped_slots` 是安全识别的供给跳过，不消耗名额，不能加进已处理计数。`unknown_actions` 是未确认写入，不是成功次数，不重放；`affected_capabilities` 指本设备本批次暂停的动作能力。
 

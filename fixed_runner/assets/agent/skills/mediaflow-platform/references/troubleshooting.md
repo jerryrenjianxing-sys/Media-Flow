@@ -1,5 +1,9 @@
 # 回执与故障
 
+- `worker_interrupted` 是执行者中断、进度已保留，不是手机离线。分别读取任务状态、`progress.batch_state`、执行者存活信息及有时间的设备检测结果；`device_connection=unverified` 不能写成已断连。只读查询不收口或恢复任务。
+- `progress` 计数为 `null` 时显示“尚无结果”；`counts_complete=false` 的汇总仅为已保存小计，不是整个批次的最终成绩，不用目标数量补齐。
+- 模型故障的公开 `model_error` 只保留错误类别、请求次数、耗时和已知阶段。`request_write` 是上传，`response_read` 是读取，`connect_or_headers` 尚不能区分连接与响应头等待；不能全部解释成Key错误。历史缺失诊断不补造，不为复盘自动请求模型。
+
 - waiting_model：读取原任务 progress 的 waiting_reason/next_check_at。连续3次临时失败后后端单探针按30/60/120/300秒、之后每300秒复查；Agent不重复model_test。恢复条件未满足时保持等待，不新建任务或补刷。
 - waiting_device / waiting_user：按 affected_device 和 affected_capabilities 处理单设备或单动作问题；明确鉴权/权限/服务商额度问题先在模型页面修复配置，再等待当前配置探针通过。用户要求继续时 resume_task 原task_id；ok=false表示尚未恢复。
 - degraded：完成，有异常；不等于stopped或用户停止。成功+失败+不可用=已处理名额，安全跳过不占名额；零散错误不取消其他设备/后续轮次。

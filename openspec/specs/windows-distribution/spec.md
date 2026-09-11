@@ -66,3 +66,10 @@ Windows 发行目录 SHALL 包含初始化所需的 ADB、uiautomator2 服务文
 #### Scenario: 工作区存在未提交修改
 - **WHEN** 构建脚本发现工作区不干净
 - **THEN** 安装包构建失败且不得覆盖已有发行资产
+
+### Requirement: 外部Skill平台不依赖内嵌引擎
+发行资源 SHALL 包含完整平台Skill和现用共用修复材料，不要求OpenCode/Pi源码、二进制或凭证。旧聊天入口 SHALL 返回退役说明，不实例化引擎；历史数据保留。
+
+#### Scenario: 无内嵌引擎资源
+- **WHEN** 在隔离目录装配平台资源且没有OpenCode/Pi
+- **THEN** Skill和共用材料校验通过，清单标记外部Agent模式，不生成内嵌引擎目录

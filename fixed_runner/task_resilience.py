@@ -11,6 +11,22 @@ WAIT_STATUSES = ('waiting_model', 'waiting_device', 'waiting_user')
 WAIT_SQL = "('waiting_model','waiting_device','waiting_user')"
 VERSION = 'v1'
 BACKOFF = (30, 60, 120, 300)
+PROGRESS_COUNTERS = ('processed_slots', 'successful_slots', 'failed_slots',
+                     'unavailable_slots', 'unknown_actions', 'skipped_slots')
+
+
+def progress_count(value):
+    return value if type(value) is int and value >= 0 else None
+
+
+def summarize_progress(items):
+    """Known subtotals are not complete totals when any member has no record."""
+    result = {'schema_supported': bool(items) and all(p.get('schema_supported') is True for p in items),
+              'counts_complete': bool(items) and all(p.get('counts_complete') is True for p in items)}
+    for key in PROGRESS_COUNTERS:
+        known = [progress_count(p.get(key)) for p in items]
+        result[key] = sum(n for n in known if n is not None) if any(n is not None for n in known) else None
+    return result
 
 
 class TaskWaiting(RuntimeError):
@@ -201,9 +217,14 @@ class ResilienceStoreMixin:
                 if probe:
                     next_check = probe[0]
             active_wait = row['status'] in WAIT_STATUSES
-            return {'schema_supported': 'processed_slots' in summary or json.loads(row['payload_json']).get('resilience_version') == VERSION, **{name: int(summary.get(name, 0)) for name in (
-                        'processed_slots', 'successful_slots', 'failed_slots', 'unavailable_slots', 'unknown_actions')},
-                    'skipped_slots': int(summary.get('known_safe_skips', 0)),
+            counts = {name: progress_count(summary.get('known_safe_skips' if name == 'skipped_slots' else name)) for name in PROGRESS_COUNTERS}
+            batch = db.execute('SELECT b.state FROM agent_task_batches b JOIN agent_batch_tasks a ON a.batch_id=b.id WHERE a.task_id=?', (task_id,)).fetchone()
+            return {'schema_supported': 'processed_slots' in summary or json.loads(row['payload_json']).get('resilience_version') == VERSION, **counts,
+                    'counts_complete': all(n is not None for n in counts.values()),
+                    'task_status': row['status'], 'batch_state': batch[0] if batch else None,
+                    'execution_state': 'interrupted' if active_wait and row['reason_code'] == 'worker_interrupted' else 'unverified',
+                    'device_connection': 'unverified',
+                    'waiting_updated_at': row['updated_at'] if active_wait else None,
                     'waiting_reason': row['reason_code'] if active_wait else None,
                     'next_check_at': next_check if active_wait else None,
                     'last_progress_at': row['checkpoint_at'] or row['updated_at'], 'next_slot': state.get('next_slot'),
