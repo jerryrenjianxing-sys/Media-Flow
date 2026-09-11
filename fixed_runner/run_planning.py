@@ -289,6 +289,8 @@ def build_preview(
         "video_task_count": video_task_count,
         "inspection_task_count": inspection_task_count,
         "total_task_count": total_task_count,
+        "content_round_start": config['content_round_start'],
+        "content_round_end": config['content_round_start'] + config['round_count'] - 1,
         "estimated_seconds": _estimate_seconds(config),
         "probabilities": probabilities,
         "comment_mode": comment_mode,

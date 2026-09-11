@@ -1922,6 +1922,8 @@ def _public_task(task, recovery: dict[str, Any] | None = None) -> dict[str, Any]
         "round_count": (
             int(task.payload.get("round_count", 1)) if is_video_round else None
         ),
+        "submission_round_index": task.payload.get("submission_round_index") if is_video_round else None,
+        "content_round_start": task.payload.get("content_round_start") if is_video_round else None,
         "inspection_index": (
             int(task.payload.get("inspection_index", 0))
             if task.task_type == "douyin_engagement_inspection"

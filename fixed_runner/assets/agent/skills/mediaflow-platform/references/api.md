@@ -112,6 +112,12 @@ Bash命令工具（Windows同样适用）在Skill目录调用：
 
 同一request_id同参数返回原接入响应（不刷新成后来业务状态）；同编号不同参数返回request_id_conflict。用查询动作获取实时状态。接入中断会永久保留未知回执，不能删除回执或换ID来试成功。
 
+## 分阶段计划配置
+
+`plan_tasks.arguments.config.content_round_start` 可选，默认1；仅接受整数1～20，且加 `round_count - 1` 后不能超过20。预览返回 `content_round_start/content_round_end`。提交和 `repreview_plan` 保留起始轮次、内容修订与巡检模式，不重置轮换；该字段不是任务预设字段。
+
+冻结任务中的 `round_index` 表示全程轮次，`submission_round_index` 表示本次提交内轮次；`round_count` 仍是本次提交轮数。读取旧任务时不要根据缺失字段推断分段执行。恢复用原计划/任务编号，不用此参数重新创建已处理轮次。
+
 ## 任务证据中的真实结果
 
 ### 消息巡检回执

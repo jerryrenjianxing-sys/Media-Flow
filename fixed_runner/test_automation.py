@@ -164,6 +164,40 @@ class AutomationTests(unittest.TestCase):
         self.assertIsNone(planned['result']['config']['content_plan_revision_id'])
         self.assertEqual(planned['result']['config']['like_probability'], 0.9)
 
+    def test_continuation_through_automation_freezes_rounds_and_survives_resume(self):
+        revision = self.store.save_content_plan(content_plan_document())
+        config = {**self.config, 'content_mode': 'search', 'round_count': 3,
+                  'content_round_start': 3, 'batch_stop_policy': 'round_count',
+                  'content_plan_id': revision['plan_id'], 'content_plan_revision_id': revision['revision_id']}
+        created = self.service().call({'action': 'plan_tasks', 'arguments': {'config': config}, 'request_id': 'offset-plan'})
+        self.assertTrue(created['ok'], created)
+        plan = created['result']
+        self.assertEqual(plan['config']['search_query'], '塑料包装')
+        self.assertEqual(plan['preview']['content_round_start'], 3)
+        self.assertEqual(plan['preview']['content_round_end'], 5)
+        refreshed = self.service().call({'action': 'repreview_plan', 'arguments': {
+            'plan_id': plan['plan_id']}, 'request_id': 'offset-repreview'})
+        self.assertTrue(refreshed['ok'], refreshed)
+        self.assertEqual(refreshed['result']['config']['content_round_start'], 3)
+        body = {'action': 'execute_plan', 'arguments': {'plan_id': plan['plan_id']}, 'request_id': 'offset-execute'}
+        first = self.service().call(body)
+        self.assertTrue(first['ok'], first)
+        task_ids = first['result']['task_ids']
+        self.assertEqual([self.store.get(t).payload['round_index'] for t in task_ids], [3, 4, 5])
+        self.assertEqual([self.store.get(t).payload['search_query'] for t in task_ids], ['塑料包装', '人工智能', '智能制造'])
+        self.assertEqual(self.service().call(body), first)
+        self.service().call({'action': 'pause_batch', 'arguments': {'plan_id': plan['plan_id']}, 'request_id': 'offset-pause'})
+        resumed = self.service().call({**body, 'request_id': 'offset-resume'})
+        self.assertEqual(resumed['result']['task_ids'], task_ids)
+        self.assertEqual(len(self.store.list_all()), 3)
+
+    def test_invalid_continuation_does_not_submit_or_start_worker(self):
+        reply = self.service().call({'action': 'plan_tasks', 'arguments': {'config': {
+            **self.config, 'content_round_start': 20, 'round_count': 2}}, 'request_id': 'invalid-offset'})
+        self.assertFalse(reply['ok'])
+        self.assertEqual(self.store.list_all(), [])
+        self.assertEqual(self.launches, [])
+
     def test_preset_model_and_notification_actions_reuse_existing_services_truthfully(self):
         preset = self.service().call({'action': 'preset_save', 'arguments': {
             'name': '零写入计划', 'config': self.config}, 'request_id': 'preset-save'})

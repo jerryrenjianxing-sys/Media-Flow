@@ -7,6 +7,7 @@ import sqlite3
 import uuid
 import time
 from agent_queue import AgentQueueMixin
+from content_plans import content_round_start
 from task_resilience import ResilienceStoreMixin, WAIT_SQL
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -1801,6 +1802,7 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
             round_count = payload.get("round_count", 1)
             if not isinstance(round_count, int) or not 1 <= round_count <= 20:
                 raise ValueError("round_count must be between 1 and 20")
+            content_round_start(payload.get("content_round_start", 1), round_count)
             interval = payload.get("round_interval_minutes", 0)
             if payload.get("round_interval_basis", "scheduled") not in {"scheduled", "completion"}:
                 raise ValueError("invalid round_interval_basis")

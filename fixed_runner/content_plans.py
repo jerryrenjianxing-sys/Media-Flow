@@ -10,6 +10,15 @@ MAX_THEMES = 20
 MAX_POOL_ITEMS = 100
 
 
+def content_round_start(value: Any = 1, round_count: int = 1) -> int:
+    """Explicit continuation offset; never coerce booleans or fractional rounds."""
+    if not isinstance(round_count, int) or not 1 <= round_count <= 20:
+        raise ValueError('round_count must be between 1 and 20')
+    if type(value) is not int or not 1 <= value <= 20 or value + round_count - 1 > 20:
+        raise ValueError('content_round_start必须是1到20的整数，且最后一轮不能超过20')
+    return value
+
+
 def _clean_text(value: Any, *, label: str, maximum: int, required: bool = False) -> str:
     text = str(value or "").strip()
     if required and not text:

@@ -3,6 +3,12 @@
   "scope": "Git可见维护文档、配置、平台Skill及页面帮助；不读取运行数据",
   "files": [
     {
+      "path": "fixed_runner/assets/home_badge_glyphs_v2.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "角标字形补充规则的来源、调优与独立回归边界"
+    },
+    {
       "path": ".agents/skills/openspec-apply-change/SKILL.md",
       "role": "reference",
       "action": "retain",

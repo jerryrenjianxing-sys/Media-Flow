@@ -8,11 +8,13 @@ import json
 from pathlib import Path
 from PIL import Image
 
-RULE_VERSION = 'home-badge-glyph-v1'
+RULE_VERSION = 'home-badge-glyph-v2'
 
 @lru_cache(maxsize=1)
 def _templates():
-    return json.loads((Path(__file__).parent/'assets/home_badge_glyphs_v1.json').read_text(encoding='utf-8'))['templates']
+    assets=Path(__file__).parent/'assets'
+    return [template for version in (1,2) for template in
+            json.loads((assets/f'home_badge_glyphs_v{version}.json').read_text(encoding='utf-8'))['templates']]
 
 def glyph_ink_mask(badge: Image.Image) -> Image.Image:
     """Share the enclosed ink evidence used for reading and dot classification."""

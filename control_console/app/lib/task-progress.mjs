@@ -2,6 +2,13 @@ const labels = { pending: '等待执行', running: '执行中', waiting_model: '
 export function taskStatusLabel(status, task) { return isWaitingTask(status) && task?.error === 'worker_interrupted' ? '执行者中断' : status === 'stopped' && (task?.error === 'stopped_by_user' || task?.result?.stopped_by_user === true) ? '用户停止' : labels[status] || status; }
 export function supportedTaskProgress(progress) { return progress?.schema_supported === true ? progress : undefined; }
 export function progressCount(value) { return Number.isInteger(value) && value >= 0 ? String(value) : '尚无结果'; }
+export function taskRoundLabel(payload) {
+  const round = payload?.round_index, count = payload?.round_count, local = payload?.submission_round_index;
+  if (!Number.isInteger(round) || round < 1) return '轮次尚未记录';
+  if (Number.isInteger(local) && local >= 1 && Number.isInteger(count) && count >= local && local !== round)
+    return `全程第 ${round} 轮 · 本次 ${local}/${count} 轮`;
+  return Number.isInteger(count) && count >= round ? `第 ${round} / ${count} 轮` : `第 ${round} 轮`;
+}
 export function taskWaitingLabel(status, progress) { return progress?.execution_state === 'interrupted' || progress?.waiting_reason === 'worker_interrupted' ? '执行者中断，进度已保留；设备连接尚未核实' : taskStatusLabel(status); }
 export function taskControlActions(status, progress) { return status === 'pending' ? ['stop_task'] : isWaitingTask(status) ? (progress?.available_actions || []).filter((action) => ['resume_task', 'stop_task'].includes(action)) : []; }
 export function isWaitingTask(status) { return ['waiting_model', 'waiting_device', 'waiting_user'].includes(status); }

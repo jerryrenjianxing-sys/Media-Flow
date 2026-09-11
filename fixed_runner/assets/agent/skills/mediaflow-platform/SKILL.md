@@ -2,7 +2,7 @@
 name: mediaflow-platform
 description: Use when a user provides the MediaFlow homepage Skill, wants a content theme or reusable plan, configures an installed platform, or asks about devices, tasks, results, notifications, recovery, preferences, or project repair.
 metadata:
-  version: "42-external-skill-diagnostics"
+  version: "43-content-round-continuity"
 ---
 
 # MediaFlow 平台操作
@@ -52,7 +52,7 @@ Windows 优先运行 `scripts/mediaflow.ps1`；它会使用显式配置或已安
 ## 核心业务边界
 
 - 内容计划保存主题、搜索词和评论素材；任务预设保存运行参数；记忆只保存用户偏好。不要把主题或搜索轮换游标存进记忆。
-- 多搜索词用内容计划中的多个启用主题，按轮次循环；同轮所有设备一致，新提交从首主题开始。不是逐视频换词。
+- 多搜索词用内容计划中的多个启用主题，按全程轮次循环；同轮所有设备一致，默认新提交从首主题开始。明确分阶段执行时用 `content_round_start` 保留轮次与巡检排期，见工作流；不是逐视频换词，也不是重放失败任务的入口。
 - `general/mixed/search/hybrid` 与 `search_trust_results` 的真实含义见[内容指南](references/content-guide.md#四种内容模式)。严格生产检索默认 `search_trust_results=false`；搜索结果、主题命中和厂家身份是三个不同判断。
 - 默认一轮 20 条、首页 `general`、停留 8～25 秒、不巡检、六项互动概率全 0。不要从旧草稿或查询到的高写入预设继承值。只有用户本次明确选择某个预设及范围时才采用；读取预设本身不生效。
 - `plan_tasks` 只冻结/预览计划，`execute_plan` 才提交原计划。用户说“只保存、先不启动、给方案”时不执行。普通队列暂停不需恢复全部队列；执行本计划只放行本计划，其他等待和暂停状态保留。

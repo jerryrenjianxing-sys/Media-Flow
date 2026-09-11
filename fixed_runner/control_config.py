@@ -11,7 +11,7 @@ from model_connection import (
     validate_openrouter_key,
 )
 from model_providers import status as openrouter_key_status
-from content_plans import round_snapshot
+from content_plans import round_snapshot, content_round_start
 from device_profiles import load_device_profile_payloads
 from task_store import TaskStore
 
@@ -21,6 +21,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "device_ids": [],
     "video_count": 20,
     "round_count": 1,
+    "content_round_start": 1,
     "round_interval_minutes": 0,
     "round_interval_basis": "completion",
     "hybrid_probability_mode": "topic",
@@ -353,6 +354,7 @@ def normalized_config(raw: dict[str, Any]) -> dict[str, Any]:
     config["search_query"] = str(config.get("search_query", "")).strip()[:80]
     config["video_count"] = int(config["video_count"])
     config["round_count"] = int(config["round_count"])
+    config["content_round_start"] = content_round_start(raw.get("content_round_start", 1), config["round_count"])
     config["round_interval_minutes"] = int(config["round_interval_minutes"])
     config["engagement_inspection_enabled"] = bool(
         raw.get("engagement_inspection_enabled", False)
@@ -488,6 +490,7 @@ def build_scheduled_plan(
     base_seed = int(config["seed"])
     interval = int(config["round_interval_minutes"])
     round_count = int(config["round_count"])
+    first_round = content_round_start(config.get("content_round_start", 1), round_count)
     submission_id = submission_id or uuid.uuid4().hex
     inspection_enabled = bool(config.get("engagement_inspection_enabled", False))
     inspection_every = int(config.get("inspection_every_rounds", 5))
@@ -499,11 +502,13 @@ def build_scheduled_plan(
         device_video_count = 0
         device_inspection_count = 0
         for index in range(round_count):
+            round_index = first_round + index
             round_config = {
                 **config,
                 "device_id": device_id,
-                "round_index": index + 1,
-                "seed": base_seed + device_offset * round_count + index,
+                "round_index": round_index,
+                "submission_round_index": index + 1,
+                "seed": base_seed + device_offset * round_count + round_index - 1,
                 "submission_id": submission_id,
                 "resilience_version": "v1",
             }
@@ -513,7 +518,7 @@ def build_scheduled_plan(
                 round_config.update(preparation_version=PREPARATION_VERSION,
                                     preparation_requirements=task_requirements(round_config))
             if plan_revision is not None:
-                snapshot = round_snapshot(plan_revision, index + 1)
+                snapshot = round_snapshot(plan_revision, round_index)
                 theme = snapshot["theme"]
                 round_config.update(
                     {
@@ -538,13 +543,12 @@ def build_scheduled_plan(
             )
             queue_position += 1
             device_video_count += 1
-            round_index = index + 1
             if inspection_enabled and round_index % inspection_every == 0:
                 inspection_config = {
                     **config,
                     "device_id": device_id,
                     "submission_id": submission_id,
-                    "inspection_index": device_inspection_count + 1,
+                    "inspection_index": round_index // inspection_every,
                     "resilience_version": "v1",
                     "after_round_index": round_index,
                     "inspection_every_rounds": inspection_every,

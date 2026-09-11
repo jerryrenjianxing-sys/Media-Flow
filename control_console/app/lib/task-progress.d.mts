@@ -5,4 +5,5 @@ export function taskControlActions(status: string, progress?: TaskProgress): str
 export function isWaitingTask(status: string): boolean;
 export function controlTask(transport: typeof fetch, base: string, taskId: string, action: string, requestId: string): Promise<{ ok: boolean; status: string; user_message?: string; result?: { task?: { status: string; progress: TaskProgress } } }>;
 export function progressCount(value: unknown): string;
+export function taskRoundLabel(payload?: { round_index?: number; round_count?: number; submission_round_index?: number }): string;
 export function taskWaitingLabel(status: string, progress?: TaskProgress): string;

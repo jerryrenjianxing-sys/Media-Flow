@@ -9,7 +9,7 @@ import uuid
 
 from control_config import normalized_config, PRESET_FIELDS, build_scheduled_plan, inspection_profiles_for_store
 from run_planning import build_preview
-from content_plans import enabled_themes
+from content_plans import enabled_themes, content_round_start
 
 
 def bounded_diagnostic(value):
@@ -146,6 +146,9 @@ class AgentPlatform:
         public = {'task_id': task.id, 'device_id': task.device_id, 'task_type': task.task_type,
                 'status': task.status, 'created_at': task.created_at, 'finished_at': task.finished_at,
                 'error': bounded_diagnostic(task.error), 'round_index': task.payload.get('round_index'),
+                'submission_round_index': task.payload.get('submission_round_index'),
+                'content_round_start': task.payload.get('content_round_start'),
+                'round_count': task.payload.get('round_count'),
                 'video_count': task.payload.get('video_count')}
         if not include_result:
             return public
@@ -207,13 +210,14 @@ class AgentPlatform:
         if not isinstance(raw, dict):
             raise ValueError('请提供任务参数')
         raw = dict(raw)
-        allowed = set(PRESET_FIELDS) | {'device_ids', 'preview_only', 'seed', 'engagement_inspection_enabled', 'inspection_every_rounds', 'inspection_mode'}
+        allowed = set(PRESET_FIELDS) | {'device_ids', 'preview_only', 'seed', 'engagement_inspection_enabled', 'inspection_every_rounds', 'inspection_mode', 'content_round_start'}
         if set(raw) - allowed:
             raise ValueError('任务参数包含不支持的内部字段')
         for key in ('engagement_inspection_enabled', 'preview_only', 'topic_filter_enabled', 'search_trust_results', 'comment_policy_enabled'):
             if key in raw and type(raw[key]) is not bool:
                 raise ValueError('任务开关必须是明确的布尔值')
         content_mode = str(raw.get('content_mode') or 'general')
+        first_round = content_round_start(raw.get('content_round_start', 1))
         if content_mode == 'general':
             raw['content_plan_id'] = None
             raw['content_plan_revision_id'] = None
@@ -229,8 +233,9 @@ class AgentPlatform:
             themes = enabled_themes(revision['document'])
             if not themes:
                 raise ValueError('内容计划没有启用主题')
-            raw['topic_prompt'] = themes[0]['topic_prompt']
-            raw['search_query'] = themes[0]['search_query']
+            theme = themes[(first_round - 1) % len(themes)]
+            raw['topic_prompt'] = theme['topic_prompt']
+            raw['search_query'] = theme['search_query']
         required = {'device_ids', 'video_count', 'round_count', 'content_mode', 'engagement_inspection_enabled'}
         missing = sorted(required - raw.keys())
         if raw.get('content_mode') in {'search', 'hybrid'} and not raw.get('search_query'):
@@ -384,7 +389,7 @@ class AgentPlatform:
         request_id = str(body.get('request_id') or '')
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', request_id):
             raise ValueError('请提供重新预览请求编号')
-        allowed = set(PRESET_FIELDS) | {'device_ids', 'preview_only', 'seed', 'engagement_inspection_enabled', 'inspection_every_rounds'}
+        allowed = set(PRESET_FIELDS) | {'device_ids', 'preview_only', 'seed', 'engagement_inspection_enabled', 'inspection_every_rounds', 'inspection_mode', 'content_round_start'}
         config = {key: value for key, value in original['config'].items() if key in allowed}
         return self.plan({'config': config}, {'session_id': session_id,
                          'call_id': 'repreview:' + session_id + ':' + plan_id + ':' + request_id})

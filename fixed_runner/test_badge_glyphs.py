@@ -17,6 +17,24 @@ def original_three():
     return image,source
 
 class RealBadgeTests(unittest.TestCase):
+    def test_new_real_six_font_training_and_separate_device_holdout(self):
+        import base64, io, json
+        from badge_glyphs import read_glyphs
+        samples=json.loads((Path(__file__).parent/'testdata/home_badge/real-v2-crops.json').read_text())
+        for name,text in [('training_16','16'),('validation_6','6')]:
+            with self.subTest(name=name):
+                crop=Image.open(io.BytesIO(base64.b64decode(samples[name])))
+                self.assertEqual(read_glyphs(crop),text)
+                with TemporaryDirectory() as directory:
+                    device=Device();device.image=Image.new('RGB',(1080,2340),'#1e1e1e')
+                    device.source='<hierarchy><node text="推荐" bounds="[400,80][500,150]"/><node text="首页" selected="true" bounds="[0,2100][200,2300]"/><node text="消息" bounds="[704,2112][808,2200]"/></hierarchy>'
+                    device.image.paste(crop,(790,2099))
+                    device.window_size=lambda:(1080,2340)
+                    inspector=EngagementInspector(device,Recorder(Path(directory)),device_id='offline',task_id='offline',sleep=lambda _:None,navigation_lock=lambda:True)
+                    result=inspector.inspect({'inspection_workflow_version':'home_badge'})
+                    self.assertEqual(result['home_badge']['message_count'],int(text))
+                    self.assertEqual(device.actions,[])
+
     def test_gray_three_uses_recognized_glyph_even_without_bright_white_ink(self):
         image,source=original_three()
         for y in range(1431,1467):

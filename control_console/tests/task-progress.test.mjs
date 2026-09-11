@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { taskStatusLabel, isWaitingTask, controlTask, supportedTaskProgress, taskControlActions } from '../app/lib/task-progress.mjs';
-import { progressCount, taskWaitingLabel } from '../app/lib/task-progress.mjs';
+import { progressCount, taskWaitingLabel, taskRoundLabel } from '../app/lib/task-progress.mjs';
 import { modelDiagnosticText } from '../app/lib/model-diagnostics.mjs';
+
+test('segmented rounds separate global identity and local submission progress', () => {
+  assert.equal(taskRoundLabel({round_index:20,round_count:18,submission_round_index:18}), '全程第 20 轮 · 本次 18/18 轮');
+  assert.equal(taskRoundLabel({round_index:2,round_count:1,submission_round_index:1}), '全程第 2 轮 · 本次 1/1 轮');
+  assert.equal(taskRoundLabel({round_index:1,round_count:20}), '第 1 / 20 轮');
+  assert.equal(taskRoundLabel({round_index:20,round_count:18}), '第 20 轮');
+  assert.equal(taskRoundLabel(), '轮次尚未记录');
+});
 
 test('model diagnostics preserve phase, elapsed and actual retries without raw text', () => {
   const text = modelDiagnosticText({ kind:'transient_network', attempts:2, diagnostics:{stage:'request_write',elapsed_ms:25000,body:'secret'} });

@@ -10,7 +10,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from content_plans import normalize_content_plan, round_snapshot
-from control_config import DEFAULT_CONFIG, normalized_config, save_preset, submit_scheduled_rounds
+from control_config import DEFAULT_CONFIG, build_scheduled_plan, normalized_config, save_preset, submit_scheduled_rounds
 from task_store import TaskStore
 from control_api import Handler
 
@@ -57,6 +57,45 @@ def plan_document() -> dict:
 
 
 class ContentPlansTest(unittest.TestCase):
+    def test_segment_continuation_preserves_content_and_inspection_rounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / 'tasks.db')
+            revision = store.save_content_plan(plan_document())
+            config = normalized_config({**DEFAULT_CONFIG, 'device_ids': ['one', 'two'],
+                'content_mode': 'search', 'search_query': 'placeholder',
+                'round_count': 18, 'content_round_start': 3,
+                'engagement_inspection_enabled': True, 'inspection_every_rounds': 3,
+                'inspection_mode': 'home_badge'})
+            plan = build_scheduled_plan(config, plan_revision=revision)
+            for device in config['device_ids']:
+                videos = [x for x in plan.tasks if x.device_id == device and x.task_type == 'douyin_topic_session']
+                checks = [x for x in plan.tasks if x.device_id == device and x.task_type == 'douyin_engagement_inspection']
+                self.assertEqual([x.payload['round_index'] for x in videos], list(range(3, 21)))
+                self.assertEqual([x.payload['submission_round_index'] for x in videos], list(range(1, 19)))
+                self.assertEqual(videos[0].payload['search_query'], '塑料包装')
+                self.assertEqual(videos[-1].payload['content_plan_snapshot']['theme_queue_index'], 2)
+                self.assertEqual([x.payload['after_round_index'] for x in checks], [3, 6, 9, 12, 15, 18])
+                self.assertTrue(all(x.payload['inspection_workflow_version'] == 'home_badge' for x in checks))
+            self.assertEqual(plan.video_task_count, 36)
+
+    def test_content_round_start_is_strict_and_not_a_preset_setting(self):
+        for value in [0, 21, -1, True, 2.5, '2', None]:
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'content_round_start'):
+                normalized_config({**DEFAULT_CONFIG, 'content_round_start': value})
+        with self.assertRaisesRegex(ValueError, 'content_round_start'):
+            normalized_config({**DEFAULT_CONFIG, 'content_round_start': 3, 'round_count': 19})
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory) / 'tasks.db')
+            preset = save_preset(store, '续段参数', {**DEFAULT_CONFIG, 'content_round_start': 3})
+            self.assertNotIn('content_round_start', preset['config'])
+        self.assertEqual(normalized_config({**DEFAULT_CONFIG})['content_round_start'], 1)
+
+    def test_single_device_split_keeps_full_round_random_seed(self):
+        common = {**DEFAULT_CONFIG, 'device_ids': ['one'], 'seed': 900}
+        whole = build_scheduled_plan(normalized_config({**common, 'round_count': 20}))
+        tail = build_scheduled_plan(normalized_config({**common, 'content_round_start': 3, 'round_count': 18}))
+        self.assertEqual([x.payload['seed'] for x in whole.tasks[2:]], [x.payload['seed'] for x in tail.tasks])
+
     def test_content_plan_http_endpoints_create_list_and_archive(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             class TestHandler(Handler):

@@ -35,10 +35,18 @@
 ## 从目标到运行
 
 1. 调用 `list_devices`、`list_tasks`，并用当前会话的 `plan_status` 核对计划。虚拟机使用清单中的永久 UUID 或当前 ADB 地址；用户明确选真机时使用 `list_devices.online` 中 `device_type=physical` 的准确 `device_id`。不按名称猜地址。平台默认仍用虚拟机，不用范围外设备补位。
-2. 若用户选择内容计划，先读取真实 `plan_id/revision_id`。非 `general` 计划同时传 `content_plan_id` 和 `content_plan_revision_id`；计划会从首个启用主题补齐当前轮的 `topic_prompt/search_query`。不要重复询问已有字段，也不要让旧草稿字段覆盖所选修订。
+2. 若用户选择内容计划，先读取真实 `plan_id/revision_id`。非 `general` 计划同时传 `content_plan_id` 和 `content_plan_revision_id`；计划会按 `content_round_start`（默认1）对应的启用主题补齐当前轮的 `topic_prompt/search_query`。不要重复询问已有字段，也不要让旧草稿字段覆盖所选修订。
 3. 默认一轮20条、首页 `general`、停留8～25秒、不巡检、六项互动概率全0、`preview_only=true`。显式搜索用 `search`，只缺搜索词才问；严格生产/证据场景 `search_trust_results=false`。模式细节见 `content-guide.md#四种内容模式`。
 4. `plan_tasks.arguments.config` 必须含 `device_ids,video_count,round_count,content_mode,engagement_inspection_enabled`。`search/hybrid` 需要 `search_query`，`mixed` 需要 `topic_prompt`；选内容计划时由真实修订补齐。启用巡检时传 `inspection_every_rounds`。
 5. 用户只要方案、保存或“先不启动”时，可以解释或停在 `plan_tasks`，绝不调用 `execute_plan`。用户明确要运行且参数齐全时，`plan_tasks → execute_plan → plan_status`；不再要求固定口令、卡片或权限等级。
+
+### 明确分阶段的轮次衔接
+
+只有用户明确分阶段执行时，才在本次 `config` 中设置 `content_round_start`；默认1，必须为整数1～20，且 `content_round_start + round_count - 1 <= 20`。它不保存进任务预设。示例：第2轮单轮验证使用起始2、轮数1；之后第3～20轮使用起始3、轮数18。
+
+`round_count` 是本次提交的轮数；任务 `round_index` 是全程轮次，`submission_round_index` 是本次提交内序号。内容轮换和消息巡检都按全程轮次计算，不因为新提交重新从首词或第1次巡检起算。预览返回 `content_round_start/content_round_end`，提交前核对范围。
+
+分段计划沿用同一内容修订；逐设备拆分提交时保留该设备原定的随机种子，不能用换种子重抽已有动作。已运行或等待中的任务仍恢复原计划/任务和检查点；不要用起始轮次生成替代任务来绕过未知动作、失败终态或重放已处理名额。MBH带测记录与正式回执分开，未实际消费的名额不补记。
 
 ### 互动与评论
 
