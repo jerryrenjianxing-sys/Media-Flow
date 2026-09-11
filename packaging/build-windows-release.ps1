@@ -247,7 +247,7 @@ Copy-Tree $adbRoot (Join-Path $stage 'runtime\platform-tools')
 
 $agentSourceIdentity = "$($sourceCommit.Trim())$(if ($sourceDirty) { '.dirty' } else { '' })"
 & $sourcePython (Join-Path $PSScriptRoot 'build-agent-resources.py') --stage $stage --revision $agentSourceIdentity
-if ($LASTEXITCODE -ne 0) { throw 'Embedded Agent or repair source assembly failed.' }
+if ($LASTEXITCODE -ne 0) { throw 'Platform Skill or repair source assembly failed.' }
 
 $forbiddenNames = @(
     'tasks.db',
@@ -331,8 +331,8 @@ $manifest = [ordered]@{
     contains_local_state = $false
     standalone_device_initialization = $true
     mumu_realtime_stream = 'experimental'
-    embedded_agent = 'experimental'
-    embedded_agent_engine = 'OpenCode 1.18.29'
+    embedded_agent = $false
+    agent_integration = 'external-skill'
     repair_source_revision = $agentSourceIdentity
     repair_test_capability = 'python-unit-and-syntax; native-and-device-tests-require-release-validation'
     stream_protocol = 1

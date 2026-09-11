@@ -10,7 +10,6 @@ import sys
 import threading
 import time
 import urllib.request
-from agent_permissions import AgentPermissions
 from agent_repair_updates import AgentRepairUpdates
 from agent_repairs import AgentRepairs
 from repair_materials import development_revision
@@ -94,7 +93,6 @@ class DevelopmentDriver:
         return result.stdout.strip()
 
     def check_authorization(self):
-        self.u.permissions.require(self.job['session'], 'repair_apply')
         with self.u.database() as db:
             row = db.execute('SELECT * FROM approvals WHERE request_id=?', (self.job['request_id'],)).fetchone()
         if not row or (row['session'], row['repair'], row['hash']) != (self.job['session'], self.job['repair'], self.job['hash']):
@@ -207,11 +205,10 @@ class DevelopmentDriver:
 
 def main():
     updates_root, repairs_root, source, job_id = sys.argv[1:]
-    permissions = AgentPermissions(Path(updates_root).parent / 'permissions')
     # Do not instantiate AgentRepairs: its startup recovery belongs to the API.
     repairs = object.__new__(AgentRepairs)
     repairs.root, repairs.source_root = Path(repairs_root), Path(source)
-    updates = AgentRepairUpdates(updates_root, repairs, permissions)
+    updates = AgentRepairUpdates(updates_root, repairs, None)
     with updates.database() as db:
         row = db.execute('SELECT * FROM jobs WHERE id=?', (job_id,)).fetchone()
     if not row or not updates.claim(job_id):

@@ -28,11 +28,7 @@ test("device preparation guide explains on-demand capabilities without legacy el
   assert.doesNotMatch(html, /抖音已安装并登录|运行3条零写入冒烟|完成后才把这台真机/);
 });
 
-test("chat viewport height reaches the page wrapper so the composer remains visible", async () => {
-  const css = await source('../app/agent-studio.css');
-  assert.match(cssRule(css,'.mf-chat-shell .agent-home'), /height:100%/);
-  assert.match(cssRule(css,'.mf-chat-shell .mf-content'), /min-height:0/);
-});
+
 
 test("interaction device summaries wrap instead of squeezing five columns on phones", async () => {
   const css=await source('../app/workspace-pages.css');
@@ -89,13 +85,7 @@ test("legacy session bookmarks stay on platform home and explain preserved data"
   assert.doesNotMatch(html, /127\.0\.0\.1:3000|id="agent-input"/);
 });
 
-test('Agent settings keep native authentication and expose recoverable OAuth progress', async () => {
-  const page = await source('../app/components/agent-provider-settings.tsx');
-  for (const text of ['auth_methods', '保存 Key', '开始网页登录', '已完成登录，继续', '取消登录', '刷新登录状态', 'autoComplete="new-password"']) assert.ok(page.includes(text));
-  assert.ok(page.includes('failures >= 3'));
-  assert.ok(page.includes('使用现有 MediaFlow 千问配置'));
-  assert.ok(!page.includes('localStorage'));
-});
+
 
 test('legacy task links lead to workbench and emergency access remains visible', async () => {
   for (const path of ['devices', 'run']) {
@@ -105,13 +95,9 @@ test('legacy task links lead to workbench and emergency access remains visible',
   }
   const shell = await source('../app/components/console-shell.tsx');
   assert.match(shell, /className="mf-stop"\s+href="\/run"/);
-  const studioCss = await source('../app/agent-studio.css');
+  const studioCss = await source('../app/console-shell.css');
   assert.match(studioCss, /\.mf-status,\s*\.mf-issues,\s*\.mf-stop\s*\{[^}]*display:\s*inline-flex/);
   assert.doesNotMatch(studioCss, /[^{}]*\.mf-stop\b[^{}]*\{[^}]*display:\s*none/);
-  const plans = await source('../app/components/agent-plans.tsx');
-  assert.doesNotMatch(plans, /href="\/results"/);
-  assert.match(plans, /records\?task_id=/);
-  assert.match(plans, /resume_stopped_devices/);
   assert.match(await source('../app/records/page.tsx'), /setSelectedGroup\(groups.items\[0\]\)/);
 });
 
@@ -177,18 +163,10 @@ test("management pages retain all business destinations and return to platform h
 });
 
 test("settings group model access, operation guide, preferences, data and collapsed About details", async () => {
-  const page = await source('../app/components/agent-workbench.tsx');
-  for (const label of ['模型与连接', '操作指南', '偏好', '数据', '关于']) assert.ok(page.includes(label));
-  assert.match(page, /settingsTab\s*===\s*"guide"/);
-  assert.match(page, /agentRequest(?:<[^>]+>)?\(\s*["']guide["']/);
-  assert.doesNotMatch(page, /href="http:\/\/127\.0\.0\.1:48138\/api\/agent\/guide"/);
-  assert.doesNotMatch(page, /id="agent-permission"|撤销高权限|会话权限/);
-  assert.match(page, /settingsTab\s*===\s*"models"/);
-  assert.match(page, /<AgentProviderSettings\b/);
-  assert.match(page, /<AgentUsage\s*\/>/);
-  assert.match(page, /settingsTab\s*===\s*"preferences"\s*&&\s*<PreferenceSettings\s*\/>/);
-  assert.match(page, /settingsTab\s*===\s*"about"\s*&&\s*<>\s*<AboutSettings\s*\/>/);
-  assert.match(page, /href="\/governance"/);
+  const page = await source('../app/settings/page.tsx');
+  for (const link of ['/content', '/devices/guide', '/content/guide', '/governance']) assert.ok(page.includes(link));
+  assert.match(page, /<PreferenceSettings/);
+  assert.match(page, /<AboutSettings/);
   const about = await source('../app/components/settings-about.tsx');
   for (const label of ['关于与开源许可', '使用说明与免责声明']) {
     assert.ok(about.includes(`<details><summary>${label}</summary>`));
@@ -202,21 +180,7 @@ test("settings group model access, operation guide, preferences, data and collap
   assert.doesNotMatch(html, /关于与开源许可|使用说明与免责声明|OpenCode（MIT）/);
 });
 
-test("composer wires the shared send and resize guards into accessible input", async () => {
-  const page = await source('../app/components/agent-workbench.tsx');
-  assert.match(page, /resizeComposer\(inputRef\.current\)/);
-  assert.match(page, /shouldSendKey\(/);
-  assert.match(page, /onCompositionStart=/);
-  assert.match(page, /onCompositionEnd=/);
-  assert.match(page, /e\.nativeEvent\.isComposing/);
-  assert.match(page, /if\s*\(!ui\.requestId\)\s*void send\(\)/);
-  assert.match(page, /<label[^>]*htmlFor="agent-input"/);
-  assert.match(page, /<textarea[^>]*id="agent-input"[^>]*rows=\{1\}/);
-  const inputCss = cssRule(await source('../app/agent-studio.css'), '.agent-composer textarea');
-  assert.match(inputCss, /min-height:\s*36px/);
-  assert.match(inputCss, /max-height:\s*200px/);
-  assert.match(inputCss, /overflow:\s*auto/);
-});
+
 
 test("task workbench follows the four decisions and server-owned planning contract", async () => {
   const page = await source("../app/workbench/page.tsx");
@@ -280,22 +244,13 @@ test("visual system uses real capsule switches, responsive layout and reduced mo
   assert.match(css, /@container segment-flow \(max-width: 720px\)/);
   assert.match(css, /\.segment-config > div > span \{[^}]*white-space: nowrap/s);
 
-  const studioCss = await source('../app/agent-studio.css');
+  const studioCss = await source('../app/console-shell.css');
   assert.match(studioCss, /@media\s*\(max-width:\s*700px\)/);
   assert.match(studioCss, /prefers-reduced-motion:\s*reduce/);
-  assert.match(cssRule(studioCss, '.agent-studio'), /grid-template-columns:\s*240px minmax\(0,\s*1fr\)/);
-  assert.match(cssRule(studioCss, '.agent-session-list'), /overflow:\s*auto/);
-  const titleCss = cssRule(studioCss, '.agent-session-list .session-title');
-  assert.match(titleCss, /visibility:\s*visible/);
-  assert.match(titleCss, /opacity:\s*1/);
-  assert.match(titleCss, /text-overflow:\s*ellipsis/);
   const issueIconCss = cssRule(studioCss, '.mf-issues svg');
   assert.match(issueIconCss, /width:\s*16px/);
   assert.match(issueIconCss, /height:\s*16px/);
   assert.match(issueIconCss, /flex:\s*none/);
-  assert.match(cssRule(studioCss, '.agent-chat .agent-messages'), /overflow:\s*auto/);
-  assert.match(cssRule(studioCss, '.agent-details'), /position:\s*fixed/);
-  assert.match(cssRule(studioCss, '.history-open .agent-history'), /position:\s*fixed/);
   assert.doesNotMatch(css + studioCss, /(?:^|})\s*\.(?:selected|online|busy|ready)\s*\{/);
 });
 
@@ -348,7 +303,6 @@ test("task result and notification surfaces distinguish home messages from histo
   const interactions = await source("../app/interactions/page.tsx");
   const groups = await source("../app/components/task-groups.tsx");
   const run = await source("../app/run/page.tsx");
-  const plans = await source("../app/components/agent-plans.tsx");
   assert.match(banner, /home_badge/);
   assert.match(banner, /homeBadgeAlertPresentation/);
   assert.match(banner, /homeAlerts\.map/);
@@ -361,7 +315,6 @@ test("task result and notification surfaces distinguish home messages from histo
   assert.match(groups, /resolveInspection\(inspection\)/);
   assert.match(groups, /result\.home_badge/);
   assert.match(run, /resolveInspection\(task\)/);
-  assert.match(plans, /inspectionTaskLabel\(plan\.config\)/);
 });
 
 test("task details retain verified action and recovery evidence", async () => {

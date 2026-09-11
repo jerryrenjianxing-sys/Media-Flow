@@ -7,7 +7,6 @@ from unittest.mock import Mock
 
 from PIL import Image
 from agent_evidence import read_incident
-from agent_mcp import handle
 
 
 class AgentEvidenceTests(unittest.TestCase):
@@ -24,8 +23,7 @@ class AgentEvidenceTests(unittest.TestCase):
             self.assertNotIn('private-message-sentinel', json.dumps(result))
             self.assertNotIn(str(root), json.dumps(result))
             self.assertEqual(result['ui_semantics']['known_markers'], ['消息'])
-            reply = handle({'id': 1, 'method': 'tools/call', 'params': {'name': 'incident_evidence', 'arguments': {'incident_id': row.id}}}, lambda *args: result)
-            self.assertEqual(reply['result']['content'][1]['type'], 'image')
+            self.assertTrue(result['has_screenshot'])
             store.finish_incident_analysis.assert_not_called()
             store.finish.assert_not_called()
             row.screenshot_path = str(root.parent / 'outside.png')

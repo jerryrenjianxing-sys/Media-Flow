@@ -4,16 +4,31 @@ import tempfile
 import time
 import unittest
 from unittest.mock import Mock, patch
-from agent_permissions import AgentPermissions
 from agent_repair_updates import AgentRepairUpdates
 from repair_update_worker import DevelopmentDriver, run_job
 
+
+class RequestFixture:
+    """Test adapter for an actual automation request, not a chat permission store."""
+    def __init__(self, root):
+        self.requests = {}
+    def record(self, session, request_id, text):
+        self.requests[session] = {'id': request_id}
+    def current(self, session):
+        return self.requests.get(session)
+    def get(self, session):
+        return {'revision': 0}
+    def require(self, session, action):
+        if session not in self.requests:
+            raise ValueError('缺少操作请求')
+    def cancel_intent(self, session):
+        self.requests.pop(session, None)
 
 class RepairUpdateTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        self.permissions = AgentPermissions(self.root / 'permissions')
+        self.permissions = RequestFixture(self.root / 'permissions')
         self.permissions.record('s', 'r', '修好这个问题，验证通过就应用')
         self.repairs = Mock()
         self.repairs.source_root = self.root
@@ -105,8 +120,7 @@ class RepairUpdateTests(unittest.TestCase):
     def test_worker_checks_exact_patch_receipt_instead_of_legacy_level_revision(self):
         job = self.approved_job()
         driver = DevelopmentDriver(self.u, job)
-        with self.permissions.database() as db:
-            db.execute('INSERT INTO grants VALUES(?,?,?,?,?)', ('s', 'operate', 42, 'user_settings', 123))
+        self.u.permissions = None  # Detached worker has no chat authority store.
         driver.check_authorization()
         with self.u.database() as db:
             db.execute('UPDATE approvals SET hash=? WHERE request_id=?', ('mismatch', 'r'))

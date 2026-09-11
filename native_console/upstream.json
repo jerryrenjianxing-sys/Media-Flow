@@ -1,8 +1,0 @@
-{
-  "repository": "anomalyco/opencode",
-  "version": "1.18.29",
-  "commit": "16747470f976aca3d362ad730bcd3fe82ecc2c9a",
-  "tree": "6d8cc725d9c0945d7259b78e2f60cdec6c493a26",
-  "bun": "1.3.14",
-  "packages": ["app", "ui", "core", "schema", "session-ui", "sdk", "util", "script", "plugin", "opencode", "desktop"]
-}

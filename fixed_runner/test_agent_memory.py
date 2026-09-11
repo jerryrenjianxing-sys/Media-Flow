@@ -3,7 +3,6 @@ import tempfile
 import unittest
 
 from agent_memory import AgentMemory
-from agent_tool_context import ToolContexts
 
 
 class AgentMemoryTests(unittest.TestCase):
@@ -31,30 +30,3 @@ class AgentMemoryTests(unittest.TestCase):
             for n in range(4):
                 memory.save({'title': str(n), 'body': 'x' * 7900})
             self.assertLess(len(memory.prompt_context()), 12500)
-
-
-class ToolContextTests(unittest.TestCase):
-    def test_wrong_session_arguments_or_replay_are_rejected(self):
-        active = {'ses_real'}
-        def guard(session):
-            if session not in active:
-                raise ValueError('stopped')
-        contexts = ToolContexts(guard)
-        args = {'title': 'test', 'body': 'hello'}
-        token = contexts.issue({'session_id': 'ses_real', 'call_id': 'call1', 'name': 'memory_save', 'arguments': args})
-        context, clean = contexts.consume('memory_save', {**args, '_mediaflow_context': token})
-        self.assertEqual(context['session_id'], 'ses_real')
-        self.assertEqual(clean, args)
-        with self.assertRaises(ValueError):
-            contexts.consume('memory_save', {**args, '_mediaflow_context': token})
-        token = contexts.issue({'session_id': 'ses_real', 'call_id': 'call2', 'name': 'memory_save', 'arguments': args})
-        with self.assertRaises(ValueError):
-            contexts.consume('memory_save', {**args, 'body': 'tampered', '_mediaflow_context': token})
-        token = contexts.issue({'session_id': 'ses_real', 'call_id': 'call3', 'name': 'memory_save', 'arguments': args})
-        active.clear()
-        with self.assertRaises(ValueError):
-            contexts.consume('memory_save', {**args, '_mediaflow_context': token})
-
-
-if __name__ == '__main__':
-    unittest.main()

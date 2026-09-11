@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import "./agent.css";
-import "./agent-studio.css";
+import "./console-shell.css";
 import "./workspace-pages.css";
 import "./skill-home.css";
 import ConsoleShell from "./components/console-shell";

@@ -257,7 +257,7 @@ class AgentRepairs:
         repair_id, session_id = args.get('repair_id'), context['session_id']
         with self.lock:
             root = self.workspace(repair_id, session_id)
-            target = source_path(args.get('path') or 'fixed_runner/test_agent_permissions.py')
+            target = source_path(args.get('path') or 'fixed_runner/test_automation.py')
             mode = args.get('mode', 'unit')
             if mode not in {'unit', 'syntax', 'python', 'frontend', 'lint', 'build', 'openspec', 'all'}:
                 raise ValueError('请选择受支持的测试或构建类型')

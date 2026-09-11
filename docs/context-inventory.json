@@ -2,471 +2,2843 @@
   "schema": 1,
   "scope": "Git可见维护文档、配置、平台Skill及页面帮助；不读取运行数据",
   "files": [
-    {"path":"openspec/changes/fix-five-device-action-verification/.openspec.yaml","role":"change","action":"retain","reason":"dev.41用户批准的带测纠错"},
-    {"path":"openspec/changes/fix-five-device-action-verification/proposal.md","role":"change","action":"retain","reason":"dev.41用户批准的带测纠错"},
-    {"path":"openspec/changes/fix-five-device-action-verification/design.md","role":"change","action":"retain","reason":"dev.41用户批准的带测纠错"},
-    {"path":"openspec/changes/fix-five-device-action-verification/tasks.md","role":"change","action":"retain","reason":"dev.41用户批准的带测纠错"},
-    {"path":"openspec/changes/fix-five-device-action-verification/specs/action-verification/spec.md","role":"change","action":"retain","reason":"dev.41用户批准的带测纠错"},
-    {"path":"openspec/changes/fix-five-device-action-verification/specs/comment-entry-resilience/spec.md","role":"change","action":"retain","reason":"dev.41用户批准的带测纠错"},
-    {"path":".agents/skills/openspec-apply-change/SKILL.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":".agents/skills/openspec-archive-change/SKILL.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":".agents/skills/openspec-explore/SKILL.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":".agents/skills/openspec-propose/SKILL.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":".agents/skills/openspec-sync-specs/SKILL.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":".agents/skills/openspec-update-change/SKILL.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":".superpowers/sdd/dev35-plan/task-1-report.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":".superpowers/sdd/dev35-plan/task-2-report.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":".superpowers/sdd/dev40-plan/final-fix-report.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":".superpowers/sdd/dev40-plan/task-2-report.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":".superpowers/sdd/dev40-plan/task-2b-report.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":"AGENTS.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"CHANGELOG.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"CONTEXT.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"DESIGN.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"PROJECT.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"README.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"RUNBOOK.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"STATUS.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"control_console/DESIGN.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"control_console/README.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"control_console/app/content/guide/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/content/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/devices/guide/page.tsx","role":"page-help","action":"update","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/devices/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/governance/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/interactions/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/manage/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/records/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/run/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/settings/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/app/workbench/page.tsx","role":"page-help","action":"retain","reason":"当前页面说明/历史结果兼容文案；不修改业务动作"},
-    {"path":"control_console/public/agents/NOTICE.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":"docs/agent-dev21-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/agent-dev22-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/agent-workbench.md","role":"redirect","action":"archive","reason":"旧操作移至历史快照，原地址只指向当前入口和历史"},
-    {"path":"docs/content-prompt-guide.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"docs/context-cleanup.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"docs/current-followup.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"docs/decisions/0001-fixed-runner-production.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"docs/decisions/0002-no-automatic-retry-after-state-change.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"docs/decisions/0003-ai-advisory-only.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"docs/decisions/README.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"docs/dev24-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev24-native-plan.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev28-navigation-repair.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev30-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev30-pi-runtime.md","role":"redirect","action":"archive","reason":"旧操作移至历史快照，原地址只指向当前入口和历史"},
-    {"path":"docs/dev30-plan.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev33-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev34-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev35-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev35-plan.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev36-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev37-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev37-plan.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev38-plan.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev39-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev39-plan.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev40-acceptance.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev40-batch-review.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/dev40-plan.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/PROJECT.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/README.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/RUNBOOK.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/STATUS.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/control_console/DESIGN.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/docs/agent-workbench.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/docs/dev30-pi-runtime.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/docs/opencode-contract.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/docs/real-device-agent-initialization.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/fixed_runner/README.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/launcher/README.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/native_console/README.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/history/2026-09-09/packaging/README.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/mbh-development.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"docs/opencode-contract.md","role":"redirect","action":"archive","reason":"旧操作移至历史快照，原地址只指向当前入口和历史"},
-    {"path":"docs/real-device-agent-initialization.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"docs/runtime-readiness-audit-2026-09-04.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/stabilize-cloud-model-runtime-acceptance-2026-08-30.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/superpowers/plans/2026-09-07-independent-agent.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"docs/topic-policy-standard.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"fixed_runner/README.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/NOTICE.md","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/README.md","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/SKILL.md","role":"skill","action":"update","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/config.example.json","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/examples/content-plan-nut-factory.json","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/examples/execute-arguments.json","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/examples/plan-arguments.json","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/examples/preset-zero-write.json","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/examples/request-status-arguments.json","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/references/api.md","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/references/content-guide.md","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/references/setup.md","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/references/troubleshooting.md","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/references/workflows.md","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/scripts/_common.py","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/scripts/mediaflow.ps1","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/skills/mediaflow-platform/scripts/mediaflow.py","role":"skill","action":"retain","reason":"唯一交付Skill来源；入口说明更新，脚本/参考按需复用"},
-    {"path":"fixed_runner/assets/agent/workflow.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":"fixed_runner/assets/home_badge_glyphs_v1.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":"fixed_runner/testdata/home_badge/README.md","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":"launcher/README.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"native_console/README.md","role":"redirect","action":"archive","reason":"旧操作移至历史快照，原地址只指向当前入口和历史"},
-    {"path":"openspec/changes/add-hybrid-feed-orchestration/.openspec.yaml","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-hybrid-feed-orchestration/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-hybrid-feed-orchestration/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-hybrid-feed-orchestration/specs/device-initialization/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-hybrid-feed-orchestration/specs/hybrid-feed-orchestration/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-hybrid-feed-orchestration/specs/runtime-safety-baseline/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-hybrid-feed-orchestration/specs/strategy-presets/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-hybrid-feed-orchestration/specs/topic-routing/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-hybrid-feed-orchestration/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-queued-engagement-inspection/.openspec.yaml","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-queued-engagement-inspection/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-queued-engagement-inspection/mbh-calibration-2026-09-01.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-queued-engagement-inspection/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-queued-engagement-inspection/specs/engagement-inspection/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-queued-engagement-inspection/specs/records-browser/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-queued-engagement-inspection/specs/runtime-safety-baseline/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-queued-engagement-inspection/specs/task-lifecycle/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/add-queued-engagement-inspection/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/specs/device-profiles/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/specs/records-browser/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/specs/topic-routing/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-configure-five-physical-devices/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-configure-five-physical-devices/README.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-configure-five-physical-devices/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-configure-five-physical-devices/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-configure-five-physical-devices/specs/device-discovery/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-configure-five-physical-devices/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-default-openspec-workflow/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-default-openspec-workflow/README.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-default-openspec-workflow/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-default-openspec-workflow/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-default-openspec-workflow/specs/project-governance/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-default-openspec-workflow/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-record-comment-screenshots/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-record-comment-screenshots/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-record-comment-screenshots/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-record-comment-screenshots/specs/comment-evidence/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-record-comment-screenshots/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/README.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/specs/project-governance/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/specs/runtime-safety-baseline/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/specs/probability-only-actions/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/specs/records-browser/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-strategy-presets/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-strategy-presets/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-strategy-presets/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-strategy-presets/specs/strategy-presets/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-26-strategy-presets/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/specs/correction-advisory/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/specs/execution-architecture/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/specs/visual-safety-gate/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/specs/comment-policy-gate/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/specs/runtime-safety-baseline/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/specs/strategy-presets/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-review-and-evidence-governance/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-review-and-evidence-governance/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-review-and-evidence-governance/specs/evidence-governance/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-review-and-evidence-governance/specs/topic-evaluation/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-review-and-evidence-governance/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/specs/correction-advisory/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/specs/records-browser/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/specs/runtime-safety-baseline/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/specs/verified-recovery-loop/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-long-run-recovery/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-long-run-recovery/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-long-run-recovery/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-long-run-recovery/specs/comment-entry-resilience/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-long-run-recovery/specs/probability-only-actions/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-long-run-recovery/specs/runtime-safety-baseline/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-long-run-recovery/specs/verified-recovery-loop/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-long-run-recovery/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-main-feed-startup-recovery/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-main-feed-startup-recovery/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-main-feed-startup-recovery/specs/runtime-safety-baseline/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-main-feed-startup-recovery/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/specs/runtime-safety-baseline/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/specs/topic-evaluation/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/specs/topic-routing/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-modularize-execution-core/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-modularize-execution-core/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-modularize-execution-core/specs/execution-architecture/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-modularize-execution-core/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-relax-search-topic-gate/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-relax-search-topic-gate/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-relax-search-topic-gate/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-relax-search-topic-gate/specs/topic-routing/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-relax-search-topic-gate/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/specs/runtime-control/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/specs/runtime-safety-baseline/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/specs/task-lifecycle/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-standardize-topic-policy/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-standardize-topic-policy/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-standardize-topic-policy/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-standardize-topic-policy/specs/topic-evaluation/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-standardize-topic-policy/specs/topic-policy/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-standardize-topic-policy/specs/topic-routing/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-27-standardize-topic-policy/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/specs/independent-runtime-host/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/specs/runtime-control/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/specs/task-lifecycle/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-group-device-round-records/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-group-device-round-records/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-group-device-round-records/specs/records-browser/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-group-device-round-records/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-package-windows-installer/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-package-windows-installer/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-package-windows-installer/specs/independent-runtime-host/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-package-windows-installer/specs/windows-distribution/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-package-windows-installer/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-show-action-evidence-in-task-detail/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-show-action-evidence-in-task-detail/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-show-action-evidence-in-task-detail/specs/records-browser/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-28-show-action-evidence-in-task-detail/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/specs/model-runtime-resilience/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/specs/runtime-safety-baseline/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/specs/task-lifecycle/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/specs/records-browser/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/specs/strategy-presets/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/specs/topic-routing/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/specs/console-page-workflow/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/specs/device-discovery/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/specs/device-profiles/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-rotating-content-plans/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-rotating-content-plans/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-rotating-content-plans/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-rotating-content-plans/specs/comment-assets/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-rotating-content-plans/specs/content-plans/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-rotating-content-plans/specs/records-browser/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-rotating-content-plans/specs/strategy-presets/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-rotating-content-plans/specs/topic-routing/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-rotating-content-plans/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/device-discovery/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/device-initialization/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/device-profiles/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/execution-architecture/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/platform-adapters/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/runtime-safety-baseline/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/windows-distribution/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-add-standalone-device-initialization/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/specs/console-page-workflow/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/specs/device-discovery/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/specs/device-initialization/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/specs/task-lifecycle/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-fix-control-ui-production-runtime/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-fix-control-ui-production-runtime/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-fix-control-ui-production-runtime/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-fix-control-ui-production-runtime/specs/independent-runtime-host/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-fix-control-ui-production-runtime/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-support-root-emulator-initialization/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-support-root-emulator-initialization/specs/device-initialization/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-01-support-root-emulator-initialization/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/specs/console-page-workflow/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/specs/task-workbench/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/specs/batch-evidence-integrity/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/specs/engagement-inspection/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/specs/message-inspection-presentation/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/enhance-engagement-result-feedback/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/enhance-engagement-result-feedback/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/enhance-engagement-result-feedback/specs/engagement-inspection/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/enhance-engagement-result-feedback/specs/interaction-alerts/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/enhance-engagement-result-feedback/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/fix-run-device-progress-status/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/fix-run-device-progress-status/specs/console-page-workflow/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/fix-run-device-progress-status/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/implement-unified-engagement-inspection-v3/.openspec.yaml","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/implement-unified-engagement-inspection-v3/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/implement-unified-engagement-inspection-v3/dev36.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/implement-unified-engagement-inspection-v3/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/implement-unified-engagement-inspection-v3/specs/engagement-inspection/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/implement-unified-engagement-inspection-v3/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/.openspec.yaml","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/specs/console-page-workflow/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/specs/device-discovery/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/specs/device-initialization/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/specs/device-live-view/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/specs/device-onboarding/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/specs/execution-architecture/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/specs/model-connection/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/specs/task-workbench/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/specs/virtual-device-management/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/specs/windows-distribution/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-mumu-virtual-device-provider/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-opencode-agent-workbench/.openspec.yaml","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-opencode-agent-workbench/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-opencode-agent-workbench/dev35.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-opencode-agent-workbench/dev37.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-opencode-agent-workbench/implementation-status.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-opencode-agent-workbench/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-opencode-agent-workbench/specs/embedded-agent-workbench/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-opencode-agent-workbench/specs/execution-architecture/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-opencode-agent-workbench/specs/windows-distribution/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/integrate-opencode-agent-workbench/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/archive/2026-09-09-reconcile-current-project-context/.openspec.yaml","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-reconcile-current-project-context/design.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-reconcile-current-project-context/proposal.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-reconcile-current-project-context/specs/project-governance/spec.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/archive/2026-09-09-reconcile-current-project-context/tasks.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"openspec/changes/redesign-agent-first-console/.openspec.yaml","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/redesign-agent-first-console/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/redesign-agent-first-console/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/redesign-agent-first-console/specs/agent-first-console/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/redesign-agent-first-console/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/restore-console-layout-and-motion/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/restore-console-layout-and-motion/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/restore-console-layout-and-motion/specs/console-page-workflow/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/restore-console-layout-and-motion/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/.openspec.yaml","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/specs/console-page-workflow/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/specs/device-profiles/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/specs/engagement-inspection/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/simplify-control-console-workflow/.openspec.yaml","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/simplify-control-console-workflow/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/simplify-control-console-workflow/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/simplify-control-console-workflow/specs/guided-control-console/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/simplify-control-console-workflow/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-long-running-batches/.openspec.yaml","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-long-running-batches/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-long-running-batches/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-long-running-batches/specs/long-batch-resilience/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-long-running-batches/specs/model-runtime-resilience/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-long-running-batches/specs/task-lifecycle/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-long-running-batches/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-topic-conditioning-campaign/.openspec.yaml","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-topic-conditioning-campaign/campaign-log-2026-08-30.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-topic-conditioning-campaign/campaign-log-2026-08-31.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-topic-conditioning-campaign/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-topic-conditioning-campaign/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-topic-conditioning-campaign/specs/comment-policy-gate/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-topic-conditioning-campaign/specs/runtime-safety-baseline/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-topic-conditioning-campaign/specs/topic-routing/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/stabilize-topic-conditioning-campaign/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/standardize-engagement-alert-workflow-v2/design.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/standardize-engagement-alert-workflow-v2/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/standardize-engagement-alert-workflow-v2/specs/engagement-inspection/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/standardize-engagement-alert-workflow-v2/specs/interaction-alerts/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/standardize-engagement-alert-workflow-v2/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/wire-engagement-correction-evidence/proposal.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/wire-engagement-correction-evidence/specs/correction-advisory/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/wire-engagement-correction-evidence/specs/engagement-inspection/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/wire-engagement-correction-evidence/specs/records-browser/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/wire-engagement-correction-evidence/specs/windows-distribution/spec.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/changes/wire-engagement-correction-evidence/tasks.md","role":"change","action":"retain","reason":"活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"},
-    {"path":"openspec/config.yaml","role":"reference","action":"retain","reason":"工具说明/配置/素材；不独立决定产品流程，保留原职责"},
-    {"path":"openspec/specs/batch-evidence-integrity/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/comment-assets/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/comment-entry-resilience/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/comment-evidence/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/comment-policy-gate/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/console-page-workflow/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/content-plans/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/correction-advisory/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/device-discovery/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/device-initialization/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/device-profiles/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/engagement-inspection/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/evidence-governance/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/execution-architecture/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/independent-runtime-host/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/message-inspection-presentation/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/model-runtime-resilience/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/platform-adapters/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/probability-only-actions/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/project-governance/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/records-browser/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/runtime-control/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/runtime-safety-baseline/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/strategy-presets/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/task-lifecycle/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/task-workbench/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/topic-evaluation/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/topic-policy/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/topic-routing/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/verified-recovery-loop/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/visual-safety-gate/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"openspec/specs/windows-distribution/spec.md","role":"contract","action":"retain","reason":"现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"},
-    {"path":"outputs/社媒风控对抗测试记录.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"outputs/统一手机Agent池架构.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"packaging/README.md","role":"current","action":"update","reason":"现行入口/操作依据；统一最新要求，差距如实列出"},
-    {"path":"packaging/release-notes/0.4.1-dev.2.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"packaging/release-notes/0.4.1-dev.3.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"packaging/release-notes/0.4.1-dev.4.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"packaging/release-notes/0.4.1-dev.5.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"packaging/release-notes/0.4.1-dev.6.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"packaging/release-notes/0.4.1-dev.7.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"research/2026-08-26-long-term-platform-options.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"research/2026-09-03-mumu-online-install-handoff.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"research/android-fixed-automation-open-source.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"research/macos-iphone-port-feasibility-2026-09-02.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"research/openrouter-comment-model-selection.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"},
-    {"path":"research/windows-independent-runtime-packaging-2026-08-28.md","role":"historical","action":"retain","reason":"历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"}
+    {
+      "path": ".agents/skills/openspec-apply-change/SKILL.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": ".agents/skills/openspec-archive-change/SKILL.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": ".agents/skills/openspec-explore/SKILL.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": ".agents/skills/openspec-propose/SKILL.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": ".agents/skills/openspec-sync-specs/SKILL.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": ".agents/skills/openspec-update-change/SKILL.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": ".superpowers/sdd/dev35-plan/task-1-report.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": ".superpowers/sdd/dev35-plan/task-2-report.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": ".superpowers/sdd/dev40-plan/final-fix-report.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": ".superpowers/sdd/dev40-plan/task-2-report.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": ".superpowers/sdd/dev40-plan/task-2b-report.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": "AGENTS.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "CONTEXT.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "DESIGN.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "PROJECT.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "README.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "RUNBOOK.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "STATUS.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "control_console/DESIGN.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "control_console/README.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "control_console/app/content/guide/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/content/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/devices/guide/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/devices/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/governance/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/interactions/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/manage/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/records/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/run/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/settings/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/app/workbench/page.tsx",
+      "role": "page-help",
+      "action": "retain",
+      "reason": "当前页面说明/历史结果兼容文案；不修改业务动作"
+    },
+    {
+      "path": "control_console/public/agents/NOTICE.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": "docs/agent-dev21-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/agent-dev22-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/agent-workbench.md",
+      "role": "redirect",
+      "action": "archive",
+      "reason": "旧操作移至历史快照，原地址只指向当前入口和历史"
+    },
+    {
+      "path": "docs/content-prompt-guide.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "docs/context-cleanup.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "docs/current-followup.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "docs/decisions/0001-fixed-runner-production.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "docs/decisions/0002-no-automatic-retry-after-state-change.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "docs/decisions/0003-ai-advisory-only.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "docs/decisions/README.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "docs/dev24-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev24-native-plan.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev28-navigation-repair.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev30-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev30-pi-runtime.md",
+      "role": "redirect",
+      "action": "archive",
+      "reason": "旧操作移至历史快照，原地址只指向当前入口和历史"
+    },
+    {
+      "path": "docs/dev30-plan.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev33-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev34-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev35-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev35-plan.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev36-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev37-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev37-plan.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev38-plan.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev39-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev39-plan.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev40-acceptance.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev40-batch-review.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev40-plan.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/dev42-cleanup.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/PROJECT.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/README.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/RUNBOOK.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/STATUS.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/control_console/DESIGN.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/docs/agent-workbench.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/docs/dev30-pi-runtime.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/docs/opencode-contract.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/docs/real-device-agent-initialization.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/fixed_runner/README.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/launcher/README.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/native_console/README.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/history/2026-09-09/packaging/README.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/mbh-development.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "docs/opencode-contract.md",
+      "role": "redirect",
+      "action": "archive",
+      "reason": "旧操作移至历史快照，原地址只指向当前入口和历史"
+    },
+    {
+      "path": "docs/real-device-agent-initialization.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "docs/runtime-readiness-audit-2026-09-04.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/stabilize-cloud-model-runtime-acceptance-2026-08-30.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-07-independent-agent.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/topic-policy-standard.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "fixed_runner/README.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/NOTICE.md",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/README.md",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/SKILL.md",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/config.example.json",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/examples/content-plan-nut-factory.json",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/examples/execute-arguments.json",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/examples/plan-arguments.json",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/examples/preset-zero-write.json",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/examples/request-status-arguments.json",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/references/api.md",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/references/content-guide.md",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/references/setup.md",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/references/troubleshooting.md",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/references/workflows.md",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/scripts/_common.py",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/scripts/mediaflow.ps1",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/agent/skills/mediaflow-platform/scripts/mediaflow.py",
+      "role": "skill",
+      "action": "retain",
+      "reason": "唯一交付Skill来源；入口说明更新，脚本/参考按需复用"
+    },
+    {
+      "path": "fixed_runner/assets/home_badge_glyphs_v1.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": "fixed_runner/testdata/home_badge/README.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": "launcher/README.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "native_console/README.md",
+      "role": "redirect",
+      "action": "archive",
+      "reason": "旧操作移至历史快照，原地址只指向当前入口和历史"
+    },
+    {
+      "path": "openspec/changes/add-hybrid-feed-orchestration/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-hybrid-feed-orchestration/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-hybrid-feed-orchestration/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-hybrid-feed-orchestration/specs/device-initialization/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-hybrid-feed-orchestration/specs/hybrid-feed-orchestration/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-hybrid-feed-orchestration/specs/runtime-safety-baseline/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-hybrid-feed-orchestration/specs/strategy-presets/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-hybrid-feed-orchestration/specs/topic-routing/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-hybrid-feed-orchestration/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-queued-engagement-inspection/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-queued-engagement-inspection/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-queued-engagement-inspection/mbh-calibration-2026-09-01.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-queued-engagement-inspection/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-queued-engagement-inspection/specs/engagement-inspection/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-queued-engagement-inspection/specs/records-browser/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-queued-engagement-inspection/specs/runtime-safety-baseline/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-queued-engagement-inspection/specs/task-lifecycle/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-queued-engagement-inspection/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/specs/device-profiles/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/specs/records-browser/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/specs/topic-routing/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-calibrate-device-and-topic-policy/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-configure-five-physical-devices/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-configure-five-physical-devices/README.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-configure-five-physical-devices/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-configure-five-physical-devices/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-configure-five-physical-devices/specs/device-discovery/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-configure-five-physical-devices/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-default-openspec-workflow/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-default-openspec-workflow/README.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-default-openspec-workflow/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-default-openspec-workflow/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-default-openspec-workflow/specs/project-governance/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-default-openspec-workflow/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-record-comment-screenshots/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-record-comment-screenshots/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-record-comment-screenshots/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-record-comment-screenshots/specs/comment-evidence/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-record-comment-screenshots/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/README.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/specs/project-governance/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/specs/runtime-safety-baseline/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-riskflow-v1-consolidation/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/specs/probability-only-actions/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/specs/records-browser/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-simplify-action-controls-and-records/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-strategy-presets/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-strategy-presets/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-strategy-presets/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-strategy-presets/specs/strategy-presets/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-26-strategy-presets/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/specs/correction-advisory/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/specs/execution-architecture/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/specs/visual-safety-gate/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-advisory-correction-and-visual-gate/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/specs/comment-policy-gate/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/specs/runtime-safety-baseline/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/specs/strategy-presets/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-pre-send-comment-policy-gate/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-review-and-evidence-governance/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-review-and-evidence-governance/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-review-and-evidence-governance/specs/evidence-governance/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-review-and-evidence-governance/specs/topic-evaluation/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-review-and-evidence-governance/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/specs/correction-advisory/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/specs/records-browser/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/specs/runtime-safety-baseline/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/specs/verified-recovery-loop/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-add-verified-recovery-learning-loop/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-long-run-recovery/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-long-run-recovery/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-long-run-recovery/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-long-run-recovery/specs/comment-entry-resilience/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-long-run-recovery/specs/probability-only-actions/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-long-run-recovery/specs/runtime-safety-baseline/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-long-run-recovery/specs/verified-recovery-loop/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-long-run-recovery/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-main-feed-startup-recovery/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-main-feed-startup-recovery/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-main-feed-startup-recovery/specs/runtime-safety-baseline/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-main-feed-startup-recovery/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/specs/runtime-safety-baseline/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/specs/topic-evaluation/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/specs/topic-routing/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-harden-overlay-and-topic-evaluation/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-modularize-execution-core/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-modularize-execution-core/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-modularize-execution-core/specs/execution-architecture/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-modularize-execution-core/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-relax-search-topic-gate/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-relax-search-topic-gate/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-relax-search-topic-gate/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-relax-search-topic-gate/specs/topic-routing/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-relax-search-topic-gate/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/specs/runtime-control/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/specs/runtime-safety-baseline/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/specs/task-lifecycle/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-stabilize-runtime-lifecycle/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-standardize-topic-policy/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-standardize-topic-policy/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-standardize-topic-policy/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-standardize-topic-policy/specs/topic-evaluation/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-standardize-topic-policy/specs/topic-policy/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-standardize-topic-policy/specs/topic-routing/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-27-standardize-topic-policy/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/specs/independent-runtime-host/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/specs/runtime-control/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/specs/task-lifecycle/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-decouple-runtime-from-codex/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-group-device-round-records/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-group-device-round-records/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-group-device-round-records/specs/records-browser/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-group-device-round-records/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-package-windows-installer/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-package-windows-installer/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-package-windows-installer/specs/independent-runtime-host/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-package-windows-installer/specs/windows-distribution/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-package-windows-installer/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-show-action-evidence-in-task-detail/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-show-action-evidence-in-task-detail/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-show-action-evidence-in-task-detail/specs/records-browser/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-28-show-action-evidence-in-task-detail/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/specs/model-runtime-resilience/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/specs/runtime-safety-baseline/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/specs/task-lifecycle/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-30-stabilize-cloud-model-runtime/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/specs/records-browser/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/specs/strategy-presets/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/specs/topic-routing/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-promote-search-flow-primary-mode/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/specs/console-page-workflow/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/specs/device-discovery/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/specs/device-profiles/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-08-31-split-console-pages-and-onboard-huawei/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-rotating-content-plans/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-rotating-content-plans/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-rotating-content-plans/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-rotating-content-plans/specs/comment-assets/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-rotating-content-plans/specs/content-plans/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-rotating-content-plans/specs/records-browser/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-rotating-content-plans/specs/strategy-presets/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-rotating-content-plans/specs/topic-routing/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-rotating-content-plans/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/device-discovery/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/device-initialization/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/device-profiles/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/execution-architecture/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/platform-adapters/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/runtime-safety-baseline/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/specs/windows-distribution/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-add-standalone-device-initialization/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/specs/console-page-workflow/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/specs/device-discovery/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/specs/device-initialization/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/specs/task-lifecycle/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-auto-onboard-root-emulators/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-fix-control-ui-production-runtime/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-fix-control-ui-production-runtime/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-fix-control-ui-production-runtime/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-fix-control-ui-production-runtime/specs/independent-runtime-host/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-fix-control-ui-production-runtime/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-support-root-emulator-initialization/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-support-root-emulator-initialization/specs/device-initialization/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-01-support-root-emulator-initialization/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/specs/console-page-workflow/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/specs/task-workbench/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-02-refactor-task-workbench-lifecycle/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-reconcile-current-project-context/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-reconcile-current-project-context/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-reconcile-current-project-context/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-reconcile-current-project-context/specs/project-governance/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-reconcile-current-project-context/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/.openspec.yaml",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/design.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/specs/batch-evidence-integrity/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/specs/engagement-inspection/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/specs/message-inspection-presentation/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/archive/2026-09-09-refine-message-inspection-and-console/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "openspec/changes/enhance-engagement-result-feedback/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/enhance-engagement-result-feedback/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/enhance-engagement-result-feedback/specs/engagement-inspection/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/enhance-engagement-result-feedback/specs/interaction-alerts/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/enhance-engagement-result-feedback/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/fix-five-device-action-verification/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/fix-five-device-action-verification/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/fix-five-device-action-verification/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/fix-five-device-action-verification/specs/action-verification/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/fix-five-device-action-verification/specs/comment-entry-resilience/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/fix-five-device-action-verification/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/fix-run-device-progress-status/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/fix-run-device-progress-status/specs/console-page-workflow/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/fix-run-device-progress-status/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/implement-unified-engagement-inspection-v3/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/implement-unified-engagement-inspection-v3/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/implement-unified-engagement-inspection-v3/dev36.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/implement-unified-engagement-inspection-v3/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/implement-unified-engagement-inspection-v3/specs/engagement-inspection/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/implement-unified-engagement-inspection-v3/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/specs/console-page-workflow/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/specs/device-discovery/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/specs/device-initialization/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/specs/device-live-view/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/specs/device-onboarding/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/specs/execution-architecture/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/specs/model-connection/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/specs/task-workbench/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/specs/virtual-device-management/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/specs/windows-distribution/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-mumu-virtual-device-provider/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-opencode-agent-workbench/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-opencode-agent-workbench/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-opencode-agent-workbench/dev35.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-opencode-agent-workbench/dev37.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-opencode-agent-workbench/implementation-status.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-opencode-agent-workbench/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-opencode-agent-workbench/specs/embedded-agent-workbench/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-opencode-agent-workbench/specs/execution-architecture/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-opencode-agent-workbench/specs/windows-distribution/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/integrate-opencode-agent-workbench/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/redesign-agent-first-console/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/redesign-agent-first-console/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/redesign-agent-first-console/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/redesign-agent-first-console/specs/agent-first-console/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/redesign-agent-first-console/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/restore-console-layout-and-motion/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/restore-console-layout-and-motion/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/restore-console-layout-and-motion/specs/console-page-workflow/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/restore-console-layout-and-motion/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/retire-embedded-agents-and-reconcile-status/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/retire-embedded-agents-and-reconcile-status/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/retire-embedded-agents-and-reconcile-status/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/retire-embedded-agents-and-reconcile-status/specs/model-runtime-resilience/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/retire-embedded-agents-and-reconcile-status/specs/task-lifecycle/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/retire-embedded-agents-and-reconcile-status/specs/windows-distribution/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/retire-embedded-agents-and-reconcile-status/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/specs/console-page-workflow/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/specs/device-profiles/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/specs/engagement-inspection/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/rollout-engagement-v2-all-devices-and-refresh-console/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/simplify-control-console-workflow/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/simplify-control-console-workflow/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/simplify-control-console-workflow/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/simplify-control-console-workflow/specs/guided-control-console/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/simplify-control-console-workflow/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-long-running-batches/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-long-running-batches/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-long-running-batches/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-long-running-batches/specs/long-batch-resilience/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-long-running-batches/specs/model-runtime-resilience/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-long-running-batches/specs/task-lifecycle/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-long-running-batches/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-topic-conditioning-campaign/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-topic-conditioning-campaign/campaign-log-2026-08-30.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-topic-conditioning-campaign/campaign-log-2026-08-31.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-topic-conditioning-campaign/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-topic-conditioning-campaign/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-topic-conditioning-campaign/specs/comment-policy-gate/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-topic-conditioning-campaign/specs/runtime-safety-baseline/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-topic-conditioning-campaign/specs/topic-routing/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/stabilize-topic-conditioning-campaign/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/standardize-engagement-alert-workflow-v2/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/standardize-engagement-alert-workflow-v2/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/standardize-engagement-alert-workflow-v2/specs/engagement-inspection/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/standardize-engagement-alert-workflow-v2/specs/interaction-alerts/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/standardize-engagement-alert-workflow-v2/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/wire-engagement-correction-evidence/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/wire-engagement-correction-evidence/specs/correction-advisory/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/wire-engagement-correction-evidence/specs/engagement-inspection/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/wire-engagement-correction-evidence/specs/records-browser/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/wire-engagement-correction-evidence/specs/windows-distribution/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/wire-engagement-correction-evidence/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/config.yaml",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
+      "path": "openspec/specs/batch-evidence-integrity/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/comment-assets/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/comment-entry-resilience/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/comment-evidence/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/comment-policy-gate/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/console-page-workflow/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/content-plans/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/correction-advisory/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/device-discovery/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/device-initialization/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/device-profiles/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/engagement-inspection/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/evidence-governance/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/execution-architecture/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/independent-runtime-host/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/message-inspection-presentation/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/model-runtime-resilience/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/platform-adapters/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/probability-only-actions/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/project-governance/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/records-browser/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/runtime-control/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/runtime-safety-baseline/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/strategy-presets/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/task-lifecycle/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/task-workbench/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/topic-evaluation/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/topic-policy/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/topic-routing/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/verified-recovery-loop/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/visual-safety-gate/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/windows-distribution/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "outputs/社媒风控对抗测试记录.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "outputs/统一手机Agent池架构.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/README.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.2.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.3.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.4.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.5.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.6.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.7.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "research/2026-08-26-long-term-platform-options.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "research/2026-09-03-mumu-online-install-handoff.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "research/android-fixed-automation-open-source.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "research/macos-iphone-port-feasibility-2026-09-02.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "research/openrouter-comment-model-selection.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "research/windows-independent-runtime-packaging-2026-08-28.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    }
   ]
 }

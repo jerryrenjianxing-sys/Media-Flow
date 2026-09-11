@@ -2962,20 +2962,6 @@ class Handler(BaseHTTPRequestHandler):
             'user_message': '内置聊天已停用，请到平台首页下载MediaFlow Skill，由外部Agent调用平台。历史数据仍保留。',
             'agent_url': 'http://127.0.0.1:3001/'}, 410)
 
-    def agent_service(self):
-        # Lazy: an unused Agent must not add processes or block the legacy UI.
-        from agent_service import AgentService
-        with _AGENT_SERVICE_LOCK:
-            service = getattr(self.server, '_mediaflow_agent', None)
-            if service is None:
-                store = self.store
-                service = AgentService(lambda: build_status_payload(store, normalized_config(store.get_profile(PROFILE_NAME) or {})),
-                                       store=store, model_status_reader=openrouter_key_status, worker_launcher=ensure_workers,
-                                       virtual_dispatch=lambda device_id, body: submit_vm_command(store, device_id, body), evidence_root=DEFAULT_ARTIFACTS,
-                                       native_frontend=(PROJECT_ROOT/'native_console/dist/index.html').is_file())
-                self.server._mediaflow_agent = service
-            return service
-
     store = TaskStore(DEFAULT_DB)
     review_store = TopicReviewStore(DEFAULT_DB, PROJECT_ROOT)
     review_store.seed_manifests(TOPIC_MANIFESTS)
