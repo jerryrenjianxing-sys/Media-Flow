@@ -1,6 +1,7 @@
 """Platform remains usable without any embedded chat modules or resources."""
 import ast
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -10,6 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RetiredAgentsTests(unittest.TestCase):
+    def test_desktop_shell_opens_current_skill_home(self):
+        source = (ROOT / 'launcher/RiskFlowLauncher.cs').read_text(encoding='utf-8-sig')
+        self.assertIn('private const string DefaultUrl = "http://127.0.0.1:3001/";', source)
+        self.assertNotIn('http://127.0.0.1:3000/', source)
+
     def test_business_context_has_no_engine_or_chat_store(self):
         from automation import PlatformContext, AutomationService
         from task_store import TaskStore
@@ -60,11 +66,17 @@ class RetiredAgentsTests(unittest.TestCase):
                 target = skill / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text('# fixture\n', encoding='utf-8')
+            for name in module.RUNTIME_ASSETS:
+                (root / 'fixed_runner/assets' / name).write_text(
+                    json.dumps({'templates': [{'fixture': True}]}), encoding='utf-8')
             result = module.assemble(root, stage, 'fixture-revision')
             self.assertFalse(result['embedded_agent'])
             self.assertEqual(result['agent_integration'], 'external-skill')
             self.assertFalse((stage / 'runtime/opencode').exists())
             self.assertTrue((stage / 'assets/agent/repair-source.zip').is_file())
+            for name in module.RUNTIME_ASSETS:
+                self.assertEqual((stage / 'fixed_runner/assets' / name).read_bytes(),
+                                 (root / 'fixed_runner/assets' / name).read_bytes())
             self.assertEqual(module.assemble(root, stage, 'fixture-revision')['skill_files'], result['skill_files'])
             (stage / 'runtime/opencode').mkdir(parents=True)
             with self.assertRaisesRegex(ValueError, 'retired'):
@@ -72,3 +84,16 @@ class RetiredAgentsTests(unittest.TestCase):
             (skill / 'scripts/mediaflow.py').unlink()
             with self.assertRaisesRegex(ValueError, 'missing'):
                 module.assemble(root, Path(folder) / 'fresh', 'fixture-revision')
+
+    def test_packaged_resources_reject_missing_badge_dictionary(self):
+        spec = importlib.util.spec_from_file_location('platform_resources', ROOT / 'packaging/build-agent-resources.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / 'source'
+            for name in module.REQUIRED:
+                target = root / 'fixed_runner/assets/agent/skills/mediaflow-platform' / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text('# fixture\n', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'runtime asset missing'):
+                module.assemble(root, Path(folder) / 'stage', 'fixture')

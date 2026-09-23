@@ -22,7 +22,7 @@ using Microsoft.Web.WebView2.WinForms;
 internal static class MediaFlowLauncher
 {
     private const string ProductName = "MediaFlow";
-    private const string DefaultUrl = "http://127.0.0.1:3000/";
+    private const string DefaultUrl = "http://127.0.0.1:3001/";
     private const string RuntimeDownloadUrl = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
 
     [STAThread]

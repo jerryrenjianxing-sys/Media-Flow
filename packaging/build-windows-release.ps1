@@ -271,10 +271,10 @@ if ($forbidden) {
     throw 'Release audit found local state or credentials in the package.'
 }
 
-$secretMatches = & rg -l 'sk-or-v1-[A-Za-z0-9_-]{32,}' $stage `
+$secretMatches = & rg -l 'sk-(sp-|or-v1-|proj-)[A-Za-z0-9._-]{24,}' $stage `
     -g '*.py' -g '*.ps1' -g '*.json' -g '*.md' 2>$null
 if ($LASTEXITCODE -eq 0 -and $secretMatches) {
-    throw 'Release audit found an OpenRouter key-like value.'
+    throw 'Release audit found a credential-like value.'
 }
 
 $developmentDeviceMatches = & rg -l 'P7HUDEKF4XVODY4D|emulator-5556|127\.0\.0\.1:16448|127\.0\.0\.1:16480|127\.0\.0\.1:16512|127\.0\.0\.1:16544' $stage `
@@ -287,6 +287,9 @@ $legacyBrandAllowlist = @(
     # Hash manifest retains historical source filenames, not user-visible branding.
     'assets\agent\repair-source-manifest.json',
     'install-mediaflow-background.ps1',
+    # Exact legacy task identity is necessary for verified migration, not UI branding.
+    'manage-mediaflow.ps1',
+    'fixed_runner\assets\agent\skills\mediaflow-platform\references\setup.md',
     'fixed_runner\background_host.py',
     'fixed_runner\brand.py',
     'fixed_runner\control_api.py',
@@ -360,6 +363,9 @@ if ($TemplateManifestPath) {
     $manifest['contains_local_state_scope'] = 'program payload only; private snapshot is a separate overlay'
 }
 $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'release-manifest.json') -Encoding utf8
+
+& $sourcePython (Join-Path $PSScriptRoot 'verify-stage.py') $stage
+if ($LASTEXITCODE -ne 0) { throw 'Isolated release directory verification failed.' }
 
 if (-not $SkipVelopack) {
     if (-not (Test-Path -LiteralPath $vpk) -or -not (Test-Path -LiteralPath $dotnet)) {
