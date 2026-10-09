@@ -23,3 +23,9 @@ MediaFlow 是 Windows 本地媒体自动化平台。外部 Agent 通过随平台
 - [前端说明](control_console/README.md)、[固定执行器说明](fixed_runner/README.md)、[主规格](openspec/specs)。
 
 本轮整理不启动任务、不修改设备、不删除数据库、凭证或证据。历史验收仍可追溯，不等同于当前功能已通过。
+
+## 许可证
+
+本项目原创代码与文档采用 [MIT License](LICENSE)，版权署名为 `Copyright (c) 2026 jerryrenjianxing-sys`。使用、修改或分发时须保留许可证要求的版权与许可声明。
+
+第三方组件、素材及商标仍受各自权利和许可约束；根目录许可证不替代已有第三方声明，也不表示第三方对本项目的认可。软件按“现状”提供，完整授权及责任限制以 [LICENSE](LICENSE) 原文为准。

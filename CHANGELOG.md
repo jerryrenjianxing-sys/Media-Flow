@@ -2,6 +2,11 @@
 
 本文件记录可用版本与治理里程碑。功能细节和验收证据以对应 OpenSpec change 为准。
 
+## [repository-mit-license] - 2026-10-09
+
+- 按用户确认新增根目录标准MIT LICENSE，版权署名为2026 jerryrenjianxing-sys；README增加许可入口并保留第三方许可边界。
+- 本次仅许可证和文档更新，不改变程序、任务或数据，不重打或覆盖已发布dev.44安装包；此前项目级免责声明拟稿未在本次写入仓库。
+
 ## [mediaflow-0.4.1-dev.43-round-continuity] - 2026-09-11
 
 - 分阶段计划新增显式content_round_start，保留全程内容轮换及消息巡检排期；默认行为不变，不保存进预设，重复提交仍返回原回执。
