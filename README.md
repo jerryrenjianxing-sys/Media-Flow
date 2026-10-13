@@ -12,7 +12,7 @@ MediaFlow 是 Windows 本地媒体自动化平台。外部 Agent 通过随平台
 
 当前不内置聊天引擎，也不要求安装 OpenCode、Pi 或 Hermes。软件交付和本机开发环境的实际验证范围见当前状态，不把源码能力当作已发布安装包。
 
-Electron桌面版承载同一套页面，关闭收进托盘，退出界面不停止独立Python后台。GitHub更新先提示、点击后下载，校验并等待后台空闲后才打开安装器，不在退出时自动安装。交付与真实验收范围见[桌面说明](docs/electron-desktop.md)及[发行说明](packaging/release-notes/0.4.1-dev.45.md)。
+Electron桌面版承载同一套页面，关闭收进托盘，退出界面不停止独立Python后台。GitHub更新先提示、点击后下载，校验并等待后台空闲后才打开安装器，不在退出时自动安装。交付与真实验收范围见[桌面说明](docs/electron-desktop.md)及[发行说明](packaging/release-notes/0.4.1-dev.46.md)。
 
 ## 从哪里读起
 

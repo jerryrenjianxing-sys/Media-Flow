@@ -12,6 +12,7 @@ const { createProfileUpdater } = require('./lib/profile-updater.cjs');
 const { rewriteInstanceUrl, trustedSender } = require('./lib/session-policy.cjs');
 const { clampBounds, externalBrowserUrl, canOpenInstanceBrowser } = require('./lib/window-state.cjs');
 
+app.setName('MediaFlow');
 app.enableSandbox();
 const packaged = app.isPackaged;
 const sourceRoot = path.resolve(__dirname, '..');
@@ -159,7 +160,7 @@ else {
       { label: '退出界面（后台继续运行）', click: () => { void exitDesktop(); } }]));
     await window.loadURL(splashUrl);
     showWindow();
-    diagnostics.write('info', 'desktop-started', { version: app.getVersion(), sourceRevision: state.get().sourceRevision, instance: profile?.id, packaged });
+    diagnostics.write('info', 'desktop-started', { name: app.getName(), version: app.getVersion(), sourceRevision: state.get().sourceRevision, instance: profile?.id, packaged });
     void startup();
   }).catch(error => { diagnostics.write('error', 'desktop-fatal', error); dialog.showErrorBox('MediaFlow 启动失败', error.message); app.quit(); });
 }
