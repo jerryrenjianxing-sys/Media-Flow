@@ -1,6 +1,6 @@
 {
   "name": "mediaflow-desktop",
-  "version": "0.4.1-dev.46",
+  "version": "0.4.1-dev.47",
   "productName": "MediaFlow",
   "private": true,
   "description": "MediaFlow Windows desktop and user initiated updates",

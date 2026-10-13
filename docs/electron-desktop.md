@@ -34,7 +34,7 @@
 
 安装器接受 `/INSTANCEPROFILE=绝对路径`，Electron接受 `--instance-profile=绝对路径`。schema 1配置含id、acceptance、install_root、data_root、ui_port、api_port、stream_port和task_name；验收使用独立目录、端口、任务、注册键、窗口偏好和缓存。
 
-验收模式禁用设备探测、Worker和模型调用，不接触开发数据。Electron内部将旧页面的默认API地址定向到验收实例；验收模式不开放外部浏览器入口，以免绕过此定向。生产浏览器入口正常保留。
+验收模式禁用设备探测、Worker和模型调用，不接触开发数据。页面通过只读preload实例信息在请求发出前解析本地API地址；Electron重定向仅作隔离守卫，不依靠跨域重定向取得页面连接。无preload的普通浏览器保持原地址。验收模式不开放外部浏览器入口，以免绕过此定向。生产浏览器入口正常保留。
 
 源码开发模式只连接现有服务，不注册计划任务、不下载更新。依赖缺失、端口被占用和实例身份不符均给出明确错误，不借用Codex进程或系统运行时兜底。
 

@@ -3,12 +3,20 @@
 import {useEffect, useState} from "react";
 
 export type DesktopUpdatePhase = "idle" | "checking" | "available" | "downloading" | "verifying" | "waiting_idle" | "countdown" | "installing" | "current" | "error";
+export interface DesktopInstance {
+  apiUrl: string;
+  uiUrl: string;
+  streamUrl?: string;
+  id?: string | null;
+  acceptance?: boolean;
+  browserAvailable?: boolean;
+}
 export interface DesktopState {
   desktopVersion: string;
   sourceRevision: string;
   packaged: boolean;
   startup: {phase: string; message: string; ready: boolean};
-  instance: {apiUrl: string; uiUrl: string};
+  instance: DesktopInstance;
   update: {
     phase: DesktopUpdatePhase;
     version?: string;
@@ -27,6 +35,7 @@ export interface DesktopState {
 }
 export interface DesktopBridge {
   getState(): Promise<DesktopState>;
+  getInstance?(): Readonly<DesktopInstance> | null;
   subscribe(callback: (state: DesktopState) => void): () => void;
   checkForUpdates(): Promise<unknown>;
   startUpdate(): Promise<unknown>;
@@ -57,7 +66,7 @@ export function useDesktopState() {
     }).catch(() => {if (active) setError("桌面状态暂不可用，请重新打开窗口。");});
     return () => {active = false; unsubscribe();};
   }, []);
-  async function invoke(action: keyof Omit<DesktopBridge, "getState" | "subscribe">) {
+  async function invoke(action: keyof Omit<DesktopBridge, "getState" | "getInstance" | "subscribe">) {
     const bridge = window.mediaflowDesktop;
     if (!bridge) return;
     setError(null);
