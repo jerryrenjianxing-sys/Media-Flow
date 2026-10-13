@@ -9,6 +9,7 @@ import time
 from agent_queue import AgentQueueMixin
 from content_plans import content_round_start
 from task_resilience import ResilienceStoreMixin, WAIT_SQL
+from runtime_updates import RuntimeUpdatesMixin
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -188,7 +189,7 @@ class InitializationRecord:
     cancel_requested: bool
 
 
-class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
+class TaskStore(AgentQueueMixin, ResilienceStoreMixin, RuntimeUpdatesMixin):
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -214,6 +215,7 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
             connection.execute("PRAGMA journal_mode = WAL")
             self.initialize_agent_queue(connection)
             self.initialize_resilience(connection)
+            self.initialize_runtime_updates(connection)
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tasks (
@@ -649,6 +651,7 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
             ).fetchone()
             if existing is not None:
                 return self._virtual_operation(existing), False
+            self._assert_runtime_available(connection)
             virtual_device_id = str(request.get("virtual_device_id") or "").strip()
             if virtual_device_id:
                 active_rows = connection.execute(
@@ -726,6 +729,7 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
             ).fetchone()
             if existing is not None:
                 return self._virtual_operation(existing), False
+            self._assert_runtime_available(connection)
             virtual_device_id = str(request.get("virtual_device_id") or "").strip()
             if virtual_device_id:
                 active_rows = connection.execute(
@@ -1153,6 +1157,7 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
         connection = self.connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            self._assert_runtime_available(connection)
             self._expire_device_view_sessions(connection)
             if stream_profile == "focus":
                 closed_at = now_iso()
@@ -1700,6 +1705,9 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
         """Atomically claim the oldest queued incident for read-only analysis."""
         with self.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            if self._runtime_claims_blocked(connection):
+                connection.commit()
+                return None
             row = connection.execute(
                 "SELECT * FROM incidents WHERE analysis_status='queued' "
                 "ORDER BY created_at, id LIMIT 1"
@@ -1989,6 +1997,9 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
         if not name.strip():
             raise ValueError("Profile name is required")
         with self.connection() as connection:
+            if name in {'default', 'automation-stop', 'device-preferences'}:
+                connection.execute('BEGIN IMMEDIATE')
+                self._assert_runtime_available(connection)
             connection.execute(
                 "INSERT INTO automation_profiles(name, config_json, updated_at) "
                 "VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET "
@@ -2028,6 +2039,8 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
 
     def set_paused(self, paused: bool) -> None:
         with self.connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            self._assert_runtime_available(connection)
             if paused:
                 connection.execute("UPDATE agent_task_batches SET state='paused' WHERE state='active'")
             connection.execute(
@@ -2072,6 +2085,8 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
 
     def clear_stop_requests(self, device_ids: list[str] | None = None) -> int:
         with self.connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            self._assert_runtime_available(connection)
             if device_ids is None:
                 cursor = connection.execute(
                     "DELETE FROM system_state WHERE key LIKE 'stop:%'"
@@ -2279,6 +2294,7 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
         connection = self.connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            self._assert_runtime_available(connection)
             self._expire_device_view_sessions(connection)
             control = connection.execute(
                 "SELECT 1 FROM device_view_sessions WHERE device_id=? AND mode='control' "
@@ -2350,6 +2366,8 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
 
     def has_initialization_ready(self, device_id: str) -> bool:
         with self.connection() as connection:
+            if self._runtime_claims_blocked(connection):
+                return False
             row = connection.execute(
                 "SELECT 1 FROM device_initializations WHERE device_id=? "
                 "AND status='queued' LIMIT 1",
@@ -2363,6 +2381,9 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
         connection = self.connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            if self._runtime_claims_blocked(connection):
+                connection.commit()
+                return None
             stop_all = connection.execute("SELECT config_json FROM automation_profiles WHERE name='automation-stop'").fetchone()
             stop_device = connection.execute("SELECT value FROM system_state WHERE key=?", ("stop:" + device_id,)).fetchone()
             running = connection.execute("SELECT 1 FROM tasks WHERE device_id=? AND status='running'", (device_id,)).fetchone()
@@ -2564,6 +2585,7 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
         connection = self.connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            self._assert_runtime_available(connection)
             self._expire_device_view_sessions(connection)
             control = connection.execute(
                 "SELECT 1 FROM device_view_sessions WHERE device_id=? AND mode='control' "
@@ -2641,6 +2663,9 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
         connection = self.connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            if self._runtime_claims_blocked(connection):
+                connection.commit()
+                return None
             self.expire_agent_batches(connection)
             self._expire_device_view_sessions(connection)
             control = connection.execute(
@@ -2689,6 +2714,8 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
 
     def has_ready(self, device_id: str) -> bool:
         with self.connection() as connection:
+            if self._runtime_claims_blocked(connection):
+                return False
             self.expire_agent_batches(connection)
             self._expire_device_view_sessions(connection)
             control = connection.execute(
@@ -2983,6 +3010,8 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
 
     def has_ready_recovery(self, device_id: str) -> bool:
         with self.connection() as connection:
+            if self._runtime_claims_blocked(connection):
+                return False
             row = connection.execute(
                 "SELECT 1 FROM task_recoveries WHERE device_id=? AND status='queued' LIMIT 1",
                 (device_id,),
@@ -2993,6 +3022,9 @@ class TaskStore(AgentQueueMixin, ResilienceStoreMixin):
         connection = self.connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            if self._runtime_claims_blocked(connection):
+                connection.commit()
+                return None
             row = connection.execute(
                 "SELECT id FROM task_recoveries WHERE device_id=? AND status='queued' "
                 "ORDER BY created_at, id LIMIT 1",

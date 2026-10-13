@@ -7,6 +7,7 @@ import {BRAND,PLATFORM_HOME_URL} from "../brand";
 import {API} from "./workbench-types";
 import type {PlatformSnapshot} from "../lib/platform-home-state.mjs";
 import InteractionAlertBanner from "./interaction-alert-banner";
+import {DesktopUpdateBanner} from "./desktop-updates";
 
 const PlatformStatusContext=createContext<{status:PlatformSnapshot|null;error:boolean;refresh:()=>Promise<void>}>({status:null,error:false,refresh:async()=>{}});
 export const usePlatformStatus=()=>useContext(PlatformStatusContext);
@@ -18,7 +19,7 @@ export default function ConsoleShell({children}:{children:React.ReactNode}){
   useEffect(()=>{if(path==='/')return;const first=setTimeout(()=>void refresh(),0),timer=setInterval(()=>void refresh(),5000);return()=>{clearTimeout(first);clearInterval(timer);};},[path,refresh]);
   useEffect(()=>{const sync=()=>setDark(document.documentElement.dataset.theme==="dark");const initial=setTimeout(sync,0);const system=matchMedia("(prefers-color-scheme: dark)");const changed=()=>{if(!localStorage.getItem("mediaflow-theme"))document.documentElement.dataset.theme=system.matches?"dark":"light";sync();};system.addEventListener("change",changed);window.addEventListener("mediaflow-theme-change",sync);return()=>{clearTimeout(initial);system.removeEventListener("change",changed);window.removeEventListener("mediaflow-theme-change",sync);};},[]);
   const online=status?.devices?.filter(d=>d.state==="device").length||0,issues=status?.virtualization?.issues?.length||0,running=status?.task_summary?.running||0,pending=status?.task_summary?.pending||0;
-  if(path==='/')return <><a className="skip-link" href="#main-content">跳到主要内容</a>{children}</>;
+  if(path==='/')return <><a className="skip-link" href="#main-content">跳到主要内容</a><DesktopUpdateBanner/>{children}</>;
   return <div className="mf-shell mf-management-shell">
     <a className="skip-link" href="#main-content">跳到主要内容</a>
     <header className="mf-topbar">
@@ -32,6 +33,7 @@ export default function ConsoleShell({children}:{children:React.ReactNode}){
     </header>
     <nav className="mf-management-nav" aria-label="管理工作区"><a className="mf-back-agent" href={PLATFORM_HOME_URL} aria-current={path==="/"?"page":undefined}>平台首页</a><div>{links.map(([href,label])=><a key={href} href={href} aria-current={path===href?"page":undefined}>{label}</a>)}</div><a href="/settings">设置</a></nav>
     <InteractionAlertBanner/>
+    <DesktopUpdateBanner/>
     <PlatformStatusContext.Provider value={{status,error,refresh}}><div id="main-content" className="workspace-main mf-content" tabIndex={-1}>{children}</div></PlatformStatusContext.Provider>
   </div>;
 }

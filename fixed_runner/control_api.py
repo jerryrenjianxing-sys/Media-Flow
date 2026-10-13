@@ -22,7 +22,10 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from adb_runtime import resolve_adb_executable
 from task_store import InitializationRecord, RunDraftConflict, TaskStore
 from worker import DEFAULT_ARTIFACTS, DEFAULT_DB
-from runtime_layout import APP_ROOT, RUNTIME_ROOT, ensure_stream_secret, tool_environment
+from runtime_layout import (APP_ROOT, RUNTIME_ROOT, DATA_ROOT, ACCEPTANCE, INSTANCE_ID,
+                            API_PORT, UI_PORT, STREAM_PORT, DEVICE_PROFILE_PATH,
+                            ensure_stream_secret, tool_environment)
+from runtime_updates import RuntimeUpdateConflict
 from control_config import (
     BUILTIN_PRESETS,
     DEFAULT_CONFIG,
@@ -70,7 +73,7 @@ from skill_bundle import build_skill_bundle, build_skill_markdown
 
 
 HOST = "127.0.0.1"
-PORT = 48138
+PORT = API_PORT
 _AGENT_SERVICE_LOCK = threading.Lock()
 PROFILE_NAME = "default"
 DEVICE_PREFERENCES_PROFILE = "device-preferences"
@@ -94,6 +97,8 @@ LEGACY_DEVELOPMENT_DEVICE_IDS = (
 
 
 def _required_adb() -> str:
+    if ACCEPTANCE:
+        raise ValueError("验收实例不允许访问真实设备")
     adb = resolve_adb_executable()
     if not adb:
         raise RuntimeError("MediaFlow没有找到ADB组件，请修复安装后重试")
@@ -205,6 +210,9 @@ def background_onboarding_status(
 
 
 def ensure_worker(device_id: str) -> dict[str, Any]:
+    if ACCEPTANCE:
+        raise ValueError("验收实例不允许启动设备Worker")
+    TaskStore(DEFAULT_DB).assert_runtime_available()
     status = worker_status(device_id)
     if status["running"]:
         return status
@@ -230,7 +238,7 @@ def ensure_worker(device_id: str) -> dict[str, Any]:
 
 
 def stop_worker(store: TaskStore, device_id: str) -> dict[str, Any]:
-    if store.running_count([device_id]):
+    if store.runtime_blockers(device_id):
         raise ValueError("该设备仍有任务正在执行，请先请求安全停止并等待任务结束")
     store.request_stop([device_id])
     try:
@@ -242,7 +250,8 @@ def stop_worker(store: TaskStore, device_id: str) -> dict[str, Any]:
 
 
 def restart_worker(store: TaskStore, device_id: str) -> dict[str, Any]:
-    if store.running_count([device_id]):
+    store.assert_runtime_available()
+    if store.runtime_blockers(device_id):
         raise ValueError("该设备仍有任务正在执行，不能重启 Worker")
     RuntimeControl().stop(worker_role(device_id))
     store.clear_stop_requests([device_id])
@@ -254,6 +263,8 @@ def ensure_workers(device_ids: list[str]) -> list[dict[str, Any]]:
 
 
 def adb_device_states() -> dict[str, str]:
+    if ACCEPTANCE:
+        return {}
     adb = resolve_adb_executable()
     if not adb:
         return {}
@@ -338,6 +349,8 @@ def adb_runtime_signature(device_id: str) -> dict[str, Any] | None:
 
 def status_runtime_signature(device_id: str) -> dict[str, Any] | None:
     """Return cached device facts immediately and refresh them off the request path."""
+    if ACCEPTANCE:
+        return None
     now = time.monotonic()
     with _RUNTIME_SIGNATURE_LOCK:
         cached = _RUNTIME_SIGNATURE_CACHE.get(device_id)
@@ -350,7 +363,10 @@ def status_runtime_signature(device_id: str) -> dict[str, Any] | None:
 
     def refresh() -> None:
         try:
-            adb_runtime_signature(device_id)
+            with Handler.store.runtime_activity("device_probe", "正在读取设备状态", device_id=device_id):
+                adb_runtime_signature(device_id)
+        except (RuntimeUpdateConflict, ValueError):
+            pass
         finally:
             with _RUNTIME_SIGNATURE_LOCK:
                 _RUNTIME_SIGNATURE_REFRESHING.discard(device_id)
@@ -418,6 +434,8 @@ def _clear_legacy_development_selection(
     config: dict[str, Any],
 ) -> dict[str, Any]:
     """Remove the exact historical five-device seed without touching history."""
+    if ACCEPTANCE or store.runtime_updating():
+        return config
     selected = tuple(config.get("device_ids") or [])
     if selected != LEGACY_DEVELOPMENT_DEVICE_IDS:
         return config
@@ -453,6 +471,16 @@ def build_device_onboarding_payload(
     *,
     custom_path: str | None = None,
 ) -> dict[str, Any]:
+    if ACCEPTANCE:
+        return {"status": "ready", "physical_devices": [], "virtual_devices": [],
+                "device_preferences": {"physical_devices_enabled": False},
+                "mumu": {"provider": "mumu", "instances": [], "recipe": {}},
+                "agent_guide_url": "/devices/guide", "agent_document": "验收实例已隔离，不访问真实设备"}
+    with store.runtime_activity('device_probe', '正在核对设备接入与虚拟机库存'):
+        return _build_device_onboarding_payload(store, config, custom_path=custom_path)
+
+
+def _build_device_onboarding_payload(store, config, *, custom_path=None):
     devices = device_statuses(config["device_ids"])
     for device in devices:
         device["device_type"] = "virtual" if _is_virtual_adb_id(str(device["device_id"])) else "physical"
@@ -2946,6 +2974,28 @@ def comment_screenshot_path(
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _update_json(self, operation, status=200):
+        self._json({"ok": True, **operation, "operation": operation}, status)
+
+    def _begin_mutation(self, path, body=None):
+        if path.startswith('/api/internal/device-view-sessions/') or path == '/api/virtual-device-template/cancel' or re.fullmatch(r'/api/devices/[^/]+/initialization/cancel', path):
+            return None
+        if path == '/api/automation':
+            from automation import READ_ACTIONS
+            if (body or {}).get('action') in READ_ACTIONS:
+                return None
+        if ACCEPTANCE:
+            raise ValueError('验收实例仅允许隔离状态与更新检查，不执行设备或模型操作')
+        return self.store.begin_runtime_activity('api_operation', '平台操作正在处理：' + path)
+
+    def _update_authorized(self):
+        origin = self.headers.get('Origin')
+        if origin and origin not in {f'http://127.0.0.1:{UI_PORT}', f'http://localhost:{UI_PORT}',
+                                    f'http://127.0.0.1:{API_PORT}', f'http://localhost:{API_PORT}'}:
+            self._json({'ok': False, 'error': '更新接口仅接受本机平台请求'}, 403)
+            return False
+        return True
+
     def automation_context(self):
         from automation import PlatformContext
         with _AGENT_SERVICE_LOCK:
@@ -2961,7 +3011,7 @@ class Handler(BaseHTTPRequestHandler):
     def retired_chat(self):
         self._json({'reason_code': 'external_skill_home',
             'user_message': '内置聊天已停用，请到平台首页下载MediaFlow Skill，由外部Agent调用平台。历史数据仍保留。',
-            'agent_url': 'http://127.0.0.1:3001/'}, 410)
+            'agent_url': f'http://127.0.0.1:{UI_PORT}/'}, 410)
 
     store = TaskStore(DEFAULT_DB)
     review_store = TopicReviewStore(DEFAULT_DB, PROJECT_ROOT)
@@ -2977,7 +3027,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         origin = self.headers.get("Origin", "")
-        if origin in {"http://127.0.0.1:3000", "http://127.0.0.1:3001"}:
+        if origin in {"http://127.0.0.1:3000", f"http://127.0.0.1:{UI_PORT}", f"http://localhost:{UI_PORT}"}:
             self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
@@ -3016,6 +3066,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == '/api/runtime/instance':
+            self._json({'ok': True, 'id': INSTANCE_ID, 'instance_id': INSTANCE_ID,
+                        'data_root': str(DATA_ROOT), 'app_root': str(APP_ROOT),
+                        'api_port': API_PORT, 'ui_port': UI_PORT, 'stream_port': STREAM_PORT,
+                        'acceptance': ACCEPTANCE, 'product_version': product_version()})
+            return
+        update_match = re.fullmatch(r'/api/runtime/update/([^/]+)', path)
+        if update_match:
+            try:
+                self._update_json(self.store.runtime_update_status(unquote(update_match.group(1))))
+            except KeyError:
+                self._json({'ok': False, 'error': '更新准备记录不存在'}, 404)
+            return
         if path == "/api/platform-skill":
             as_markdown = parse_qs(parsed.query).get('format') == ['markdown']
             try:
@@ -3039,7 +3102,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             self.send_header("Content-Length", str(len(payload)))
             origin = self.headers.get("Origin", "")
-            if origin in {"http://127.0.0.1:3000", "http://127.0.0.1:3001"}:
+            if origin in {"http://127.0.0.1:3000", f"http://127.0.0.1:{UI_PORT}", f"http://localhost:{UI_PORT}"}:
                 self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
             self.send_header("Cache-Control", "no-store")
@@ -3118,7 +3181,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/device-onboarding":
             config = normalized_config(self.store.get_profile(PROFILE_NAME) or {})
             custom_path = parse_qs(parsed.query).get("mumu_path", [None])[0]
-            self._json(build_device_onboarding_payload(self.store, config, custom_path=custom_path))
+            try:
+                self._json(build_device_onboarding_payload(self.store, config, custom_path=custom_path))
+            except RuntimeUpdateConflict as exc:
+                self._json({'ok': False, 'error': str(exc), 'reason_code': 'runtime_updating', 'operation': exc.operation}, 409)
+            except ValueError as exc:
+                self._json({'ok': False, 'error': str(exc)}, 409)
             return
         if path == "/api/virtual-devices":
             devices = [
@@ -3159,8 +3227,17 @@ class Handler(BaseHTTPRequestHandler):
             self._json(public_status(self.store))
             return
         if path == "/api/virtual-devices/unmanaged":
+            if ACCEPTANCE:
+                self._json({'provider': {'provider': 'mumu', 'status': 'isolated', 'compatible': False}, 'instances': []})
+                return
             custom_path = parse_qs(parsed.query).get("mumu_path", [None])[0]
-            self._json(VirtualDeviceInventory(self.store).unmanaged_candidates(custom_path))
+            try:
+                with self.store.runtime_activity('device_probe', '正在核对未托管虚拟机库存'):
+                    self._json(VirtualDeviceInventory(self.store).unmanaged_candidates(custom_path))
+            except RuntimeUpdateConflict as exc:
+                self._json({'ok': False, 'error': str(exc), 'reason_code': 'runtime_updating', 'operation': exc.operation}, 409)
+            except ValueError as exc:
+                self._json({'ok': False, 'error': str(exc)}, 409)
             return
         if path == "/api/virtual-device-backups":
             query = parse_qs(parsed.query)
@@ -3391,9 +3468,11 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"error": "Not found"}, 404)
 
     def do_PUT(self) -> None:  # noqa: N802
+        activity_id = None
         try:
             body = self._body()
             path = urlparse(self.path).path
+            activity_id = self._begin_mutation(path, body)
             if path == "/api/automation-stop":
                 stopped = body.get("stopped")
                 if not isinstance(stopped, bool):
@@ -3429,6 +3508,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "draft": draft})
         except RunDraftConflict as exc:
             self._json({"error": str(exc), "draft": exc.current}, 409)
+        except RuntimeUpdateConflict as exc:
+            self._json({'ok': False, 'error': str(exc), 'reason_code': 'runtime_updating', 'operation': exc.operation}, 409)
         except KeyError:
             self._json({"error": "请求的本地记录不存在"}, 404)
         except model_providers.ProviderError as exc:
@@ -3437,11 +3518,16 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(exc)}, 400)
         except Exception as exc:
             self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
+        finally:
+            if activity_id:
+                self.store.end_runtime_activity(activity_id)
 
     def do_PATCH(self) -> None:  # noqa: N802
+        activity_id = None
         try:
             body = self._body()
             path = urlparse(self.path).path
+            activity_id = self._begin_mutation(path, body)
             match = re.fullmatch(r"/api/virtual-devices/([^/]+)/settings", path)
             if match is None:
                 self._json({"error": "Not found"}, 404)
@@ -3482,17 +3568,23 @@ class Handler(BaseHTTPRequestHandler):
                 {"ok": True, "created": created, "operation": operation},
                 202 if created else 200,
             )
+        except RuntimeUpdateConflict as exc:
+            self._json({'ok': False, 'error': str(exc), 'reason_code': 'runtime_updating', 'operation': exc.operation}, 409)
         except KeyError:
             self._json({"error": "虚拟机不存在"}, 404)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._json({"error": str(exc)}, 400)
         except Exception as exc:
             self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
+        finally:
+            if activity_id:
+                self.store.end_runtime_activity(activity_id)
 
     def do_DELETE(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
         match = re.fullmatch(r"/api/device-view-sessions/([^/]+)", path)
         virtual_match = re.fullmatch(r"/api/virtual-devices/([^/]+)", path)
+        activity_id = None
         try:
             if match is not None:
                 session = self.store.close_device_view_session(
@@ -3504,6 +3596,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "Not found"}, 404)
                 return
             body = self._body()
+            activity_id = self._begin_mutation(path, body)
             virtual_device_id = unquote(virtual_match.group(1))
             virtual_device = self.store.get_virtual_device(virtual_device_id)
             VirtualDeviceInventory(self.store).assert_idle(virtual_device)
@@ -3541,17 +3634,44 @@ class Handler(BaseHTTPRequestHandler):
                 {"ok": True, "created": created, "operation": operation},
                 202 if created else 200,
             )
+        except RuntimeUpdateConflict as exc:
+            self._json({'ok': False, 'error': str(exc), 'reason_code': 'runtime_updating', 'operation': exc.operation}, 409)
         except KeyError:
             self._json({"error": "本地记录不存在"}, 404)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._json({"error": str(exc)}, 400)
         except Exception as exc:
             self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
+        finally:
+            if activity_id:
+                self.store.end_runtime_activity(activity_id)
 
     def do_POST(self) -> None:  # noqa: N802
+        activity_id = None
         try:
             body = self._body()
             path = urlparse(self.path).path
+            if path == '/api/runtime/update/prepare':
+                if not self._update_authorized():
+                    return
+                operation = self.store.prepare_runtime_update(body.get('request_id'),
+                    target_version=body.get('target_version', body.get('version', '')), sha512=body.get('sha512', ''))
+                self._update_json(operation, 202 if operation['status'] == 'waiting_idle' else 200)
+                return
+            update_match = re.fullmatch(r'/api/runtime/update/([^/]+)/(cancel|complete)', path)
+            if update_match:
+                if not self._update_authorized():
+                    return
+                if update_match.group(2) == 'complete':
+                    operation = self.store.runtime_update_status(unquote(update_match.group(1)))
+                    if operation['target_version'] and product_version().get('version') != operation['target_version']:
+                        self._json({'ok': False, 'reason_code': 'update_version_mismatch',
+                                    'error': '运行版本尚未匹配已下载更新，更新门禁保持生效', 'operation': operation}, 409)
+                        return
+                self._update_json(self.store.finish_runtime_update(unquote(update_match.group(1)),
+                                  cancelled=update_match.group(2) == 'cancel'))
+                return
+            activity_id = self._begin_mutation(path, body)
             if path == '/api/automation':
                 from automation import handle_automation_http
                 handle_automation_http(self, 'POST', path, body)
@@ -3697,7 +3817,7 @@ class Handler(BaseHTTPRequestHandler):
                     token_hash=token_hash,
                 )
                 websocket_url = (
-                    f"ws://127.0.0.1:48139/v1/sessions/{session['id']}"
+                    f"ws://127.0.0.1:{STREAM_PORT}/v1/sessions/{session['id']}"
                     f"?token={quote(raw_token)}"
                 )
                 self._json(
@@ -4434,6 +4554,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(run_submission_payload(task_ids, workers), 202)
                 return
             self._json({"error": "Not found"}, 404)
+        except RuntimeUpdateConflict as exc:
+            self._json({'ok': False, 'error': str(exc), 'reason_code': 'runtime_updating', 'operation': exc.operation}, 409)
         except KeyError:
             self._json({"error": "请求的本地记录不存在"}, 404)
         except model_providers.ProviderError as exc:
@@ -4442,12 +4564,23 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(exc)}, 400)
         except Exception as exc:
             self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
+        finally:
+            if activity_id:
+                self.store.end_runtime_activity(activity_id)
 
 
 def main() -> int:
+    if ACCEPTANCE:
+        if Handler.store.runtime_blockers():
+            raise RuntimeError('验收数据存在运行或控制占用，已拒绝启动')
+        saved = Handler.store.get_profile(PROFILE_NAME) or {}
+        if any(not _is_virtual_adb_id(str(value)) for value in saved.get('device_ids', [])) or DEVICE_PROFILE_PATH.is_file():
+            raise RuntimeError('验收实例不能使用真实设备档案')
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(json.dumps({"event": "control_api_ready", "url": f"http://{HOST}:{PORT}"}))
     def reconcile_virtual_devices_on_startup() -> None:
+        if ACCEPTANCE or Handler.store.runtime_updating():
+            return
         try:
             online_ids = {
                 device_id

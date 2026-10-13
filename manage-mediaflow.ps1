@@ -1,107 +1,69 @@
 param(
-    [ValidateSet('Start', 'Stop', 'Restart', 'Status', 'Doctor')]
-    [string]$Action = 'Status',
-    [switch]$NoBrowser
+    [ValidateSet('Start', 'Stop', 'Restart', 'Status', 'Doctor')][string]$Action = 'Status',
+    [switch]$NoBrowser,
+    [string]$AppRoot = $PSScriptRoot,
+    [string]$LauncherPath = '',
+    [string]$InstanceProfilePath = '',
+    [string]$UpdateOperationId = '',
+    [int]$TimeoutSeconds = 45
 )
-
 $ErrorActionPreference = 'Stop'
-$projectRoot = $PSScriptRoot
-$bundledPython = Join-Path $projectRoot 'runtime\python\python.exe'
-$isDistribution = Test-Path -LiteralPath $bundledPython
-
-function Set-MediaFlowEnvironment {
-    if (-not $isDistribution) { return }
-    $bootstrap = Join-Path $env:LOCALAPPDATA 'MediaFlow\bootstrap.json'
-    $dataRoot = Join-Path $env:LOCALAPPDATA 'MediaFlow\data'
-    if (Test-Path -LiteralPath $bootstrap) {
-        try {
-            $configured = (Get-Content -Raw -LiteralPath $bootstrap | ConvertFrom-Json).data_root
-            if ($configured) { $dataRoot = [string]$configured }
-        }
-        catch {}
-    }
-    $env:MEDIAFLOW_APP_ROOT = $projectRoot
-    $env:MEDIAFLOW_DATA_ROOT = $dataRoot
-    $env:RISKFLOW_APP_ROOT = $projectRoot
-    $env:RISKFLOW_DATA_ROOT = $dataRoot
-    $env:PYTHONUTF8 = '1'
-    $env:PYTHONIOENCODING = 'utf-8'
-    $env:PATH = (Join-Path $projectRoot 'runtime\platform-tools') + ';' +
-        (Join-Path $projectRoot 'runtime\node') + ';' + $env:PATH
+$helper = Join-Path $AppRoot 'installer\electron\instance-profile.ps1'
+if (-not (Test-Path -LiteralPath $helper)) { throw 'MediaFlow instance management helper is missing.' }
+. $helper
+$instance = Get-MediaFlowInstance -AppRoot $AppRoot -LauncherPath $LauncherPath -InstanceProfilePath $InstanceProfilePath
+Set-MediaFlowInstanceEnvironment $instance
+$python = Get-MediaFlowPython $instance
+$hostScript = Join-Path $instance.AppRoot 'fixed_runner\background_host.py'
+$control = Join-Path $instance.AppRoot 'fixed_runner\runtime_control.py'
+$profileArguments = @(Get-MediaFlowProfileArguments $instance)
+function Invoke-MediaFlowJson {
+    param([string]$Script, [string[]]$Arguments)
+    $result = & $python $Script @Arguments @profileArguments
+    if ($LASTEXITCODE -ne 0) { throw ('MediaFlow helper refused ' + ($Arguments -join ' ') + ': ' + ($result -join "`n")) }
+    try { return ($result -join "`n") | ConvertFrom-Json } catch { throw 'MediaFlow helper returned invalid JSON.' }
 }
-
-Set-MediaFlowEnvironment
-$python = if ($isDistribution) { $bundledPython } else { Join-Path $projectRoot '.venv\Scripts\python.exe' }
-$pythonwCandidate = if ($isDistribution) { Join-Path $projectRoot 'runtime\python\pythonw.exe' } else { Join-Path $projectRoot '.venv\Scripts\pythonw.exe' }
-$pythonw = if (Test-Path -LiteralPath $pythonwCandidate) { $pythonwCandidate } else { $python }
-$control = Join-Path $projectRoot 'fixed_runner\runtime_control.py'
-$backgroundHost = Join-Path $projectRoot 'fixed_runner\background_host.py'
-$taskName = 'MediaFlow Background'
-
-if (-not (Test-Path -LiteralPath $python)) { throw 'MediaFlow runtime is incomplete. Please reinstall MediaFlow.' }
+function Get-MediaFlowStatus {
+    $background = Invoke-MediaFlowJson $hostScript @('status')
+    $runtime = Invoke-MediaFlowJson $control @('status')
+    $processes = @($runtime.processes)
+    $remaining = @($processes | Where-Object { $_.running -eq $true -or $_.pid -or $_.identity -notin @('missing','exited','stopped') })
+    [pscustomobject]@{ ok=$true; instance_id=$instance.Id; task_name=$instance.TaskName; background=$background; processes=$processes; stopped_confirmed=($background.state -eq 'stopped' -and $background.host_exited -eq $true -and $remaining.Count -eq 0) }
+}
 if ($Action -eq 'Doctor') {
-    & $python $control doctor
+    & $python $control doctor @profileArguments
     if ($LASTEXITCODE -ne 0) { throw 'MediaFlow diagnostics failed.' }
     return
 }
-if ($Action -eq 'Status') {
-    & $python $backgroundHost status
-    & $python $control status
-    return
+if ($Action -eq 'Status') { Get-MediaFlowStatus | ConvertTo-Json -Depth 20; return }
+if ($Action -in @('Stop','Restart')) {
+    $stopArguments = @('stop', '--timeout-seconds', [string]$TimeoutSeconds)
+    if ($UpdateOperationId) { $stopArguments += @('--update-operation-id', $UpdateOperationId) }
+    $stopResult = Invoke-MediaFlowJson $hostScript $stopArguments
+    $confirmed = Get-MediaFlowStatus
+    if (-not $confirmed.stopped_confirmed) { throw 'MediaFlow still has a live or unverifiable owned process. Installation cannot continue.' }
+    if ($Action -eq 'Stop') { $confirmed | ConvertTo-Json -Depth 20; return }
 }
-
-$registered = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-if (-not $registered) {
-    $legacyTask = Get-ScheduledTask -TaskName 'RiskFlow Background' -ErrorAction SilentlyContinue
-    if ($legacyTask -and ([string]$legacyTask.Actions.Arguments).Contains($backgroundHost)) {
-        $taskName = 'RiskFlow Background'
-        $registered = $legacyTask
-    }
-}
-$backgroundState = 'stopped'
-$backgroundStatusText = & $python $backgroundHost status
-try { $backgroundState = ($backgroundStatusText | ConvertFrom-Json).state } catch { $backgroundState = 'unknown' }
-
-function Wait-BackgroundStopped {
-    $deadline = (Get-Date).AddSeconds(30)
+if ($Action -in @('Start','Restart')) {
+    $registered = Get-ScheduledTask -TaskName $instance.TaskName -ErrorAction SilentlyContinue
+    if (-not $registered) { throw 'MediaFlow background task is missing. Repair its registration before starting.' }
+    Assert-MediaFlowTaskOwnership $registered $instance
+    $startResult = Invoke-MediaFlowJson $hostScript @('request-start')
+    Start-ScheduledTask -TaskName $instance.TaskName
+    $apiUrl = 'http://127.0.0.1:' + $instance.ApiPort + '/api/runtime/instance'
+    $pageUrl = 'http://127.0.0.1:' + $instance.UiPort + '/'
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $ready = $false
     do {
-        $statusText = & $python $backgroundHost status
-        try { $state = ($statusText | ConvertFrom-Json).state } catch { $state = 'unknown' }
-        if ($state -eq 'stopped') { return }
-        Start-Sleep -Milliseconds 500
+        try {
+            $identity = Invoke-RestMethod -Uri $apiUrl -TimeoutSec 2
+            $apiIdentity = if ($identity.id) { $identity.id } else { $identity.instance_id }
+            $ready = $apiIdentity -eq $instance.Id -and (Invoke-WebRequest -UseBasicParsing $pageUrl -TimeoutSec 2).StatusCode -eq 200
+        } catch { $ready = $false }
+        if ($ready) { break }
+        Start-Sleep -Milliseconds 400
     } while ((Get-Date) -lt $deadline)
-    throw 'MediaFlow background service did not stop in time.'
-}
-
-if ($Action -in @('Stop', 'Restart')) {
-    if ($backgroundState -eq 'running') {
-        & $python $backgroundHost request-stop
-        if ($LASTEXITCODE -ne 0) { throw "MediaFlow $Action failed." }
-        Wait-BackgroundStopped
-    }
-    else {
-        & $python $control stop
-        if ($LASTEXITCODE -ne 0) { throw "MediaFlow $Action failed." }
-    }
-    if ($Action -eq 'Stop') { return }
-}
-
-if ($Action -in @('Start', 'Restart')) {
-    & $python $backgroundHost request-start
-    if ($LASTEXITCODE -ne 0) { throw "MediaFlow $Action failed." }
-    if (-not $registered) { throw 'MediaFlow background task is missing. Repair its registration; no editor-owned fallback will start.' }
-    Start-ScheduledTask -TaskName $taskName
-    $apiUrl = 'http://127.0.0.1:48138/api/config'
-    $pageUrl = 'http://127.0.0.1:3001/'
-    $deadline = (Get-Date).AddSeconds(45)
-    $apiReady = $false
-    $pageReady = $false
-    do {
-        try { $apiReady = (Invoke-WebRequest -UseBasicParsing $apiUrl -TimeoutSec 2).StatusCode -eq 200 } catch { $apiReady = $false }
-        try { $pageReady = (Invoke-WebRequest -UseBasicParsing $pageUrl -TimeoutSec 2).StatusCode -eq 200 } catch { $pageReady = $false }
-        if ($apiReady -and $pageReady) { break }
-        Start-Sleep -Milliseconds 500
-    } while ((Get-Date) -lt $deadline)
-    if (-not ($apiReady -and $pageReady)) { throw 'MediaFlow startup timed out. Check the runtime logs.' }
+    if (-not $ready) { throw 'MediaFlow startup timed out or the port belongs to another instance.' }
     if (-not $NoBrowser) { Start-Process $pageUrl }
+    Get-MediaFlowStatus | ConvertTo-Json -Depth 20
 }

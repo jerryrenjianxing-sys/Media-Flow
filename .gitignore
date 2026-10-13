@@ -60,6 +60,9 @@
 /packaging/out/
 /packaging/tools/
 /packaging/agent-engine/node_modules/
+/desktop/node_modules/
+/desktop/dist/
+/desktop/out/
 *.apk
 *.zip
 *.nupkg

@@ -23,15 +23,21 @@ def local_app_data() -> Path:
 
 
 def bootstrap_path() -> Path:
-    return local_app_data() / PRODUCT_NAME / "bootstrap.json"
+    return instance_configuration_root() / "bootstrap.json"
+
+
+def instance_configuration_root() -> Path:
+    from runtime_layout import INSTANCE_ID
+    base = local_app_data() / PRODUCT_NAME
+    return base if INSTANCE_ID == 'production' else base / 'instances' / INSTANCE_ID
 
 
 def pending_migration_path() -> Path:
-    return local_app_data() / PRODUCT_NAME / "pending-storage-migration.json"
+    return instance_configuration_root() / "pending-storage-migration.json"
 
 
 def migration_result_path() -> Path:
-    return local_app_data() / PRODUCT_NAME / "storage-migration-result.json"
+    return instance_configuration_root() / "storage-migration-result.json"
 
 
 def default_data_root() -> Path:
@@ -236,13 +242,15 @@ def apply_pending_migration(*, app_root: str | Path | None = None) -> dict[str, 
 
 
 def storage_status() -> dict[str, Any]:
+    from runtime_layout import DATA_ROOT, INSTANCE_ID
+    isolated = INSTANCE_ID != 'production'
     config = bootstrap_path()
     payload: dict[str, Any] = {}
     try:
         payload = json.loads(config.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         pass
-    chosen = Path(str(payload.get("data_root") or default_data_root()))
+    chosen = DATA_ROOT if isolated else Path(str(payload.get("data_root") or default_data_root()))
     pending: dict[str, Any] | None = None
     last_result: dict[str, Any] | None = None
     try:
@@ -258,8 +266,8 @@ def storage_status() -> dict[str, Any]:
         "data_root": str(chosen),
         "configured": config.is_file(),
         "bootstrap_path": str(config),
-        "legacy_available": legacy_data_root().is_dir(),
-        "legacy_data_root": str(legacy_data_root()),
+        "legacy_available": False if isolated else legacy_data_root().is_dir(),
+        "legacy_data_root": None if isolated else str(legacy_data_root()),
         "pending_migration": pending,
         "last_migration": last_result,
         "categories": ["数据库与配置", "任务截图和证据", "日志", "设备档案", "虚拟机备份及临时文件"],

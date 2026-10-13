@@ -126,6 +126,16 @@ def resolve_runtime_model(api_key=None, base_url=None, model=None):
 
 
 def status(provider: str | None = None) -> dict:
+    from runtime_layout import ACCEPTANCE
+    if ACCEPTANCE:
+        profiles = {name: {'provider_id': name, 'provider': name, 'enabled': False,
+            'key_configured': False, 'model_ready': False, 'model_test_status': 'disabled',
+            'auth_status': 'disabled', 'storage_status': 'isolated', 'can_enable': False,
+            'reason_code': 'acceptance_mode', 'message': '验收实例不读取模型凭据或执行模型调用',
+            'request_limit': None, 'requests_remaining': None, 'local_limits_enabled': False}
+            for name in (OPENROUTER, QWEN)}
+        return {**profiles.get(provider, profiles[OPENROUTER]), 'active_provider': None,
+                'config_version': None, 'providers': profiles}
     from model_connection import status as openrouter_status
     active = selection()
     old = {**openrouter_status(), "provider_id": OPENROUTER,

@@ -3,10 +3,16 @@
     [ValidateSet('development', 'release')]
     [string]$Channel = 'development',
     [switch]$SkipVelopack,
-    [string]$TemplateManifestPath = ''
+    [string]$TemplateManifestPath = '',
+    [switch]$PayloadOnly,
+    [string]$StagePath = ''
 )
 
 $ErrorActionPreference = 'Stop'
+if ($PayloadOnly) {
+    if ($TemplateManifestPath) { throw 'Electron payloads cannot contain private template overlays.' }
+    $SkipVelopack = $true
+}
 if ($TemplateManifestPath -and ($Channel -ne 'development' -or $SkipVelopack)) {
     throw 'Private snapshot payloads require an explicit development installer, never a public release or stage-only build.'
 }
@@ -57,16 +63,17 @@ if (-not $SkipVelopack) {
     }
 }
 $assemblyVersion = "$Version.0"
-foreach ($sourcePath in @(
+if (-not $PayloadOnly) { foreach ($sourcePath in @(
     (Join-Path $projectRoot 'launcher\RiskFlowLauncher.cs'),
     (Join-Path $projectRoot 'installer\MediaFlowInstaller.cs')
 )) {
     if (-not (Select-String -LiteralPath $sourcePath -SimpleMatch ('AssemblyFileVersion("{0}")' -f $assemblyVersion) -Quiet)) {
         throw "Executable version in $sourcePath must match canonical version $Version."
     }
-}
+} }
 $outRoot = Join-Path $PSScriptRoot 'out'
-$stage = Join-Path $outRoot 'MediaFlow-win-x64'
+$stage = if ($StagePath) { [IO.Path]::GetFullPath($StagePath) } elseif ($PayloadOnly) { Join-Path $outRoot 'electron-platform' } else { Join-Path $outRoot 'MediaFlow-win-x64' }
+if (-not $stage.StartsWith([IO.Path]::GetFullPath($outRoot).TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Payload staging must remain inside packaging/out.' }
 $releases = Join-Path $outRoot 'Releases'
 $identityPath = Join-Path $outRoot ("release-identities\{0}.json" -f $packageVersion)
 if (-not $SkipVelopack -and (Test-Path -LiteralPath $identityPath)) {
@@ -114,9 +121,11 @@ finally {
 # newly built assets are copied into the staging directory below; an already
 # running developer or installed UI is never restarted by the build itself.
 
-& (Join-Path $projectRoot 'launcher\build-launcher.ps1') `
-    -PackageVersion $packageVersion -SourceRevision $sourceRevision.Trim()
-if ($LASTEXITCODE -ne 0) { throw 'MediaFlow launcher build failed.' }
+if (-not $PayloadOnly) {
+    & (Join-Path $projectRoot 'launcher\build-launcher.ps1') `
+        -PackageVersion $packageVersion -SourceRevision $sourceRevision.Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'MediaFlow launcher build failed.' }
+}
 
 if (Test-Path -LiteralPath $stage) {
     $resolved = Resolve-Path -LiteralPath $stage
@@ -128,18 +137,22 @@ if (Test-Path -LiteralPath $stage) {
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 $rootFiles = @(
-    'MediaFlow.exe',
-    'Microsoft.Web.WebView2.Core.dll',
-    'Microsoft.Web.WebView2.WinForms.dll',
-    'WebView2Loader.dll',
     'manage-mediaflow.ps1',
     'run-mediaflow-console.ps1',
     'install-mediaflow-background.ps1',
     'uninstall-mediaflow-background.ps1'
 )
+if (-not $PayloadOnly) { $rootFiles += @('MediaFlow.exe','Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll','WebView2Loader.dll') }
 foreach ($relative in $rootFiles) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $relative) -Destination $stage
 }
+Copy-Tree (Join-Path $projectRoot 'installer\electron') (Join-Path $stage 'installer\electron')
+New-Item -ItemType Directory -Force -Path (Join-Path $stage 'assets\brand') | Out-Null
+foreach ($brandFile in @('mediaflow.ico','mediaflow-tray.png')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot ('assets\brand\'+$brandFile)) -Destination (Join-Path $stage 'assets\brand')
+}
+New-Item -ItemType Directory -Force -Path (Join-Path $stage 'packaging') | Out-Null
+Copy-Item -LiteralPath $canonicalVersionPath -Destination (Join-Path $stage 'packaging\version.json')
 
 $fixedTarget = Join-Path $stage 'fixed_runner'
 New-Item -ItemType Directory -Force -Path $fixedTarget | Out-Null
@@ -240,6 +253,9 @@ $node = (Get-Command node -ErrorAction Stop).Source
 $nodeTarget = Join-Path $stage 'runtime\node'
 New-Item -ItemType Directory -Force -Path $nodeTarget | Out-Null
 Copy-Item -LiteralPath $node -Destination (Join-Path $nodeTarget 'node.exe')
+$nodeLicense = Join-Path (Split-Path $node -Parent) 'LICENSE'
+if (-not (Test-Path -LiteralPath $nodeLicense)) { throw 'The tested Node runtime license is missing.' }
+Copy-Item -LiteralPath $nodeLicense -Destination (Join-Path $nodeTarget 'LICENSE.txt')
 
 $adb = (Get-Command adb -ErrorAction Stop).Source
 $adbRoot = Split-Path $adb -Parent
@@ -248,6 +264,8 @@ Copy-Tree $adbRoot (Join-Path $stage 'runtime\platform-tools')
 $agentSourceIdentity = "$($sourceCommit.Trim())$(if ($sourceDirty) { '.dirty' } else { '' })"
 & $sourcePython (Join-Path $PSScriptRoot 'build-agent-resources.py') --stage $stage --revision $agentSourceIdentity
 if ($LASTEXITCODE -ne 0) { throw 'Platform Skill or repair source assembly failed.' }
+& $sourcePython (Join-Path $PSScriptRoot 'collect-licenses.py') --stage $stage --project-root $projectRoot
+if ($LASTEXITCODE -ne 0) { throw 'Bundled licensing materials are incomplete.' }
 
 $forbiddenNames = @(
     'tasks.db',
@@ -289,6 +307,9 @@ $legacyBrandAllowlist = @(
     'install-mediaflow-background.ps1',
     # Exact legacy task identity is necessary for verified migration, not UI branding.
     'manage-mediaflow.ps1',
+    'uninstall-mediaflow-background.ps1',
+    'installer\electron\instance-profile.ps1',
+    'installer\electron\installer-helper.ps1',
     'fixed_runner\assets\agent\skills\mediaflow-platform\references\setup.md',
     'fixed_runner\background_host.py',
     'fixed_runner\brand.py',
@@ -300,7 +321,7 @@ $legacyBrandAllowlist = @(
 $visibleLegacyBrand = @()
 Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object { $_.Extension -in @('.py','.ps1','.json','.js','.mjs','.html','.css','.md','.txt') } | ForEach-Object {
     $relative = $_.FullName.Substring($stage.Length + 1)
-    if ($relative -notin $legacyBrandAllowlist -and (Select-String -LiteralPath $_.FullName -SimpleMatch 'RiskFlow' -CaseSensitive -Quiet)) {
+    if ($relative -notlike 'licenses\*' -and $relative -notin $legacyBrandAllowlist -and (Select-String -LiteralPath $_.FullName -SimpleMatch 'RiskFlow' -CaseSensitive -Quiet)) {
         $visibleLegacyBrand += $relative
     }
 }
@@ -308,7 +329,7 @@ if ($visibleLegacyBrand) {
     throw "Release audit found a user-visible legacy brand reference: $($visibleLegacyBrand -join ', ')"
 }
 
-if ($releaseBuild -and $SkipVelopack) {
+if ($releaseBuild -and $SkipVelopack -and -not $PayloadOnly) {
     throw 'A release-channel build must include the installable artifacts.'
 }
 if ($releaseBuild -and $sourceDirty) {
@@ -340,10 +361,12 @@ $manifest = [ordered]@{
     repair_test_capability = 'python-unit-and-syntax; native-and-device-tests-require-release-validation'
     stream_protocol = 1
     scrcpy_server = '3.3.3'
-    desktop_shell = 'WinForms WebView2 Evergreen'
+    desktop_shell = if ($PayloadOnly) { 'Electron' } else { 'WinForms WebView2 Evergreen' }
+    app_id = if ($PayloadOnly) { 'com.mediaflow.desktop' } else { 'RiskFlow.Internal' }
     uiautomator2_assets = @('u2.jar', 'app-uiautomator.apk')
     distribution_label = if ($developmentBuild) { 'development-stage' } else { 'internal-test' }
     source_revision = $sourceRevision.Trim()
+    source_commit = $sourceCommit.Trim()
     source_dirty = $sourceDirty
     build_identity = $displayVersion
     code_signed = $false

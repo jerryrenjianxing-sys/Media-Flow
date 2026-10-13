@@ -28,10 +28,14 @@ from runtime_control import (
     ui_spec,
     worker_role,
     worker_spec,
+    stop_registered_runtime,
+    SystemProcessInspector,
+    project_python_executable,
 )
 from task_store import TaskStore
 from worker import DEFAULT_DB
-from runtime_layout import APP_ROOT, BUNDLED_ADB, SECRET_ROOT, tool_environment
+from runtime_layout import (APP_ROOT, BUNDLED_ADB, SECRET_ROOT, ACCEPTANCE, INSTANCE_ID,
+                            API_PORT, UI_PORT, STREAM_PORT, DEVICE_PROFILE_PATH, tool_environment)
 from windows_powershell import native_windows_powershell_environment
 
 
@@ -39,7 +43,7 @@ PROFILE_NAME = "default"
 HEARTBEAT_PATH = RUNTIME_ROOT / "background-host.json"
 STOP_REQUEST_PATH = RUNTIME_ROOT / "background-stop-request.json"
 LOG_PATH = RUNTIME_ROOT / "background-host.log"
-MUTEX_NAME = r"Local\RiskFlow.BackgroundHost"
+MUTEX_NAME = r"Local\RiskFlow.BackgroundHost" if INSTANCE_ID == 'production' else rf"Local\MediaFlow.BackgroundHost.{INSTANCE_ID}"
 PROJECT_ROOT = APP_ROOT
 SECRET_TRANSFER_PATH = SECRET_ROOT / "openrouter-transfer.dpapi-machine"
 IMPORT_SECRET_SCRIPT = Path(__file__).resolve().parent / "import-background-secret.ps1"
@@ -47,6 +51,8 @@ IMPORT_SECRET_SCRIPT = Path(__file__).resolve().parent / "import-background-secr
 
 def online_adb_device_ids() -> set[str]:
     """Return only currently authorized ADB transports."""
+    if ACCEPTANCE:
+        return set()
     adb = str(BUNDLED_ADB) if BUNDLED_ADB.is_file() else (
         shutil.which("adb.exe") or shutil.which("adb")
     )
@@ -100,11 +106,11 @@ def default_role_health_probe(role: str) -> bool:
     if role not in {"control-api", "control-ui", "device-stream-host"}:
         return True
     url = (
-        "http://127.0.0.1:48138/api/config"
+        f"http://127.0.0.1:{API_PORT}/api/config"
         if role == "control-api"
-        else "http://127.0.0.1:48139/health"
+        else f"http://127.0.0.1:{STREAM_PORT}/health"
         if role == "device-stream-host"
-        else "http://127.0.0.1:3001/"
+        else f"http://127.0.0.1:{UI_PORT}/"
     )
     try:
         with urllib.request.urlopen(url, timeout=2.0) as response:
@@ -251,6 +257,8 @@ class RuntimeSupervisor:
         self.retries: dict[str, RetryState] = {}
         self.health_failures: dict[str, int] = {}
         self.started_at = now_iso()
+        snapshot = SystemProcessInspector().snapshot(os.getpid())
+        self.creation_token = snapshot.creation_token if snapshot else None
         self.stop_signal_received = False
 
     def configured_device_ids(self) -> list[str]:
@@ -261,6 +269,8 @@ class RuntimeSupervisor:
 
     def eligible_device_ids(self) -> list[str]:
         """Resolve a saved selection against real hardware and managed VM inventory."""
+        if ACCEPTANCE or getattr(self.store, 'runtime_updating', lambda: False)():
+            return []
         requested = self.configured_device_ids()
         online = self.device_discovery()
         managed_ready = {
@@ -291,7 +301,7 @@ class RuntimeSupervisor:
             ("device-stream-host", stream_spec),
             ("control-ui", ui_spec),
         ]
-        if optional_analyzer_spec() is not None:
+        if not ACCEPTANCE and not getattr(self.store, 'runtime_updating', lambda: False)() and optional_analyzer_spec() is not None:
             factories.append(("incident-analyzer", analyzer_spec))
         for device_id in self.eligible_device_ids():
             if not self.store.is_stop_requested(device_id):
@@ -301,7 +311,7 @@ class RuntimeSupervisor:
 
     def stop_undesired_workers(self, desired_roles: set[str]) -> list[dict[str, Any]]:
         """Retire idle workers that no longer belong to the executable inventory."""
-        if self.store.running_count():
+        if getattr(self.store, 'runtime_blockers', lambda: self.store.running_count())():
             return []
         stopped: list[dict[str, Any]] = []
         for role in self.control.roles():
@@ -430,7 +440,7 @@ class RuntimeSupervisor:
         return self.ensure_role(spec)
 
     def tick(self) -> dict[str, Any]:
-        if SECRET_TRANSFER_PATH.is_file():
+        if not ACCEPTANCE and SECRET_TRANSFER_PATH.is_file():
             try:
                 import_pending_secret()
             except Exception as exc:
@@ -455,7 +465,7 @@ class RuntimeSupervisor:
                 ("device-stream-host", stream_spec),
                 ("control-ui", ui_spec),
             ]
-            if optional_analyzer_spec() is not None:
+            if not ACCEPTANCE and not getattr(self.store, 'runtime_updating', lambda: False)() and optional_analyzer_spec() is not None:
                 factories.append(("incident-analyzer", analyzer_spec))
             config_error = f"{type(exc).__name__}: {exc}"
             self.log_event("device_config_failed", error=config_error)
@@ -471,6 +481,8 @@ class RuntimeSupervisor:
         payload = {
             "state": "running",
             "pid": os.getpid(),
+            "instance_id": INSTANCE_ID,
+            "creation_token": self.creation_token,
             "started_at": self.started_at,
             "checked_at": now_iso(),
             "configured_device_ids": configured_ids,
@@ -483,7 +495,9 @@ class RuntimeSupervisor:
         return payload
 
     def request_shutdown(self) -> dict[str, Any]:
-        if self.store.running_count():
+        blockers = (self.store.begin_runtime_shutdown() if hasattr(self.store, 'begin_runtime_shutdown') else
+                    ([{'kind': 'task', 'message': '业务任务正在执行'}] if self.store.running_count() else []))
+        if blockers:
             try:
                 self.stop_request_path.unlink()
             except FileNotFoundError:
@@ -491,45 +505,40 @@ class RuntimeSupervisor:
             payload = {
                 "state": "stop_refused",
                 "pid": os.getpid(),
+                "instance_id": INSTANCE_ID,
+                "creation_token": self.creation_token,
                 "started_at": self.started_at,
                 "checked_at": now_iso(),
-                "error": "仍有设备任务正在执行",
+                "error": "仍有任务、维护或人工控制正在执行",
+                "blockers": blockers,
             }
             atomic_json_write(self.heartbeat_path, payload)
             self.log_event("shutdown_refused", reason="running_tasks")
             return payload
 
-        roles = [role for role in self.control.roles() if role.startswith("worker-")]
-        roles.extend(["incident-analyzer", "control-ui", "device-stream-host", "control-api"])
-        stopped: list[dict[str, Any]] = []
-        for role in dict.fromkeys(roles):
-            try:
-                stopped.append(self.control.stop(role))
-            except Exception as exc:
-                stopped.append(
-                    {
-                        "role": role,
-                        "running": True,
-                        "identity": "stop_failed",
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
-                )
+        outcome = stop_registered_runtime(self.control)
         payload = {
-            "state": "stopped",
+            **outcome,
             "pid": os.getpid(),
+            "instance_id": INSTANCE_ID,
+            "creation_token": self.creation_token,
             "started_at": self.started_at,
             "checked_at": now_iso(),
-            "processes": stopped,
         }
         atomic_json_write(self.heartbeat_path, payload)
         try:
             self.stop_request_path.unlink()
         except FileNotFoundError:
             pass
-        self.log_event("background_host_stopped")
+        self.log_event("background_host_stopped" if outcome['ok'] else 'background_host_stop_failed')
         return payload
 
     def run(self, interval_seconds: float = 5.0) -> int:
+        if ACCEPTANCE:
+            if self.store.runtime_blockers() or DEVICE_PROFILE_PATH.is_file():
+                raise RuntimeError('验收实例存在运行占用或真实设备档案')
+            if any(not (value.startswith('127.0.0.1:') or value.startswith('localhost:') or value.startswith('emulator-')) for value in self.configured_device_ids()):
+                raise RuntimeError('验收实例不能使用真实设备选择')
         instance = SingleInstance()
         if not instance.acquire():
             self.log_event("duplicate_background_host_ignored", pid=os.getpid())
@@ -540,6 +549,9 @@ class RuntimeSupervisor:
 
         if hasattr(signal, "SIGTERM"):
             signal.signal(signal.SIGTERM, receive_stop)
+        atomic_json_write(self.heartbeat_path, {'state': 'starting', 'pid': os.getpid(),
+                          'instance_id': INSTANCE_ID, 'creation_token': self.creation_token,
+                          'started_at': self.started_at, 'checked_at': now_iso(), 'processes': []})
         self.log_event("background_host_started", pid=os.getpid())
         try:
             while True:
@@ -547,9 +559,11 @@ class RuntimeSupervisor:
                     outcome = self.request_shutdown()
                     if outcome["state"] == "stopped":
                         return 0
+                    if outcome['state'] == 'stop_failed':
+                        return 1
                 if self.stop_signal_received:
-                    self.log_event("background_host_signal_exit", pid=os.getpid())
-                    return 0
+                    outcome = self.request_shutdown()
+                    return 0 if outcome['state'] == 'stopped' else 1
                 try:
                     self.tick()
                 except Exception as exc:
@@ -566,9 +580,15 @@ def read_heartbeat(path: Path = HEARTBEAT_PATH) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         modified_seconds_ago = max(0.0, time.time() - path.stat().st_mtime)
+        pid = int(payload.get('pid') or 0)
+        snapshot = SystemProcessInspector().snapshot(pid) if pid else None
+        token = payload.get('creation_token')
+        host_alive = bool(snapshot and (not token or snapshot.creation_token == str(token)))
+        payload['host_alive'] = host_alive
+        payload['host_exited'] = not host_alive
         payload["heartbeat_age_seconds"] = round(modified_seconds_ago, 1)
         payload["heartbeat_fresh"] = (
-            payload.get("state") == "running" and modified_seconds_ago <= 20
+            payload.get("state") == "running" and modified_seconds_ago <= 20 and host_alive
         )
         return payload
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
@@ -576,6 +596,7 @@ def read_heartbeat(path: Path = HEARTBEAT_PATH) -> dict[str, Any]:
 
 
 def request_start() -> dict[str, Any]:
+    TaskStore(DEFAULT_DB).release_runtime_shutdown()
     try:
         STOP_REQUEST_PATH.unlink()
     except FileNotFoundError:
@@ -583,11 +604,11 @@ def request_start() -> dict[str, Any]:
     return {"ok": True, "requested": "start"}
 
 
-def request_stop() -> dict[str, Any]:
+def request_stop(update_operation_id: str | None = None) -> dict[str, Any]:
     store = TaskStore(DEFAULT_DB)
-    running = store.running_count()
-    if running:
-        raise RuntimeError(f"仍有 {running} 个设备任务正在执行，请先安全停止任务")
+    blockers = store.begin_runtime_shutdown(update_operation_id)
+    if blockers:
+        return {'ok': False, 'state': 'stop_refused', 'blockers': blockers, 'error': '仍有任务、维护或人工控制正在执行'}
     atomic_json_write(
         STOP_REQUEST_PATH,
         {"requested_at": now_iso(), "requested_by_pid": os.getpid()},
@@ -595,12 +616,62 @@ def request_stop() -> dict[str, Any]:
     return {"ok": True, "requested": "stop"}
 
 
+def stop_and_wait(timeout_seconds=30.0, update_operation_id=None):
+    control, inspector = RuntimeControl(), SystemProcessInspector()
+    heartbeat = read_heartbeat()
+    host_pid = int(heartbeat.get('pid') or 0)
+    original_host = inspector.snapshot(host_pid) if host_pid else None
+    if original_host:
+        token = heartbeat.get('creation_token')
+        if not token:
+            return {'ok': False, 'state': 'stop_refused', 'reason_code': 'legacy_host_gate_unavailable',
+                    'host_pid': host_pid, 'host_exited': False,
+                    'error': '旧版后台不支持更新门禁，无法保证安全同步停机。请先通过旧版本正常的后台停止入口停止后台，再重试迁移以核验进程已退出。'}
+        executable = project_python_executable()
+        expected = {os.path.normcase(str(executable)), os.path.normcase(str(executable.with_name('pythonw.exe')))}
+        executable_matches = os.path.normcase(os.path.abspath(original_host.executable)) in expected
+        identity_matches = str(token) == original_host.creation_token
+        if not executable_matches or not identity_matches or heartbeat.get('instance_id', INSTANCE_ID) != INSTANCE_ID:
+            return {'ok': False, 'state': 'stop_refused', 'host_pid': host_pid,
+                    'error': '后台宿主进程身份与实例不匹配，已拒绝停止'}
+    requested = request_stop(update_operation_id)
+    if not requested['ok']:
+        return requested
+    if original_host is None:
+        outcome = stop_registered_runtime(control)
+        if outcome['ok']:
+            try:
+                STOP_REQUEST_PATH.unlink()
+            except FileNotFoundError:
+                pass
+        atomic_json_write(HEARTBEAT_PATH, {**outcome, 'pid': None, 'host_exited': True,
+                          'instance_id': INSTANCE_ID, 'checked_at': now_iso()})
+        return {**outcome, 'host_exited': True}
+    deadline = time.monotonic() + max(0.1, timeout_seconds)
+    while time.monotonic() < deadline:
+        heartbeat = read_heartbeat()
+        observed = inspector.snapshot(host_pid)
+        host_exited = observed is None or observed.creation_token != original_host.creation_token
+        roles = [control.status(role) for role in control.roles()]
+        failed_roles = [role for role in roles if role.get('running') or role.get('identity') not in {'missing', 'exited'}]
+        if host_exited and not failed_roles and heartbeat.get('state') not in {'stop_failed', 'stop_refused'}:
+            return {'ok': True, 'state': 'stopped', 'host_exited': True, 'host_pid': host_pid, 'processes': roles}
+        if heartbeat.get('state') in {'stop_failed', 'stop_refused'}:
+            return {**heartbeat, 'ok': False, 'host_exited': host_exited}
+        time.sleep(0.1)
+    return {'ok': False, 'state': 'stop_failed', 'host_exited': host_exited,
+            'host_pid': host_pid, 'processes': roles, 'error': '后台进程未在限定时间内全部退出'}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="MediaFlow independent background host")
     parser.add_argument(
-        "action", choices=("run", "tick", "status", "request-start", "request-stop")
+        "action", choices=("run", "tick", "status", "request-start", "request-stop", "stop")
     )
     parser.add_argument("--interval-seconds", type=float, default=5.0)
+    parser.add_argument('--instance-profile')
+    parser.add_argument('--timeout-seconds', type=float, default=30.0)
+    parser.add_argument('--update-operation-id')
     args = parser.parse_args()
     try:
         if args.action == "run":
@@ -611,10 +682,12 @@ def main() -> int:
             result = read_heartbeat()
         elif args.action == "request-start":
             result = request_start()
+        elif args.action == 'stop':
+            result = stop_and_wait(args.timeout_seconds, args.update_operation_id)
         else:
-            result = request_stop()
+            result = request_stop(args.update_operation_id)
         print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0
+        return 1 if result.get('ok') is False else 0
     except Exception as exc:
         print(
             json.dumps(

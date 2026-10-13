@@ -563,6 +563,7 @@ class ControlApiTest(unittest.TestCase):
     def test_explicit_worker_stop_sets_supervisor_stop_state(self) -> None:
         store = MagicMock()
         store.running_count.return_value = 0
+        store.runtime_blockers.return_value = []
         with patch("control_api.RuntimeControl.stop") as stop:
             stop.return_value = {"role": "worker-device-1", "running": False}
             result = stop_worker(store, "device-1")
@@ -572,6 +573,7 @@ class ControlApiTest(unittest.TestCase):
     def test_failed_worker_stop_rolls_back_supervisor_stop_state(self) -> None:
         store = MagicMock()
         store.running_count.return_value = 0
+        store.runtime_blockers.return_value = []
         with patch("control_api.RuntimeControl.stop", side_effect=RuntimeError("identity")):
             with self.assertRaises(RuntimeError):
                 stop_worker(store, "device-1")

@@ -16,10 +16,17 @@ from typing import Any, Callable
 
 from runtime_layout import (
     APP_ROOT,
+    ACCEPTANCE,
+    INSTANCE_ID,
+    INSTANCE_PROFILE,
+    API_PORT,
+    UI_PORT,
+    STREAM_PORT,
     BUNDLED_ADB,
     BUNDLED_NODE,
     BUNDLED_PYTHON,
     IS_DISTRIBUTION,
+    DEVELOPMENT_SOURCE,
     RUNTIME_ROOT,
     SECRET_ROOT,
     STREAM_HOST_ENTRY,
@@ -40,7 +47,7 @@ FIXED_RUNNER_ROOT = Path(__file__).resolve().parent
 PROCESS_ROOT = RUNTIME_ROOT / "processes"
 PROJECT_PYTHON = (
     BUNDLED_PYTHON
-    if BUNDLED_PYTHON.is_file()
+    if BUNDLED_PYTHON.is_file() and not DEVELOPMENT_SOURCE
     else PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
 )
 SECRET_PATH = SECRET_ROOT / "openrouter-api-key.dpapi"
@@ -48,13 +55,13 @@ LEGACY_SECRET_PATH = Path(
     r"C:\Users\jerry\Documents\Codex\Tools\Open-AutoGLM\.secrets\openrouter-api-key.dpapi"
 )
 READ_SECRET_SCRIPT = FIXED_RUNNER_ROOT / "read-openrouter-key.ps1"
-BACKGROUND_TASK_NAME = "MediaFlow Background"
+BACKGROUND_TASK_NAME = str(INSTANCE_PROFILE.get("task_name") or ("MediaFlow Background" if INSTANCE_ID == "production" else f"MediaFlow Background {INSTANCE_ID}"))
 LEGACY_BACKGROUND_TASK_NAME = "RiskFlow Background"
 BACKGROUND_HEARTBEAT_PATH = RUNTIME_ROOT / "background-host.json"
 
 
 def project_python_executable() -> Path:
-    if BUNDLED_PYTHON.is_file():
+    if BUNDLED_PYTHON.is_file() and not DEVELOPMENT_SOURCE:
         return BUNDLED_PYTHON.resolve()
     config = PROJECT_ROOT / ".venv" / "pyvenv.cfg"
     try:
@@ -178,6 +185,9 @@ class SystemProcessInspector:
         if not handle:
             return None
         try:
+            exit_code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)) or exit_code.value != 259:
+                return None
             buffer = ctypes.create_unicode_buffer(32768)
             size = ctypes.c_ulong(len(buffer))
             if not kernel32.QueryFullProcessImageNameW(
@@ -273,11 +283,13 @@ class RuntimeControl:
         inspector: SystemProcessInspector | Any | None = None,
         launcher: Callable[[ProcessSpec], int] | None = None,
         terminator: Callable[[int], None] | None = None,
+        stop_timeout_seconds: float = 8.0,
     ) -> None:
         self.registry_root = registry_root
         self.inspector = inspector or SystemProcessInspector()
         self.launcher = launcher or self._launch
         self.terminator = terminator or terminate_process
+        self.stop_timeout_seconds = stop_timeout_seconds
 
     def _record_path(self, role: str) -> Path:
         return self.registry_root / f"{safe_role_name(role)}.json"
@@ -406,6 +418,15 @@ class RuntimeControl:
                 raise RuntimeError(f"{role} 进程身份核验失败，已拒绝停止")
             return {**current, "changed": False}
         self.terminator(int(current["pid"]))
+        record = self._read_record(role)
+        deadline = time.monotonic() + self.stop_timeout_seconds
+        while True:
+            snapshot = self.inspector.snapshot(int(current["pid"]))
+            if snapshot is None or (record and snapshot.creation_token != record.creation_token):
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"{role} 进程 {current['pid']} 仍存活，停止失败")
+            time.sleep(0.05)
         self._remove_record(role)
         return {"role": role, "running": False, "pid": None, "identity": "stopped", "changed": True}
 
@@ -454,7 +475,7 @@ def migrate_secret() -> dict[str, Any]:
         return {"configured": True, "migrated": False, "path": str(SECRET_PATH)}
     # A distributed build must never reach back into a developer workstation.
     # New installations receive their key through the local control console.
-    if IS_DISTRIBUTION:
+    if IS_DISTRIBUTION or INSTANCE_ID != "production" or ACCEPTANCE:
         return {"configured": False, "migrated": False, "path": str(SECRET_PATH)}
     if not LEGACY_SECRET_PATH.is_file() or not LEGACY_SECRET_PATH.stat().st_size:
         return {"configured": False, "migrated": False, "path": str(SECRET_PATH)}
@@ -512,7 +533,7 @@ def load_openrouter_key() -> str:
     # copied project-local blob becomes unreadable (for example, after a
     # startup-context change). A distributed build must remain self-contained.
     if (
-        not IS_DISTRIBUTION
+        not IS_DISTRIBUTION and INSTANCE_ID == "production" and not ACCEPTANCE
         and LEGACY_SECRET_PATH != SECRET_PATH
         and LEGACY_SECRET_PATH.is_file()
         and LEGACY_SECRET_PATH.stat().st_size
@@ -556,12 +577,12 @@ def ui_spec(*, native=True) -> ProcessSpec:
         command = (str(node), str(UI_STANDALONE_SERVER))
         cwd = UI_STANDALONE_ROOT
         markers = ("server.js",)
-        environment.update({"HOST": "127.0.0.1", "PORT": "3001"})
+        environment.update({"HOST": "127.0.0.1", "HOSTNAME": "127.0.0.1", "PORT": str(UI_PORT)})
     else:
         cli = PROJECT_ROOT / "control_console" / "node_modules" / "vinext" / "dist" / "cli.js"
-        command = (str(node), str(cli), "start", "--host", "127.0.0.1", "--port", "3001")
+        command = (str(node), str(cli), "start", "--host", "127.0.0.1", "--port", str(UI_PORT))
         cwd = PROJECT_ROOT / "control_console"
-        markers = ("vinext", "3001")
+        markers = ("vinext", str(UI_PORT))
     return ProcessSpec(
         role="control-ui",
         command=command,
@@ -591,13 +612,13 @@ def stream_spec() -> ProcessSpec:
     environment.update(
         {
             "MEDIAFLOW_STREAM_HOST": "127.0.0.1",
-            "MEDIAFLOW_STREAM_PORT": "48139",
-            "MEDIAFLOW_STREAM_API": "http://127.0.0.1:48138",
+            "MEDIAFLOW_STREAM_PORT": str(STREAM_PORT),
+            "MEDIAFLOW_STREAM_API": f"http://127.0.0.1:{API_PORT}",
             "MEDIAFLOW_STREAM_SECRET_PATH": str(STREAM_SECRET_PATH),
             "MEDIAFLOW_SCRCPY_SERVER": str(STREAM_SERVER_PATH),
             "RISKFLOW_STREAM_HOST": "127.0.0.1",
-            "RISKFLOW_STREAM_PORT": "48139",
-            "RISKFLOW_STREAM_API": "http://127.0.0.1:48138",
+            "RISKFLOW_STREAM_PORT": str(STREAM_PORT),
+            "RISKFLOW_STREAM_API": f"http://127.0.0.1:{API_PORT}",
             "RISKFLOW_STREAM_SECRET_PATH": str(STREAM_SECRET_PATH),
             "RISKFLOW_SCRCPY_SERVER": str(STREAM_SERVER_PATH),
         }
@@ -608,7 +629,7 @@ def stream_spec() -> ProcessSpec:
         cwd=str(STREAM_HOST_ROOT),
         log_path=str(RUNTIME_ROOT / "device-stream-host.log"),
         expected_executable=str(Path(node).resolve()),
-        required_markers=("server.mjs", "48139"),
+        required_markers=("server.mjs",),
         env=environment,
     )
 
@@ -642,6 +663,8 @@ def analyzer_spec() -> ProcessSpec:
 
 def optional_analyzer_spec() -> ProcessSpec | None:
     """The advisory analyzer is optional until a model key is available."""
+    if ACCEPTANCE:
+        return None
     try:
         return analyzer_spec()
     except RuntimeError as exc:
@@ -658,6 +681,8 @@ def worker_role(device_id: str) -> str:
 
 
 def worker_spec(device_id: str) -> ProcessSpec:
+    if ACCEPTANCE:
+        raise RuntimeError("验收实例不能启动设备Worker")
     from model_providers import selection, resolve_runtime_model, QWEN
     worker_env = tool_environment()
     worker_env.update(
@@ -722,6 +747,28 @@ def background_task_check() -> tuple[bool, str]:
     return task.returncode == 0, "registered" if task.returncode == 0 else "not_registered"
 
 
+def stop_registered_runtime(control: RuntimeControl) -> dict[str, Any]:
+    roles = list(control.roles())
+    ordered = [role for role in roles if role.startswith('worker-')]
+    ordered.extend(role for role in roles if role not in ordered and role not in {'incident-analyzer', 'control-ui', 'device-stream-host', 'control-api'})
+    ordered.extend(['incident-analyzer', 'control-ui', 'device-stream-host', 'control-api'])
+    stopped = []
+    for role in dict.fromkeys(ordered):
+        try:
+            outcome = control.stop(role)
+            if hasattr(control, 'status'):
+                verified = control.status(role)
+                if verified.get('running') or verified.get('identity') not in {'missing', 'exited'}:
+                    outcome = {**verified, 'identity': 'stop_failed', 'error': '停止后进程仍未确认退出'}
+            stopped.append(outcome)
+        except Exception as exc:
+            record = control._read_record(role) if hasattr(control, '_read_record') else None
+            stopped.append({'role': role, 'running': True, 'pid': record.pid if record else None,
+                            'identity': 'stop_failed', 'error': f'{type(exc).__name__}: {exc}'})
+    failed = any(item.get('running') or item.get('identity') == 'stop_failed' for item in stopped)
+    return {'ok': not failed, 'state': 'stop_failed' if failed else 'stopped', 'processes': stopped}
+
+
 def doctor() -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
 
@@ -763,7 +810,9 @@ def doctor() -> dict[str, Any]:
     )
     add("adb", bool(adb), str(adb or "missing"))
     from model_providers import QWEN, selection, status as model_status
-    if selection()["provider"] == QWEN:
+    if ACCEPTANCE:
+        add('model_access_disabled', True, 'acceptance_mode')
+    elif selection()["provider"] == QWEN:
         configured = bool(model_status().get("model_ready"))
         add("model_key", configured, "qwen_token_plan: configured" if configured else "qwen_token_plan: requires_configuration")
     else:
@@ -789,6 +838,7 @@ def main() -> int:
         "action",
         choices=("doctor", "status", "start", "stop", "restart", "refresh-ui"),
     )
+    parser.add_argument("--instance-profile")
     args = parser.parse_args()
     if args.action == "doctor":
         result = doctor()
@@ -813,7 +863,23 @@ def main() -> int:
         print(json.dumps({"ok": True, "processes": [result]}, ensure_ascii=False, indent=2))
         return 0
 
-    optional_analyzer = optional_analyzer_spec()
+    from task_store import TaskStore
+    from worker import DEFAULT_DB
+    store = TaskStore(DEFAULT_DB)
+    if args.action in {'stop', 'restart'}:
+        blockers = store.begin_runtime_shutdown()
+        if blockers:
+            print(json.dumps({'ok': False, 'state': 'stop_refused', 'blockers': blockers}, ensure_ascii=False, indent=2))
+            return 1
+        result = stop_registered_runtime(control)
+        if not result['ok'] or args.action == 'stop':
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result['ok'] else 1
+        stopped = result['processes']
+    if args.action in {'start', 'restart'}:
+        store.release_runtime_shutdown()
+
+    optional_analyzer = None if store.runtime_updating() else optional_analyzer_spec()
     specs = tuple(
         spec
         for spec in (api_spec(), optional_analyzer, ui_spec(), stream_spec())
@@ -821,24 +887,7 @@ def main() -> int:
     )
     if args.action == "start":
         result = [control.start(spec) for spec in specs]
-    elif args.action == "stop":
-        from task_store import TaskStore
-        from worker import DEFAULT_DB
-
-        if TaskStore(DEFAULT_DB).running_count():
-            raise RuntimeError("仍有任务正在执行，请先安全停止任务")
-        roles = [role for role in control.roles() if role.startswith("worker-")]
-        roles.extend([spec.role for spec in reversed(specs)])
-        result = [control.stop(role) for role in dict.fromkeys(roles)]
     else:
-        from task_store import TaskStore
-        from worker import DEFAULT_DB
-
-        if TaskStore(DEFAULT_DB).running_count():
-            raise RuntimeError("仍有任务正在执行，请先安全停止任务")
-        roles = [role for role in control.roles() if role.startswith("worker-")]
-        roles.extend([spec.role for spec in reversed(specs)])
-        stopped = [control.stop(role) for role in dict.fromkeys(roles)]
         result = [*stopped, *(control.start(spec) for spec in specs)]
     print(json.dumps({"ok": True, "processes": result}, ensure_ascii=False, indent=2))
     return 0

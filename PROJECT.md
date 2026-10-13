@@ -41,7 +41,8 @@ STATUS 只维护当前状态，不再混排数十代操作方案。历史材料�
 
 ## 代码与数据
 
-控制台在 control_console，业务与测试在 fixed_runner，启动器在 launcher，发行工具在 packaging，现行规格在 openspec/specs。
+控制台在 control_console，业务与测试在 fixed_runner，Electron桌面端在 desktop，发行工具在 packaging，现行规格在 openspec/specs。旧launcher/C#安装器保留为历史版本构建与回退资料，不是Electron发行入口。
+桌面端只承载现有平台，不重新内置聊天Agent；Python后台通过当前用户计划任务独立运行。桌面更新和隔离配置见[桌面运行与更新](docs/electron-desktop.md)。
 业务数据库、模型凭据、设备档案、截图、日志、工具运行时留在 Git 外。源码清理不清理这些数据。
 通用 Skill 不写本机绝对路径或设备序列号；本机 MBH 事实按开发手册定位。
 

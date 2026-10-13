@@ -38,6 +38,8 @@ from execution_tasks import (
 from task_store import TaskStore
 from task_resilience import TaskWaiting
 from model_recovery import model_configuration_key, service_model_wait
+from runtime_layout import ACCEPTANCE
+from runtime_updates import RuntimeUpdateConflict
 from worker_runtime import (
     connect_with_retry,
     device_preflight,
@@ -65,6 +67,12 @@ def run_worker(
     reconnect_delay_seconds: float,
     offline_wait_seconds: float,
 ) -> int:
+    if ACCEPTANCE:
+        print_json({"event": "worker_disabled_in_acceptance", "device_id": device_id})
+        return 0
+    if store.runtime_updating():
+        print_json({"event": "worker_deferred_for_update", "device_id": device_id})
+        return 0
     hostname = "".join(
         character if character.isascii() and character.isalnum() else "-"
         for character in socket.gethostname()
@@ -84,6 +92,9 @@ def run_worker(
         device = None
         needs_reconnect = False
         while max_tasks == 0 or completed < max_tasks:
+            if store.runtime_updating():
+                time.sleep(poll_seconds)
+                continue
             if store.is_stop_requested(device_id):
                 print_json(
                     {
@@ -126,10 +137,14 @@ def run_worker(
                 if needs_reconnect:
                     print_json({"event": "device_reconnect_before_next_task"})
                 try:
-                    device = connect_with_retry(
-                        device_id, connect_attempts, reconnect_delay_seconds
-                    )
+                    with store.runtime_activity("device_probe", "Worker正在连接或检查设备", device_id=device_id):
+                        device = connect_with_retry(
+                            device_id, connect_attempts, reconnect_delay_seconds
+                        )
                     needs_reconnect = False
+                except RuntimeUpdateConflict:
+                    time.sleep(poll_seconds)
+                    continue
                 except RuntimeError as exc:
                     print_json(
                         {

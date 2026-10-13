@@ -35,6 +35,7 @@ class AgentQueueMixin:
         db.execute("UPDATE tasks SET status='cancelled',finished_at=?,error='agent_batch_expired_or_stopped; not replayed' WHERE status IN ('pending','waiting_model','waiting_user','waiting_device') AND id IN (SELECT a.task_id FROM agent_batch_tasks a JOIN agent_task_batches b ON b.id=a.batch_id WHERE b.state='cancelled')", (now_iso(),))
 
     def _check_agent_admission(self, db, devices, *, resume_stopped_devices=False, batch_id=None):
+        self._assert_runtime_available(db)
         self._expire_device_view_sessions(db)
         stopped = db.execute("SELECT config_json FROM automation_profiles WHERE name='automation-stop'").fetchone()
         if stopped and json.loads(stopped[0]).get('stopped'):

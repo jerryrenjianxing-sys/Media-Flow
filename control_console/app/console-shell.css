@@ -1,4 +1,17 @@
 /* Shared platform shell and settings; no embedded chat styles. */
+.desktop-update-banner {position:relative;z-index:110;display:flex;align-items:center;flex-wrap:wrap;gap:16px;padding:14px 24px;border-bottom:1px solid var(--hairline);background:var(--panel,var(--canvas));color:var(--text);}
+.desktop-update-status {flex:1;min-width:200px;overflow-wrap:anywhere;}
+.desktop-update-status strong {font-size:15px;}
+.desktop-update-status p,.desktop-update-status span {font-size:14px;margin:5px 0;}
+.desktop-update-status progress {display:block;width:min(100%,400px);height:8px;margin:8px 0;accent-color:var(--accent,#138776);}
+.desktop-update-actions {display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+.desktop-update-actions button {border-radius:8px;padding:8px 14px;border:1px solid var(--hairline);background:var(--accent,#138776);color:white;cursor:pointer;font-size:14px;}
+.desktop-update-actions .desktop-update-secondary {background:transparent;color:inherit;}
+.desktop-update-actions button:disabled {opacity:.55;cursor:default;}
+.desktop-update-actions details {max-width:min(600px,70vw);font-size:14px;}
+.desktop-release-notes {white-space:pre-wrap;max-height:220px;overflow:auto;overflow-wrap:anywhere;}
+.desktop-update-settings .desktop-update-actions {margin-top:14px;}
+@media(max-width:700px){.desktop-update-banner{padding:12px 16px;}.desktop-update-status{min-width:0;width:100%;}.desktop-update-actions details{max-width:100%;}}
 .mf-shell { min-height:100dvh; background:var(--canvas); }
 .mf-topbar { height:64px; padding:0 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--hairline); background:var(--topbar); position:sticky; top:0; z-index:100; }
 .mf-brand { display:flex; align-items:center; gap:10px; text-decoration:none; min-width:0; white-space:nowrap; }

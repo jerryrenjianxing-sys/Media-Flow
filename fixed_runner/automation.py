@@ -292,6 +292,7 @@ class PlatformContext:
 
 def handle_automation_http(handler, method, path, body=None):
     """Same loopback/JSON boundary as the existing control surface."""
+    from runtime_layout import UI_PORT
     origin = handler.headers.get('Origin')
     host = handler.headers.get('Host', '')
     try:
@@ -300,7 +301,8 @@ def handle_automation_http(handler, method, path, body=None):
         hostname = None
     if (hostname not in {'127.0.0.1', 'localhost', '::1'} or
             handler.client_address[0] not in {'127.0.0.1', '::1'} or
-            origin not in {None, 'http://' + host, 'http://127.0.0.1:3000', 'http://localhost:3000'}):
+            origin not in {None, 'http://' + host, 'http://127.0.0.1:3000', 'http://localhost:3000',
+                           f'http://127.0.0.1:{UI_PORT}', f'http://localhost:{UI_PORT}'}):
         handler._json(failure('local_only', '仅接受本机MediaFlow页面请求'), 403)
         return
     if method == 'POST' and not handler.headers.get('Content-Type', '').startswith('application/json'):
@@ -320,7 +322,7 @@ def handle_automation_http(handler, method, path, body=None):
             'onboarding': stored_onboarding(getattr(getattr(handler, 'store', None), 'path', None)),
             'client_runtime': {
             'api_url': 'http://' + host,
-            'management_url': 'http://127.0.0.1:3001',
+            'management_url': f'http://127.0.0.1:{UI_PORT}',
             'mode': 'installed' if IS_DISTRIBUTION else 'development',
             'python': str(python.resolve()) if available else None,
             'available': available,

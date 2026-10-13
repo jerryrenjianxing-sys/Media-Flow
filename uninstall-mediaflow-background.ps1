@@ -1,14 +1,22 @@
-param([switch]$KeepShortcut)
+param(
+    [switch]$KeepShortcut,
+    [string]$AppRoot = $PSScriptRoot,
+    [string]$LauncherPath = '',
+    [string]$InstanceProfilePath = '',
+    [string]$UpdateOperationId = ''
+)
 $ErrorActionPreference = 'Stop'
-$projectRoot = $PSScriptRoot
-$taskName = 'MediaFlow Background'
-$python = if (Test-Path (Join-Path $projectRoot 'runtime\python\python.exe')) { Join-Path $projectRoot 'runtime\python\python.exe' } else { Join-Path $projectRoot '.venv\Scripts\python.exe' }
-$hostScript = Join-Path $projectRoot 'fixed_runner\background_host.py'
-if (Test-Path -LiteralPath $python) { & $python $hostScript request-stop | Out-Null }
-$registered = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-if ($registered) { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false }
+. (Join-Path $AppRoot 'installer\electron\instance-profile.ps1')
+$instance = Get-MediaFlowInstance -AppRoot $AppRoot -LauncherPath $LauncherPath -InstanceProfilePath $InstanceProfilePath
+$registered = Get-ScheduledTask -TaskName $instance.TaskName -ErrorAction SilentlyContinue
+Assert-MediaFlowTaskOwnership $registered $instance
+& (Join-Path $AppRoot 'manage-mediaflow.ps1') -Action Stop -NoBrowser -AppRoot $AppRoot -LauncherPath $LauncherPath -InstanceProfilePath $instance.ProfilePath -UpdateOperationId $UpdateOperationId
+if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'MediaFlow background stop failed; task registration was preserved.' }
+if ($registered) { Unregister-ScheduledTask -TaskName $instance.TaskName -Confirm:$false }
 if (-not $KeepShortcut) {
-    $shortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MediaFlow.lnk'
-    if (Test-Path -LiteralPath $shortcut) { Remove-Item -LiteralPath $shortcut -Force }
+    foreach ($directory in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {
+        $shortcut = Join-Path $directory ($instance.ShortcutName + '.lnk')
+        if (Test-Path -LiteralPath $shortcut) { Remove-Item -LiteralPath $shortcut -Force }
+    }
 }
-Write-Host 'MediaFlow background service removed. User data was preserved.'
+[pscustomobject]@{ ok=$true; instance_id=$instance.Id; task_name=$instance.TaskName; removed=$true; data_preserved=$true } | ConvertTo-Json

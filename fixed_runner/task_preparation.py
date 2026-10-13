@@ -15,7 +15,8 @@ def engagement_rule():
 
 
 def maintenance_may_run(store, device_id):
-    return (not store.is_stop_requested(device_id)
+    return (not store.runtime_updating()
+            and not store.is_stop_requested(device_id)
             and not (store.get_profile("automation-stop") or {}).get("stopped")
             and not store.has_active_control_session(device_id)
             and store.has_initialization_ready(device_id))

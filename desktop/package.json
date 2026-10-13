@@ -1,0 +1,19 @@
+{
+  "name": "mediaflow-desktop",
+  "version": "0.4.1-dev.45",
+  "private": true,
+  "description": "MediaFlow Windows desktop and user initiated updates",
+  "author": "MediaFlow contributors",
+  "license": "MIT",
+  "main": "main.cjs",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "lint": "node ../control_console/node_modules/eslint/bin/eslint.js --config eslint.config.cjs main.cjs preload.cjs splash.cjs lib tests eslint.config.cjs",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check lib/update-controller.cjs",
+    "dist": "electron-builder --config electron-builder.cjs --win nsis --x64 --publish never"
+  },
+  "dependencies": { "electron-updater": "6.8.10", "semver": "7.8.5" },
+  "devDependencies": { "electron": "44.7.0", "electron-builder": "26.17.0" }
+}

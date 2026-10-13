@@ -3,6 +3,66 @@
   "scope": "Git可见维护文档、配置、平台Skill及页面帮助；不读取运行数据",
   "files": [
     {
+      "path": "openspec/specs/electron-desktop/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "Electron桌面生命周期及用户主动更新的现行契约；验收事实另存"
+    },
+    {
+      "path": "docs/electron-desktop.md",
+      "role": "current",
+      "action": "update",
+      "reason": "Electron运行、用户主动更新及隔离边界；实际验收与实现分开"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.45.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "首个Electron候选发行范围；不把自动测试冒充真实升级或迁移"
+    },
+    {
+          "path": "openspec/changes/add-electron-desktop-github-updates/.openspec.yaml",
+          "role": "change",
+          "action": "retain",
+          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
+    },
+    {
+          "path": "openspec/changes/add-electron-desktop-github-updates/proposal.md",
+          "role": "change",
+          "action": "retain",
+          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
+    },
+    {
+          "path": "openspec/changes/add-electron-desktop-github-updates/design.md",
+          "role": "change",
+          "action": "retain",
+          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
+    },
+    {
+          "path": "openspec/changes/add-electron-desktop-github-updates/tasks.md",
+          "role": "change",
+          "action": "retain",
+          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
+    },
+    {
+          "path": "openspec/changes/add-electron-desktop-github-updates/specs/electron-desktop/spec.md",
+          "role": "change",
+          "action": "retain",
+          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
+    },
+    {
+          "path": "openspec/changes/add-electron-desktop-github-updates/specs/windows-distribution/spec.md",
+          "role": "change",
+          "action": "retain",
+          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
+    },
+    {
+          "path": "openspec/changes/add-electron-desktop-github-updates/specs/independent-runtime-host/spec.md",
+          "role": "change",
+          "action": "retain",
+          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
+    },
+    {
       "path": "packaging/release-notes/0.4.1-dev.44.md",
       "role": "historical",
       "action": "retain",

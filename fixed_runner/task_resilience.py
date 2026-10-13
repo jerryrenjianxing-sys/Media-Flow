@@ -250,6 +250,8 @@ class ResilienceStoreMixin:
         now = time.time() if now is None else now
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
+            if self._runtime_claims_blocked(db):
+                return False
             self.expire_agent_batches(db)
             self._expire_device_view_sessions(db)
             row = db.execute('SELECT t.*,w.model_key,w.updated_at AS waiting_since FROM tasks t '
@@ -298,6 +300,8 @@ class ResilienceStoreMixin:
         token = uuid.uuid4().hex
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
+            if self._runtime_claims_blocked(db):
+                return None
             changed = db.execute('UPDATE model_recovery_probes SET token=?,lease_until=? WHERE model_key=? '
                                  'AND next_check<=? AND lease_until<=? AND success_at IS NULL',
                                  (token, now + 90, model_key, now, now)).rowcount
