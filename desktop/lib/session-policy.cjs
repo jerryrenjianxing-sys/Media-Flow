@@ -19,4 +19,16 @@ function trustedSender(event, window, uiUrl, splashUrl) {
   try { return new URL(event.senderFrame.url).origin === new URL(uiUrl).origin; } catch { return false; }
 }
 
-module.exports = { rewriteInstanceUrl, trustedSender };
+function clipboardWriteAllowed(webContents, permission, details, window, uiUrl, requestingOrigin) {
+  if (permission !== 'clipboard-sanitized-write' || !window || window.isDestroyed?.() || !webContents || webContents !== window.webContents ||
+    webContents.isDestroyed?.() || details?.isMainFrame !== true || typeof details.requestingUrl !== 'string') return false;
+  try {
+    const expected = new URL(uiUrl);
+    const current = new URL(webContents.mainFrame.url);
+    const requesting = new URL(details.requestingUrl);
+    if (!['http:', 'https:'].includes(expected.protocol) || current.origin !== expected.origin || requesting.origin !== expected.origin || requesting.href !== current.href) return false;
+    return requestingOrigin === undefined || new URL(requestingOrigin).origin === expected.origin;
+  } catch { return false; }
+}
+
+module.exports = { rewriteInstanceUrl, trustedSender, clipboardWriteAllowed };

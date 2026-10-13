@@ -9,7 +9,7 @@ const { createDiagnostics, Journal } = require('./lib/diagnostics.cjs');
 const { RuntimeController } = require('./lib/runtime.cjs');
 const { UpdateController } = require('./lib/update-controller.cjs');
 const { createProfileUpdater } = require('./lib/profile-updater.cjs');
-const { rewriteInstanceUrl, trustedSender } = require('./lib/session-policy.cjs');
+const { rewriteInstanceUrl, trustedSender, clipboardWriteAllowed } = require('./lib/session-policy.cjs');
 const { clampBounds, externalBrowserUrl, canOpenInstanceBrowser } = require('./lib/window-state.cjs');
 
 app.setName('MediaFlow');
@@ -124,8 +124,8 @@ else {
 
   app.whenReady().then(async () => {
     const isolatedSession = session.fromPartition(`persist:mediaflow-${profile?.id || 'invalid'}`);
-    isolatedSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
-    isolatedSession.setPermissionCheckHandler(() => false);
+    isolatedSession.setPermissionRequestHandler((webContents, permission, callback, details) => callback(clipboardWriteAllowed(webContents, permission, details, window, urls.uiUrl)));
+    isolatedSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => clipboardWriteAllowed(webContents, permission, details, window, urls.uiUrl, requestingOrigin));
     if (profile?.acceptance) isolatedSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
       const redirectURL = rewriteInstanceUrl(details.url, profile);
       callback(redirectURL ? { redirectURL } : {});
