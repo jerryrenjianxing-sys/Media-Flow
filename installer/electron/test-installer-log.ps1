@@ -14,6 +14,31 @@ function ConvertTo-NsisLiteral {
     param([string]$Value)
     return $Value.Replace('$','$$').Replace('"','$\"')
 }
+function Invoke-NsisStdinCompiler {
+    param([string]$Text,[string]$LogPath,[string]$WorkingDirectory)
+    $startInfo=New-Object Diagnostics.ProcessStartInfo
+    $startInfo.FileName=$compiler
+    $startInfo.Arguments='-V2 -INPUTCHARSET UTF8 -'
+    $startInfo.WorkingDirectory=$WorkingDirectory
+    $startInfo.UseShellExecute=$false;$startInfo.CreateNoWindow=$true
+    $startInfo.RedirectStandardInput=$true;$startInfo.RedirectStandardOutput=$true;$startInfo.RedirectStandardError=$true
+    $compileProcess=New-Object Diagnostics.Process
+    $compileProcess.StartInfo=$startInfo
+    try {
+        $null=$compileProcess.Start()
+        $stdout=$compileProcess.StandardOutput.ReadToEndAsync();$stderr=$compileProcess.StandardError.ReadToEndAsync()
+        # Match electron-builder's UTF-8 stdin bytes, not the terminal code page
+        # or a file with a leading BOM. A preamble would be inside the script.
+        $inputBytes=$strictUtf8.GetBytes($Text)
+        $inputStream=$compileProcess.StandardInput.BaseStream
+        $inputStream.Write($inputBytes,0,$inputBytes.Length)
+        $inputStream.Flush();$inputStream.Close()
+        if (-not $compileProcess.WaitForExit(30000)) { $compileProcess.Kill();throw 'The isolated stdin compiler exceeded 30 seconds.' }
+        $output=$stdout.GetAwaiter().GetResult()+$stderr.GetAwaiter().GetResult()
+        [IO.File]::WriteAllText($LogPath,$output,$strictUtf8)
+        return [pscustomobject]@{exit_code=$compileProcess.ExitCode;output=$output}
+    } finally { $compileProcess.Dispose() }
+}
 
 # No compiler discovery, dependency download, installed application access,
 # scheduled task registration, service start, or business data access.
@@ -21,8 +46,10 @@ $compiler=[IO.Path]::GetFullPath($CompilerPath)
 Assert-LogFixture (Test-Path -LiteralPath $compiler -PathType Leaf) 'Explicit NSIS compiler does not exist.'
 $sourcePath=Join-Path $PSScriptRoot 'installer.nsi'
 $bytes=[IO.File]::ReadAllBytes($sourcePath)
-Assert-LogFixture ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) 'The actual installer source must have a UTF-8 BOM for this NSIS compiler.'
-$source=[IO.File]::ReadAllText($sourcePath,[Text.Encoding]::UTF8)
+$strictUtf8=New-Object Text.UTF8Encoding($false,$true)
+$source=$strictUtf8.GetString($bytes)
+Assert-LogFixture ($source.Length -gt 0) 'The actual installer must be nonempty strict UTF-8.'
+Assert-LogFixture ($source.IndexOf([char]0xFEFF) -lt 0) 'A leading or embedded BOM breaks the installer when electron-builder prepends its header.'
 $macros=[regex]::Matches($source,'(?ms)^!macro RequireHelperSuccess DESCRIPTION\r?\n.*?^!macroend')
 Assert-LogFixture ($macros.Count -eq 1) 'Expected exactly one actual RequireHelperSuccess macro.'
 $calls=@([regex]::Matches($source,'(?m)^\s*!insertmacro RequireHelperSuccess "([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
@@ -73,11 +100,12 @@ foreach($scenario in @('success','failure')) {
     'SetErrorLevel 0',
     'SectionEnd'
     )
-    [IO.File]::WriteAllText($fixtureSource,($lines -join "`r`n"),(New-Object Text.UTF8Encoding($true)))
-    $compileOutput=& $compiler /V2 $fixtureSource 2>&1
-    $compileExit=$LASTEXITCODE
-    [IO.File]::WriteAllText((Join-Path $scratch ($scenario+'-compiler.log')),($compileOutput -join "`r`n"),[Text.Encoding]::UTF8)
-    Assert-LogFixture ($compileExit -eq 0 -and (Test-Path -LiteralPath $fixtureExe -PathType Leaf)) ('The log-only NSIS fixture did not compile: '+($compileOutput -join ' '))
+    $builderHeader='; Simulated electron-builder header before the custom script.'+"`r`n"+'!define MEDIAFLOW_STDIN_FIXTURE "1"'+"`r`n"
+    $stdinText=$builderHeader+($lines -join "`r`n")+"`r`n"
+    Assert-LogFixture ($stdinText.IndexOf([char]0xFEFF) -lt 0) 'The builder-style stdin fixture contains an embedded BOM.'
+    [IO.File]::WriteAllText($fixtureSource,$stdinText,$strictUtf8)
+    $compiled=Invoke-NsisStdinCompiler $stdinText (Join-Path $scratch ($scenario+'-compiler.log')) $scratch
+    Assert-LogFixture ($compiled.exit_code -eq 0 -and (Test-Path -LiteralPath $fixtureExe -PathType Leaf)) ('The builder-style stdin fixture did not compile: '+$compiled.output)
     $process=Start-Process -FilePath $fixtureExe -ArgumentList '/S' -WorkingDirectory $scratch -WindowStyle Hidden -PassThru
     try {
         if (-not $process.WaitForExit(30000)) { $process.Kill(); throw 'The isolated log fixture exceeded 30 seconds.' }
@@ -94,4 +122,4 @@ foreach($scenario in @('success','failure')) {
     Assert-LogFixture ((Test-Path -LiteralPath $sentinel) -eq ($secondCode -eq 0)) 'A failure did not stop the silent fixture, or success stopped execution.'
     $logs+=[pscustomobject]@{scenario=$scenario;path=$fixtureLog;bytes=$logBytes.Length;exit_code=$secondCode}
 }
-[pscustomobject]@{ok=$true;assertions=$script:Passed;compiler=$compiler;compiler_sha256=(Get-FileHash -LiteralPath $compiler -Algorithm SHA256).Hash.ToLowerInvariant();scratch=$scratch;logs=$logs;pure_executable_runs=2;real_tasks_registered=0;real_services_started=0;device_actions=0} | ConvertTo-Json -Depth 5
+[pscustomobject]@{ok=$true;assertions=$script:Passed;compiler=$compiler;compiler_sha256=(Get-FileHash -LiteralPath $compiler -Algorithm SHA256).Hash.ToLowerInvariant();compiler_input='header + custom script, UTF-8 stdin, -INPUTCHARSET UTF8';scratch=$scratch;logs=$logs;pure_executable_runs=2;real_tasks_registered=0;real_services_started=0;device_actions=0} | ConvertTo-Json -Depth 5

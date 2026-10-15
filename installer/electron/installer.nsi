@@ -1,4 +1,4 @@
-﻿; One release executable supports production and an explicitly isolated profile.
+; One release executable supports production and an explicitly isolated profile.
 ; No process-name matching or forced process termination is used.
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
