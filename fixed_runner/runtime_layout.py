@@ -13,11 +13,26 @@ SOURCE_ROOT = Path(__file__).resolve().parent
 
 def _instance_profile() -> tuple[dict, str | None]:
     path = os.environ.get("MEDIAFLOW_INSTANCE_PROFILE")
-    if "--instance-profile" in sys.argv:
-        index = sys.argv.index("--instance-profile")
-        if index + 1 >= len(sys.argv):
-            raise ValueError("--instance-profile requires a path")
-        path = sys.argv[index + 1]
+    selected: list[str] = []
+    index = 1
+    while index < len(sys.argv):
+        argument = sys.argv[index]
+        if argument == "--instance-profile":
+            if index + 1 >= len(sys.argv) or not sys.argv[index + 1] or sys.argv[index + 1].startswith("--"):
+                raise ValueError("--instance-profile requires a path")
+            selected.append(sys.argv[index + 1])
+            index += 2
+            continue
+        if argument.startswith("--instance-profile="):
+            value = argument.split("=", 1)[1]
+            if not value:
+                raise ValueError("--instance-profile requires a path")
+            selected.append(value)
+        index += 1
+    if len(selected) > 1:
+        raise ValueError("--instance-profile must be specified exactly once")
+    if selected:
+        path = selected[0]
     if not path:
         return {}, None
     resolved = str(Path(path).expanduser().resolve())

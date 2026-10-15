@@ -13,6 +13,18 @@ import storage_setup
 
 
 class StorageSetupTests(unittest.TestCase):
+    def test_explicit_production_instance_reports_actual_root_not_stale_bootstrap(self):
+        import runtime_layout
+        with tempfile.TemporaryDirectory() as directory:
+            actual = Path(directory) / 'existing-data'
+            local = Path(directory) / 'Local'
+            with patch.dict(os.environ, {'LOCALAPPDATA': str(local)}), patch.multiple(
+                runtime_layout, DATA_ROOT=actual, INSTANCE_ID='production',
+                INSTANCE_PROFILE={'schema': 1, 'data_root': str(actual)},
+            ):
+                storage_setup.write_bootstrap(Path(directory) / 'unused-data')
+                self.assertEqual(str(actual), storage_setup.storage_status()['data_root'])
+
     def test_rejects_disk_root_and_application_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             app = Path(directory) / "app"

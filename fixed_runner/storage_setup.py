@@ -242,7 +242,7 @@ def apply_pending_migration(*, app_root: str | Path | None = None) -> dict[str, 
 
 
 def storage_status() -> dict[str, Any]:
-    from runtime_layout import DATA_ROOT, INSTANCE_ID
+    from runtime_layout import DATA_ROOT, INSTANCE_ID, INSTANCE_PROFILE
     isolated = INSTANCE_ID != 'production'
     config = bootstrap_path()
     payload: dict[str, Any] = {}
@@ -250,7 +250,10 @@ def storage_status() -> dict[str, Any]:
         payload = json.loads(config.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         pass
-    chosen = DATA_ROOT if isolated else Path(str(payload.get("data_root") or default_data_root()))
+    # The running explicit instance is authoritative. A stale bootstrap must
+    # not make an attached historical store look like an empty new database.
+    explicit_root = bool(INSTANCE_PROFILE.get('data_root'))
+    chosen = DATA_ROOT if isolated or explicit_root else Path(str(payload.get("data_root") or default_data_root()))
     pending: dict[str, Any] | None = None
     last_result: dict[str, Any] | None = None
     try:

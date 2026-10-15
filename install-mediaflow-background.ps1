@@ -16,7 +16,7 @@ $registered = Get-ScheduledTask -TaskName $instance.TaskName -ErrorAction Silent
 Assert-MediaFlowTaskOwnership $registered $instance
 # Stable external configuration means Task Scheduler never inherits Electron's environment.
 if (-not $instance.ProfilePath) {
-    $profilePath = if ($instance.DevelopmentSource) { Join-Path $instance.DataRoot 'instance-profile.json' } else { Join-Path (Split-Path $instance.DataRoot -Parent) 'instance-profile.json' }
+    $profilePath = Join-Path $instance.DataRoot 'instance-profile.json'
     New-Item -ItemType Directory -Force -Path (Split-Path $profilePath -Parent) | Out-Null
     $profile = [ordered]@{ schema=1; id=$instance.Id; data_root=$instance.DataRoot; ui_port=$instance.UiPort; api_port=$instance.ApiPort; stream_port=$instance.StreamPort; task_name=$instance.TaskName; app_root=$instance.AppRoot; acceptance=$false; development_source=[bool]$instance.DevelopmentSource }
     [IO.File]::WriteAllText($profilePath, ($profile | ConvertTo-Json), [Text.UTF8Encoding]::new($false))

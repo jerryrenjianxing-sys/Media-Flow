@@ -1,4 +1,4 @@
-; One release executable supports production and an explicitly isolated profile.
+﻿; One release executable supports production and an explicitly isolated profile.
 ; No process-name matching or forced process termination is used.
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
@@ -22,6 +22,7 @@ Var CandidateRoot
 Var ResultCode
 Var ResultText
 Var IsUpdate
+Var InstallationLog
 
 !macro ExtractHelpers
   InitPluginsDir
@@ -47,11 +48,25 @@ Var IsUpdate
   ${EndIf}
   ReadINIStr $INSTDIR "$PLUGINSDIR\instance.ini" "instance" "install_root"
   ReadINIStr $ProfilePath "$PLUGINSDIR\instance.ini" "instance" "profile"
+  StrCpy $InstallationLog "$INSTDIR.installation.log"
 !macroend
 !macro RequireHelperSuccess DESCRIPTION
   Pop $ResultCode
   Pop $ResultText
   DetailPrint "$ResultText"
+  ${IfNot} ${FileExists} "$InstallationLog"
+    FileOpen $R9 "$InstallationLog" w
+    FileWriteUTF16LE /BOM $R9 "MediaFlow installer diagnostic$\r$\n"
+    FileClose $R9
+  ${EndIf}
+  FileOpen $R9 "$InstallationLog" a
+  FileSeek $R9 0 END
+  ${If} $ResultCode == 0
+    FileWriteUTF16LE $R9 "安装阶段完成。 code=0$\r$\n$ResultText$\r$\n"
+  ${Else}
+    FileWriteUTF16LE $R9 "${DESCRIPTION} code=$ResultCode$\r$\n$ResultText$\r$\n"
+  ${EndIf}
+  FileClose $R9
   ${If} $ResultCode != 0
     ${If} ${Silent}
       SetErrorLevel 1

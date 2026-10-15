@@ -146,9 +146,111 @@ function Restore-RegistryBackup {
         $Backup.PSObject.Properties | ForEach-Object { New-ItemProperty -LiteralPath $path -Name $_.Name -Value $_.Value -Force | Out-Null }
     }
 }
+function Get-InstallerTaskActionReceipt {
+    param($Task, [ValidateSet('python_host','legacy_launcher')][string]$Kind, [string]$TaskName)
+    if (-not $Task -or @($Task.Actions).Count -ne 1) { throw 'A task receipt requires exactly one action.' }
+    if ($Task.TaskName -and -not [string]::Equals([string]$Task.TaskName,$TaskName,[StringComparison]::OrdinalIgnoreCase)) { throw 'Task name does not match its installation receipt.' }
+    $action=@($Task.Actions)[0]
+    $arguments=@(Split-MediaFlowWindowsArguments ([string]$action.Arguments))
+    $receipt=[ordered]@{ schema=1; kind=$Kind; task_name=$TaskName; execute=(ConvertTo-MediaFlowAbsolutePath ([string]$action.Execute)); working_directory=(ConvertTo-MediaFlowAbsolutePath ([string]$action.WorkingDirectory)); script=$null; profile_path=$null }
+    if ($Kind -eq 'legacy_launcher') {
+        if ($arguments.Count -ne 1 -or -not [string]::Equals($arguments[0],'--background-run',[StringComparison]::Ordinal)) { throw 'Legacy task does not run the verified background launcher.' }
+    } else {
+        if ($arguments.Count -lt 2 -or -not [string]::Equals($arguments[1],'run',[StringComparison]::Ordinal)) { throw 'Task does not run the background host.' }
+        $receipt.script=ConvertTo-MediaFlowAbsolutePath $arguments[0]
+        if ($arguments.Count -eq 4 -and [string]::Equals($arguments[2],'--instance-profile',[StringComparison]::Ordinal)) {
+            $receipt.profile_path=ConvertTo-MediaFlowAbsolutePath $arguments[3]
+        } elseif ($arguments.Count -eq 3 -and $arguments[2].StartsWith('--instance-profile=',[StringComparison]::Ordinal)) {
+            $receipt.profile_path=ConvertTo-MediaFlowAbsolutePath $arguments[2].Substring('--instance-profile='.Length)
+        } elseif ($arguments.Count -ne 2) { throw 'Task has unsupported or duplicate arguments.' }
+    }
+    return [pscustomobject]$receipt
+}
+function Test-InstallerTaskActionReceipt {
+    param($Task, $Receipt)
+    if (-not $Task -or -not $Receipt -or $Receipt.schema -ne 1) { return $false }
+    try {
+        $actual=Get-InstallerTaskActionReceipt $Task $Receipt.kind $Receipt.task_name
+        foreach($field in @('execute','working_directory','script','profile_path')) {
+            if ([string]::IsNullOrEmpty([string]$actual.$field) -and [string]::IsNullOrEmpty([string]$Receipt.$field)) { continue }
+            if (-not (Test-MediaFlowSamePath ([string]$actual.$field) ([string]$Receipt.$field))) { return $false }
+        }
+        return $true
+    } catch { return $false }
+}
+function Get-VerifiedInstallerTaskReceipt {
+    param($Task, $Instance, $OldProgram)
+    if (-not $Task) { return $null }
+    if ($OldProgram -and $OldProgram.Legacy) {
+        # This path is used only after dev.44 manifest/updater/registration
+        # verification. It does not turn an arbitrary launcher into an owner.
+        if ($Instance.Id -ne 'production' -or $Instance.Acceptance) { throw 'Legacy task migration requires the verified production installation.' }
+        $receipt=Get-InstallerTaskActionReceipt $Task 'legacy_launcher' $Instance.TaskName
+        if (-not (Test-MediaFlowSamePath $receipt.execute (Join-Path $OldProgram.Platform 'MediaFlow.exe')) -or
+            -not (Test-MediaFlowSamePath $receipt.working_directory $OldProgram.Platform)) { throw 'Legacy task belongs to another installation.' }
+        return $receipt
+    }
+    if ($OldProgram -and -not (Test-MediaFlowSamePath $OldProgram.Platform $Instance.AppRoot)) { throw 'The previous program directory does not match the instance.' }
+    Assert-MediaFlowTaskOwnership $Task $Instance
+    return Get-InstallerTaskActionReceipt $Task 'python_host' $Instance.TaskName
+}
+function Get-InstallerCandidateTaskReceipt {
+    param($Instance, [string]$TargetRoot)
+    $platform=Join-Path $TargetRoot 'resources\platform'
+    $profilePath=$Instance.ProfilePath
+    if (-not $profilePath) { $profilePath=Join-Path $Instance.DataRoot 'instance-profile.json' }
+    $task=[pscustomobject]@{Actions=@([pscustomobject]@{
+        Execute=(Join-Path $platform 'runtime\python\pythonw.exe'); WorkingDirectory=$platform
+        Arguments=('"'+(Join-Path $platform 'fixed_runner\background_host.py')+'" run --instance-profile "'+$profilePath+'"')
+    })}
+    return Get-InstallerTaskActionReceipt $task 'python_host' $Instance.TaskName
+}
+function ConvertFrom-InstallerTaskXml {
+    param([string]$Text, [string]$TaskName)
+    if ([string]::IsNullOrWhiteSpace($Text) -or $Text.Length -gt 1048576) { throw 'Invalid saved background task XML.' }
+    $settings=New-Object System.Xml.XmlReaderSettings
+    $settings.DtdProcessing=[System.Xml.DtdProcessing]::Prohibit
+    $settings.XmlResolver=$null
+    $inputText=New-Object IO.StringReader($Text)
+    $reader=[System.Xml.XmlReader]::Create($inputText,$settings)
+    try {
+        $document=New-Object System.Xml.XmlDocument
+        $document.XmlResolver=$null
+        $document.Load($reader)
+    } finally { $reader.Dispose(); $inputText.Dispose() }
+    $actions=@($document.SelectNodes('/*[local-name()="Task"]/*[local-name()="Actions"]/*'))
+    if ($actions.Count -ne 1 -or $actions[0].LocalName -ne 'Exec') { throw 'Saved task XML must contain exactly one executable action.' }
+    $action=$actions[0]
+    return [pscustomobject]@{TaskName=$TaskName;Actions=@([pscustomobject]@{
+        Execute=[string]$action.SelectSingleNode('*[local-name()="Command"]').InnerText
+        Arguments=[string]$action.SelectSingleNode('*[local-name()="Arguments"]').InnerText
+        WorkingDirectory=[string]$action.SelectSingleNode('*[local-name()="WorkingDirectory"]').InnerText
+    })}
+}
+function Assert-InstallerRollbackTaskOwnership {
+    param($State)
+    $registered=Get-ScheduledTask -TaskName $State.task_name -ErrorAction SilentlyContinue
+    if ($registered -and -not (Test-InstallerTaskActionReceipt $registered $State.old_task_action) -and
+        -not (Test-InstallerTaskActionReceipt $registered $State.new_task_action)) {
+        throw 'The current background task is not an action verified by this installation transaction. It was not removed or replaced.'
+    }
+    return $registered
+}
 function Restore-InstallerTransaction {
     param($State)
     if (-not $State.mutation_started) { return }
+    # Inspect task ownership before moving programs or restoring configuration.
+    # Exact persisted receipts also work after the executable/profile was moved.
+    $registered=Assert-InstallerRollbackTaskOwnership $State
+    $savedTaskXml=$null
+    if ($State.task_xml) {
+        if (-not $State.old_task_action -or -not $State.task_xml_sha256 -or
+            -not (Test-Path -LiteralPath $State.task_xml -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $State.task_xml -Algorithm SHA256).Hash -ne $State.task_xml_sha256) { throw 'The saved background task has no valid transaction receipt. Restore was not attempted.' }
+        $savedTaskXml=Get-Content -LiteralPath $State.task_xml -Raw -Encoding UTF8
+        $savedTask=ConvertFrom-InstallerTaskXml $savedTaskXml $State.task_name
+        if (-not (Test-InstallerTaskActionReceipt $savedTask $State.old_task_action)) { throw 'The saved task XML does not match its verified action.' }
+    }
     $target = [IO.Path]::GetFullPath($State.install_root)
     if ($State.committed -and (Test-Path -LiteralPath $target)) {
         $failed = $target + '.failed-' + [guid]::NewGuid().ToString('N')
@@ -156,10 +258,17 @@ function Restore-InstallerTransaction {
     }
     if ($State.program_changed -and $State.program_backup -and (Test-Path -LiteralPath $State.program_backup)) { Copy-InstallerTree $State.program_backup $target }
     if ($State.committed) { Restore-RegistryBackup $State.install_key $State.install_registry; Restore-RegistryBackup $State.uninstall_key $State.uninstall_registry }
-    $registered=Get-ScheduledTask -TaskName $State.task_name -ErrorAction SilentlyContinue
-    if ($registered -and (([string]$registered.Actions.Execute+' '+[string]$registered.Actions.Arguments).IndexOf($target,[StringComparison]::OrdinalIgnoreCase) -ge 0)) { Unregister-ScheduledTask -TaskName $State.task_name -Confirm:$false }
-    if ($State.task_xml) { Register-ScheduledTask -TaskName $State.task_name -Xml (Get-Content -LiteralPath $State.task_xml -Raw -Encoding UTF8) -Force | Out-Null }
     if ($State.profile_backup -and (Test-Path -LiteralPath $State.profile_backup)) { Copy-Item -LiteralPath $State.profile_backup -Destination $State.profile_path -Force }
+    # Re-check immediately before task mutation; never overwrite a task that
+    # appeared or changed while the program/profile was being restored.
+    $registered=Assert-InstallerRollbackTaskOwnership $State
+    if ($registered) { Unregister-ScheduledTask -TaskName $State.task_name -Confirm:$false }
+    if ($savedTaskXml) {
+        if (Assert-InstallerRollbackTaskOwnership $State) { throw 'A background task appeared during rollback. It was not overwritten.' }
+        # No -Force: if another task appears after the final query, registration
+        # must fail rather than overwrite an unverified concurrent replacement.
+        Register-ScheduledTask -TaskName $State.task_name -Xml $savedTaskXml | Out-Null
+    }
     foreach ($shortcut in @($State.shortcuts)) {
         if (Test-Path -LiteralPath $shortcut.backup) { Copy-Item -LiteralPath $shortcut.backup -Destination $shortcut.path -Force }
         elseif ($State.committed -and (Test-Path -LiteralPath $shortcut.path)) { Remove-Item -LiteralPath $shortcut.path -Force }
@@ -197,7 +306,7 @@ try {
         }
         $backup = Join-Path (Split-Path $instance.DataRoot -Parent) ('installer-backups\' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Force -Path $backup | Out-Null
-        $state = [ordered]@{ phase='prepared'; committed=$false; mutation_started=$false; program_changed=$false; install_root=$InstallRoot; candidate_root=$candidate; backup_root=$backup; program_backup=$null; task_name=$instance.TaskName; task_xml=$null; install_key=$instance.InstallRegistryKey; uninstall_key=$instance.UninstallRegistryKey; install_registry=(Get-RegistryBackup $instance.InstallRegistryKey); uninstall_registry=(Get-RegistryBackup $instance.UninstallRegistryKey); shortcuts=@(); profile_path=$instance.ProfilePath; profile_backup=$null; legacy=$false }
+        $state = [ordered]@{ phase='prepared'; committed=$false; mutation_started=$false; program_changed=$false; install_root=$InstallRoot; candidate_root=$candidate; backup_root=$backup; program_backup=$null; task_name=$instance.TaskName; task_xml=$null; task_xml_sha256=$null; old_task_action=$null; new_task_action=(Get-InstallerCandidateTaskReceipt $instance $InstallRoot); install_key=$instance.InstallRegistryKey; uninstall_key=$instance.UninstallRegistryKey; install_registry=(Get-RegistryBackup $instance.InstallRegistryKey); uninstall_registry=(Get-RegistryBackup $instance.UninstallRegistryKey); shortcuts=@(); profile_path=$instance.ProfilePath; profile_backup=$null; legacy=$false }
         if ($instance.ProfilePath -and (Test-Path -LiteralPath $instance.ProfilePath)) { $state.profile_backup=Join-Path $backup 'instance-profile.json'; Copy-Item -LiteralPath $instance.ProfilePath -Destination $state.profile_backup }
         foreach ($folder in @([Environment]::GetFolderPath('Desktop'),[Environment]::GetFolderPath('Programs'))) {
             $path = Join-Path $folder ($instance.ShortcutName+'.lnk')
@@ -216,22 +325,31 @@ try {
         }
         $task = Get-ScheduledTask -TaskName $instance.TaskName -ErrorAction SilentlyContinue
         if ($task) {
-            $ownerRoot = if ($old) { $old.Platform } else { $instance.AppRoot }
-            $taskText = [string]$task.Actions.Execute + ' ' + [string]$task.Actions.Arguments
-            if ($taskText.IndexOf($ownerRoot,[StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'Registered background belongs to another program; refusing replacement.' }
+            $state.old_task_action=Get-VerifiedInstallerTaskReceipt $task $instance $old
+            $exportedTaskXml=Export-ScheduledTask -TaskName $instance.TaskName
+            if (-not (Test-InstallerTaskActionReceipt (ConvertFrom-InstallerTaskXml $exportedTaskXml $instance.TaskName) $state.old_task_action)) { throw 'The exported background task changed during verification.' }
             $state.task_xml = Join-Path $backup 'background-task.xml'
-            [IO.File]::WriteAllText($state.task_xml,(Export-ScheduledTask -TaskName $instance.TaskName),[Text.UTF8Encoding]::new($false))
+            [IO.File]::WriteAllText($state.task_xml,$exportedTaskXml,[Text.UTF8Encoding]::new($false))
+            $state.task_xml_sha256=(Get-FileHash -LiteralPath $state.task_xml -Algorithm SHA256).Hash
         }
         Write-InstallerJson $StatePath $state
         Write-InstallerJson (Join-Path $backup 'transaction.json') $state
         $state.mutation_started = $true
         Write-InstallerJson $StatePath $state
-        if ($task) { Disable-ScheduledTask -TaskName $instance.TaskName | Out-Null }
+        if ($task) {
+            $currentTask=Get-ScheduledTask -TaskName $instance.TaskName -ErrorAction SilentlyContinue
+            if (-not (Test-InstallerTaskActionReceipt $currentTask $state.old_task_action)) { throw 'The background task changed before safe installation; it was not disabled.' }
+            Disable-ScheduledTask -TaskName $instance.TaskName | Out-Null
+        }
         if ($old) {
             Invoke-SafeInstallerStop $instance $old.Platform $candidatePlatform
             if (@(Get-OwnedInstallerProcesses $InstallRoot).Count) { throw 'Existing desktop/program processes are still open. Close this instance and retry.' }
         }
-        if ($task) { Unregister-ScheduledTask -TaskName $instance.TaskName -Confirm:$false }
+        if ($task) {
+            $currentTask=Get-ScheduledTask -TaskName $instance.TaskName -ErrorAction SilentlyContinue
+            if ($currentTask -and -not (Test-InstallerTaskActionReceipt $currentTask $state.old_task_action)) { throw 'The background task changed during safe installation; it was not removed.' }
+            if ($currentTask) { Unregister-ScheduledTask -TaskName $instance.TaskName -Confirm:$false }
+        }
         if ($old -and $old.Legacy) {
             $state.program_changed=$true
             Write-InstallerJson $StatePath $state
@@ -258,7 +376,7 @@ try {
         Move-Item -LiteralPath $state.candidate_root -Destination $InstallRoot
         $state.committed = $true
         Write-InstallerJson $StatePath $state
-        if (-not $instance.ProfilePath) { $instance.ProfilePath = Join-Path (Split-Path $instance.DataRoot -Parent) 'instance-profile.json' }
+        if (-not $instance.ProfilePath) { $instance.ProfilePath = Join-Path $instance.DataRoot 'instance-profile.json' }
         $profile = if ($instance.Profile) { $instance.Profile } else { [pscustomobject]@{schema=1;id=$instance.Id;data_root=$instance.DataRoot;ui_port=$instance.UiPort;api_port=$instance.ApiPort;stream_port=$instance.StreamPort;task_name=$instance.TaskName;acceptance=$false} }
         $profile | Add-Member -NotePropertyName app_root -NotePropertyValue (Join-Path $InstallRoot 'resources\platform') -Force
         $profile | Add-Member -NotePropertyName install_root -NotePropertyValue $InstallRoot -Force

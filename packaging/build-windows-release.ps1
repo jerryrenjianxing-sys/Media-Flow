@@ -283,6 +283,7 @@ $forbiddenNames = @(
 )
 $forbidden = Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object {
     $_.Name -in $forbiddenNames -or
+    $_.FullName -match '[\\/]installer-backups[\\/]' -or
     $_.FullName -match '[\\/]fixed_runner[\\/]runtime[\\/]'
 }
 if ($forbidden) {

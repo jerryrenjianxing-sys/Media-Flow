@@ -2,6 +2,7 @@
 /fixed_runner/runtime/
 /fixed_runner/artifacts/
 /fixed_runner/artifacts-uia2/
+/fixed_runner/installer-backups/
 **/*.db
 **/*.db-*
 **/*.sqlite

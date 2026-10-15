@@ -6,11 +6,11 @@ from pathlib import Path
 
 REQUIRED = ('runtime/python/python.exe', 'runtime/python/pythonw.exe', 'runtime/node/node.exe',
             'runtime/platform-tools/adb.exe', 'control_console/standalone/server.js',
-            'device_stream_host/vendor/scrcpy-server-v3.3.3', 'fixed_runner/background_host.py',
+            'device_stream_host/vendor/scrcpy-server-v3.3.3', 'fixed_runner/background_host.py', 'fixed_runner/background_startup.py',
             'fixed_runner/assets/home_badge_glyphs_v1.json', 'fixed_runner/assets/home_badge_glyphs_v2.json',
             'fixed_runner/assets/agent/skills/mediaflow-platform/SKILL.md',
             'assets/agent/repair-source.zip', 'licenses/MediaFlow-MIT.txt', 'licenses/license-manifest.json',
-            'installer/electron/instance-profile.ps1', 'manage-mediaflow.ps1',
+            'installer/electron/instance-profile.ps1', 'installer/electron/manager-diagnostics.ps1', 'manage-mediaflow.ps1',
             'install-mediaflow-background.ps1', 'uninstall-mediaflow-background.ps1')
 FORBIDDEN = {'tasks.db', 'device_profiles.json', 'platform_profiles.json', 'auth.json',
              'openrouter-api-key.dpapi', 'openrouter-api-key.pending.dpapi', 'model-connection.json'}
@@ -21,6 +21,8 @@ def verify(stage):
     if missing:
         raise ValueError('Incomplete Electron payload: ' + ', '.join(missing))
     for path in stage.rglob('*'):
+        if any(part.lower() == 'installer-backups' for part in path.relative_to(stage).parts):
+            raise ValueError('Local installer recovery data was bundled: ' + path.relative_to(stage).as_posix())
         if path.is_file() and (path.name in FORBIDDEN or path.suffix.lower() in {'.db', '.sqlite', '.sqlite3', '.log', '.pid'}):
             raise ValueError('Local state was bundled: ' + path.relative_to(stage).as_posix())
     for retired in ('MediaFlow.exe','WebView2Loader.dll','Microsoft.Web.WebView2.Core.dll',

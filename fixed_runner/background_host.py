@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import sys
+from background_startup import begin_startup
+
+# This precedes every business/dependency import. pythonw has no stderr when
+# started by Task Scheduler, so ordinary tracebacks would otherwise disappear.
+_STARTUP = begin_startup(__file__)
+
 import argparse
 import ctypes
 import json
@@ -8,7 +15,6 @@ import re
 import shutil
 import signal
 import subprocess
-import sys
 import time
 import urllib.parse
 import urllib.request
@@ -235,8 +241,12 @@ class RuntimeSupervisor:
         onboarding_interval_seconds: float = 15.0,
         device_discovery: Callable[[], set[str]] = online_adb_device_ids,
     ) -> None:
+        if _STARTUP:
+            _STARTUP.phase('database')
         self.control = control or RuntimeControl()
         self.store = store or TaskStore(DEFAULT_DB)
+        if _STARTUP:
+            _STARTUP.phase('supervisor')
         self.clock = clock
         self.heartbeat_path = heartbeat_path
         self.stop_request_path = stop_request_path
@@ -540,19 +550,29 @@ class RuntimeSupervisor:
             if any(not (value.startswith('127.0.0.1:') or value.startswith('localhost:') or value.startswith('emulator-')) for value in self.configured_device_ids()):
                 raise RuntimeError('验收实例不能使用真实设备选择')
         instance = SingleInstance()
+        if _STARTUP:
+            _STARTUP.phase('mutex')
         if not instance.acquire():
             self.log_event("duplicate_background_host_ignored", pid=os.getpid())
+            if _STARTUP:
+                _STARTUP.ready(duplicate=True)
             return 0
 
         def receive_stop(_signum, _frame) -> None:
             self.stop_signal_received = True
 
         if hasattr(signal, "SIGTERM"):
+            if _STARTUP:
+                _STARTUP.phase('signal')
             signal.signal(signal.SIGTERM, receive_stop)
+        if _STARTUP:
+            _STARTUP.phase('heartbeat')
         atomic_json_write(self.heartbeat_path, {'state': 'starting', 'pid': os.getpid(),
                           'instance_id': INSTANCE_ID, 'creation_token': self.creation_token,
                           'started_at': self.started_at, 'checked_at': now_iso(), 'processes': []})
         self.log_event("background_host_started", pid=os.getpid())
+        if _STARTUP:
+            _STARTUP.ready()
         try:
             while True:
                 if self.stop_request_path.is_file():
@@ -689,9 +709,16 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 1 if result.get('ok') is False else 0
     except Exception as exc:
+        if _STARTUP:
+            _STARTUP.fail(exc)
+            failure = {'ok': False, 'code': _STARTUP.payload['error_code'],
+                       'message': _STARTUP.payload['message'], 'phase': _STARTUP.payload['phase'],
+                       'log_path': str(_STARTUP.log_path)}
+        else:
+            failure = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         print(
             json.dumps(
-                {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                failure,
                 ensure_ascii=False,
                 indent=2,
             ),

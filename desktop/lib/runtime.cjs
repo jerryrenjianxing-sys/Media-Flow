@@ -42,13 +42,52 @@ function manageArguments(platformRoot, profile, action, operationId) {
 function runManager({ platformRoot, profile, action, operationId, timeout = 55000, execFileImpl = execFile }) {
   const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   return new Promise((resolve, reject) => {
-    execFileImpl(powershell, manageArguments(platformRoot, profile, action, operationId), { cwd: platformRoot, windowsHide: true, timeout, maxBuffer: 1024 * 1024, encoding: 'utf8' }, (error, stdout, stderr) => {
-      if (error) { reject(new Error(`${action === 'Stop' ? '后台未能安全停止' : '后台管理失败'}：${stderr.trim() || error.message}`)); return; }
-      const output = stdout.replace(/^\uFEFF/, '').trim();
-      if (!output) { resolve({}); return; }
-      try { resolve(JSON.parse(output)); } catch { reject(new Error('后台管理未返回可验证的状态。请打开日志检查。')); }
+    execFileImpl(powershell, manageArguments(platformRoot, profile, action, operationId), { cwd: platformRoot, windowsHide: true, timeout, maxBuffer: 1024 * 1024, encoding: 'utf8' }, (error, stdout, _stderr) => {
+      // Never display PowerShell's localized stderr/stack. The manager emits one
+      // UTF-8 JSON result on stdout, including when its process exits nonzero.
+      let result;
+      try { result = JSON.parse(String(stdout || '').replace(/^\uFEFF/, '').trim()); } catch { /* A crash before the structured boundary has a safe fallback below. */ }
+      if (result?.ok === false || error) {
+        const failure = managementError(result, error, action);
+        reject(failure); return;
+      }
+      if (!result || result.ok !== true) { reject(managementError(null, null, action)); return; }
+      resolve(result);
     });
   });
+}
+
+function managementError(result, processError, action) {
+  const messages = {
+    task_missing: 'MediaFlow 后台尚未登记，请修复后台注册后重试。',
+    task_disabled: 'MediaFlow 后台计划任务已被禁用，请修复后台注册后重试。',
+    task_start_failed: 'Windows 未能启动后台计划任务，请检查后台注册。',
+    wrong_instance: '后台登记或端口属于其他程序或实例，请修复此实例安装。',
+    release_mismatch: '后台版本或提交与当前程序不一致，请修复安装。',
+    release_manifest_missing: '安装版本清单缺失，请修复安装。',
+    runtime_missing: 'MediaFlow 专用运行环境缺失，请修复安装。',
+    management_helper_missing: '后台管理组件缺失，请修复安装。',
+    storage_path_unstable: '后台配置实际位于应用沙盒缓存，Windows 计划任务无法可靠读取。请选择稳定的程序、数据和配置路径后重新登记。',
+    storage_path_unverifiable: '无法核实后台配置的实际磁盘路径。请检查目录权限，选择可读取的稳定路径后重试。',
+    service_early_exit: '后台在启动过程中提前退出，请打开启动日志查看具体原因。',
+    port_occupied: '服务端口已被占用，但未返回本实例身份。请检查端口占用。',
+    startup_timeout: '后台未在限定时间内就绪，请打开启动日志后重试。',
+    stop_unconfirmed: '仍有后台进程存活或身份未核实，不能继续安装。',
+    stop_refused: '后台仍有任务、维护或人工控制占用，不能安全停止。',
+    legacy_host_gate_unavailable: '旧后台不支持安全停机交接，请通过原版本正常停止后重试。',
+    helper_failed: '后台管理子程序未能完成，请打开启动日志。',
+    helper_invalid_response: '后台管理未返回可验证的状态，请打开日志检查。',
+    management_failed: '后台管理未能完成，请打开日志检查。'
+  };
+  const known = Object.hasOwn(messages, result?.code);
+  const code = known ? result.code : processError?.killed ? 'manager_timeout' : 'management_invalid_response';
+  const safeMessage = known && typeof result.message === 'string' && result.message.length <= 240 && !/[\r\n\uFFFD]/u.test(result.message);
+  const fallback = processError?.killed ? '后台管理等待超时，请打开日志检查后重试。' : action === 'Stop' ? '后台未能确认安全停止，请打开日志检查。' : '后台管理未返回可验证的状态，请打开日志检查。';
+  const failure = new Error(safeMessage ? result.message : known ? messages[code] : fallback);
+  failure.code = code;
+  failure.phase = known && /^[a-z_]{1,64}$/u.test(result.phase || '') ? result.phase : 'management';
+  if (known && result.diagnostic && typeof result.diagnostic === 'object' && !Array.isArray(result.diagnostic)) failure.diagnostic = result.diagnostic;
+  return failure;
 }
 
 class RuntimeController {
@@ -86,7 +125,7 @@ class RuntimeController {
   }
   async performStartup() {
     const deadline = this.now() + 60000;
-    this.state.patch('startup', { phase: 'checking', message: '正在检查本地后台…', ready: false });
+    this.state.patch('startup', { phase: 'checking', message: '正在检查本地后台…', errorCode: null, failurePhase: null, diagnostic: null, ready: false });
     try {
       try {
         const identity = await this.probe();
@@ -111,8 +150,8 @@ class RuntimeController {
       }
       throw new Error('启动超过 60 秒。请打开日志检查后重试。');
     } catch (error) {
-      this.diagnostics.write('error', 'startup-failed', error);
-      this.state.patch('startup', { phase: 'error', message: error.message, ready: false });
+      this.diagnostics.write('error', 'startup-failed', { code: error.code, phase: error.phase, message: error.message, diagnostic: error.diagnostic });
+      this.state.patch('startup', { phase: 'error', message: error.message, errorCode: error.code || null, failurePhase: error.phase || null, diagnostic: error.diagnostic || null, ready: false });
       throw error;
     }
   }
@@ -126,4 +165,4 @@ class RuntimeController {
     this.state.patch('startup', { phase: 'stopped', message: '该实例后台已安全停止。', ready: false });
   }
 }
-module.exports = { RuntimeController, requestJson, runManager, manageArguments, delay, releaseRevisionMatches };
+module.exports = { RuntimeController, requestJson, runManager, manageArguments, managementError, delay, releaseRevisionMatches };

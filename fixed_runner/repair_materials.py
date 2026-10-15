@@ -8,7 +8,7 @@ import subprocess
 import zipfile
 
 EXTENSIONS = {'.py', '.ts', '.tsx', '.js', '.cjs', '.mjs', '.mts', '.css', '.json', '.md', '.ps1', '.cs', '.toml', '.txt', '.yaml', '.yml', '.svg', '.html', '.csproj', '.manifest', '.cmd', '.bat', '.xml', '.nsh', '.nsi'}
-EXCLUDED = {'runtime', '.secrets', 'secrets', 'node_modules', 'dist', 'out', 'work', '.git', '__pycache__', 'tools', '_dependencies', '_test_scratch'}
+EXCLUDED = {'runtime', 'installer-backups', '.secrets', 'secrets', 'node_modules', 'dist', 'out', 'work', '.git', '__pycache__', 'tools', '_dependencies', '_test_scratch'}
 ROOTS = ('fixed_runner', 'control_console', 'desktop', 'device_stream_host/src',
          'device_stream_host/scripts', 'launcher', 'installer', 'scripts', 'openspec', 'packaging', 'docs')
 LOCAL_FILES = {'device_profiles.json', 'platform_profiles.json', 'installation.json', 'auth.json', 'model-connection.json'}
