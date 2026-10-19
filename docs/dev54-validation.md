@@ -40,3 +40,25 @@
 - 日常实例最终stopped，两个验收登录任务Disabled；两个验收快捷方式可恢复移入`shortcut-backup`，未删除用户数据或改变日常快捷方式。未操作手机、虚拟机或业务模型。
 
 最终证据：`work/dev49-validation/dev54-final-*-install-result.json`、隔离生命周期`dev54-isolated-lifecycle.json`、原始日常失败`dev54-production-lifecycle.json`；窗口`work/dev54-validation/acceptance-dev51-ui-1792412544574/report.json`及`production-ui-1792412893899/report.json`，历史`history-preinstall.json`与`history-after.json`，归属停止`production-owned-stop-verification.json`。真实Trae与原生托盘仍待验证，活动变更不归档为全部通过。
+
+## 2026-10-19 用户同意后的真实Trae与三服务复验
+
+以下为前节之后的补充，不覆盖最初端口冲突、草稿及未验收事实；运行程序和资产仍为同一冻结dev.54，未修改或重建同号包。
+
+用户明确同意发送短MD附件，并同意通过Media Deep Researcher自己的正常退出入口释放48139。该软件关闭窗口仅收至托盘，随后调用其现有正常退出入口，确认其后台和监听退出；未强杀、修改数据或操作设备。之后MediaFlow日常实例三个包内服务完成启动→停止→再次启动，两个不同宿主PID和启动编号、实例/版本/路径/三端口核对通过。证据：`work/dev49-validation/dev54-production-freeport-lifecycle.json`及`work/dev54-validation/production-freeport-lifecycle.log`。最初因其他产品占端口的失败仍保留。
+
+真实Trae使用3.4.4、原有Qwen3.8-Flash选择，全新无项目历史会话；通过实际桌面“复制MD文件”按钮及Ctrl+V收到真实附件，无额外启动提示。未自动更换模型或修改Trae配置。
+
+| 场景 | 实际结果与计时 | 工具及阅读量 |
+| --- | --- | --- |
+| 仅交付MD | 通过；Trae任务计时34秒，首次完成观察上界57.999秒，达到健康接入60秒目标 | MD 1,429字节＋连接资料1,357字节＋主Skill 6,210字节，共8,996 UTF-8字节；3次读取、1条只读check |
+| “你能帮我做什么？” | 通过；首次完成观察上界47.726秒，不把轮询上界当精确模型耗时 | 0个可见工具调用；简短目标介绍，不重复查询设备 |
+| 坚果厂家主题、排除零售，只写不保存运行 | 通过；Trae任务计时20秒，首次完成观察上界59.284秒 | 1次读取内容指南9,279 UTF-8字节，无命令或平台请求；搜索组合与三段标准正确 |
+
+单项工具耗时未在Trae界面展示，记为不可得，不用前述676/793ms客户端耗时替代。阅读量仅为实际文件字节，不宣称模型token数。工具展开状态逐项核对；真实总任务计时与观察上界分开记录，人工操作间隔不归因于连接。最终回复未把设备登记快照冒充当前在线或任务就绪，也未要求纯主题文案先准备设备、登录或平台模型。
+
+本次无17文件重建、全局安装、宿主重启或上下文交接；未创建任务、保存主题、扫描设备、启动手机或请求平台业务模型。客户端运行不需要系统Python。用户原剪贴板已恢复。私人验收证据保存在忽略目录`work/dev54-validation/real-trae-acceptance.json`，不将连接路径、设备数据或其他模型内部思考放入发行资产。
+
+实际关闭MediaFlow窗口已确认隐藏到托盘且后台保持运行。原生托盘“完全退出”的最终用户点击尚无记录，不能由模块测试或管理命令替代；该门槛完成前仍不公开草稿。
+
+本轮收尾已用既有正常管理入口停止后台，`stopped_confirmed=true`、`host_alive=false`，四个登记服务均退出且三个端口不再监听；证据`work/dev54-validation/followup-final-stop.json`。测试桌面清理时自动化句柄断开报错，独立Windows进程检查确认桌面已退出，不把测试句柄异常当成产品缺陷或托盘验收。原剪贴板保持恢复状态。随后再次核对GitHub草稿8资产的实际大小和SHA-256，全部与本机一致，未覆盖或公开资产。
