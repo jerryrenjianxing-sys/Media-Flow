@@ -23,6 +23,20 @@
 
 隔离证据位于忽略目录`work/dev54-validation/`：最终候选窗口报告`acceptance-dev54-ui-1792411750419/report.json`、原生文件检查`clipboard-proof.json`、真实退出`exit-real-*.json`、装配日志`candidate-build.log`、Python日志`python-initial.log`。临时验收脚本错误（Blob读取、截图序列化、状态枚举断言）已更正并重跑，失败报告保留，不当成产品缺陷。
 
-## 仍需分别验收
+## 候选阶段列出的后续门槛
 
-最终冻结EXE隔离升级及本机安装、最终包数据核对、真实Trae附件/首次连接/能力/主题、原生托盘完全退出均单独记录；未完成前不公开dev.54。原生系统DPI、关闭Codex10分钟、旧dev.44迁移和真实设备业务未验收事实继续保留。
+候选阶段要求将最终冻结EXE隔离升级及本机安装、最终包数据核对、真实Trae附件/首次连接/能力/主题、原生托盘完全退出分别记录；实际进展见下节，未完成门槛前不公开dev.54。原生系统DPI、关闭Codex10分钟、旧dev.44迁移和真实设备业务未验收事实继续保留。
+
+## 最终安装与实际边界
+
+最终冻结提交`9202a61124a869cd61618668fcd31f0619ad0f9b`、纯标签`v0.4.1-dev.54`与安装包一致。8资产已上传GitHub草稿并核对大小及SHA-256，仍未公开；旧资产没有覆盖。
+
+- EXE：205,979,143字节，SHA-256 `e24e4f5c789b6848b60ca86fc41e7aef89e345301df62e031ffa7fd3b96de326`。
+- ZIP：208,773,758字节，SHA-256 `313cd390e2c9fdf3930fb03afa91867c097d4105c0eebb579e8d67ea8d24b707`；为安装器及校验材料合集。
+- 同一EXE在当前Windows用户上下文完成隔离dev.53→54及日常安装；隔离实际启动/停止/再启动、24次最终窗口页面检查和普通Chrome的MD下载/桌面复制禁用通过，4条合成历史哈希不变。
+- 日常4页×亮暗及4次应用缩放通过，真实MD复制/下载一致，客户端793ms；退出界面后API存活。最终正常停止后，所有登记MediaFlow进程均退出、API与网页不再监听，缓存MD仍存在。
+- 日常通用生命周期报告曾失败：48139仍监听。精准进程检查确认该PID从19:53起属于Media Deep Researcher，命令不是MediaFlow，且早于此次安装与20:26/20:28两次MediaFlow启动；其身份及端口始终未改动。原脚本“所有端口都必须消失”的假设不能用于其他产品占用的机器。归属复核脚本`work/dev54-validation/verify-owned-stop.ps1`实际通过，原始失败日志保留，画面服务仍标记端口冲突、未通过。未通过修改程序或终止其他应用掩盖问题。
+- 安装前15数据库/凭据/配置与后台定义备份位于忽略目录`work/dev54-validation/backup-production54`；程序回退资料由正常安装器保留。任务完整行哈希、凭据、证据计数、模型调用和内容修订前后完全一致。设备仅4行登记时间变化，持久字段/草稿/预设/内容一致。既有原图只读回传675,037字节，原任务目录缺PNG仍明确保留。
+- 日常实例最终stopped，两个验收登录任务Disabled；两个验收快捷方式可恢复移入`shortcut-backup`，未删除用户数据或改变日常快捷方式。未操作手机、虚拟机或业务模型。
+
+最终证据：`work/dev49-validation/dev54-final-*-install-result.json`、隔离生命周期`dev54-isolated-lifecycle.json`、原始日常失败`dev54-production-lifecycle.json`；窗口`work/dev54-validation/acceptance-dev51-ui-1792412544574/report.json`及`production-ui-1792412893899/report.json`，历史`history-preinstall.json`与`history-after.json`，归属停止`production-owned-stop-verification.json`。真实Trae与原生托盘仍待验证，活动变更不归档为全部通过。
