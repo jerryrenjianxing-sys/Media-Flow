@@ -79,7 +79,8 @@ if ($connectionFile) {
     } catch { Finish-Failure 'invalid_config' }
 }
 
-if ($checking -or $connection -or -not $runtime) {
+$needsRuntime = -not $runtime -or ($connection -and -not (Test-Path -LiteralPath $runtime -PathType Leaf))
+if ($checking -or $needsRuntime) {
     $failureCode = 'connection_failed'
     try {
         $api = if ($connection) { $connection.api_url } elseif ($env:MEDIAFLOW_API_URL) {
@@ -164,6 +165,12 @@ if ($checking -or $connection -or -not $runtime) {
 }
 
 try {
-    & $runtime (Join-Path $PSScriptRoot 'mediaflow.py') @MediaFlowArguments
+    $clientScript = if ($connection) {
+        Join-Path (Split-Path -Parent $connection.client_path) 'mediaflow.py'
+    } else { Join-Path $PSScriptRoot 'mediaflow.py' }
+    if ($connection -and -not (Test-Path -LiteralPath $clientScript -PathType Leaf)) { Finish-Failure 'stale_connection' }
+    # Python performs the business identity check once, before any POST. The
+    # standalone check above remains usable even when no Python is available.
+    & $runtime $clientScript @MediaFlowArguments
     exit $LASTEXITCODE
 } catch { Finish-Failure 'runtime_failed' }

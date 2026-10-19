@@ -254,6 +254,9 @@ $nodeTarget = Join-Path $stage 'runtime\node'
 New-Item -ItemType Directory -Force -Path $nodeTarget | Out-Null
 Copy-Item -LiteralPath $node -Destination (Join-Path $nodeTarget 'node.exe')
 $nodeLicense = Join-Path (Split-Path $node -Parent) 'LICENSE'
+if (-not (Test-Path -LiteralPath $nodeLicense)) {
+    $nodeLicense = Join-Path (Split-Path $node -Parent) 'LICENSE.txt'
+}
 if (-not (Test-Path -LiteralPath $nodeLicense)) { throw 'The tested Node runtime license is missing.' }
 Copy-Item -LiteralPath $nodeLicense -Destination (Join-Path $nodeTarget 'LICENSE.txt')
 

@@ -22,6 +22,17 @@ from task_store import TaskStore
 
 
 class SkillBundleTests(unittest.TestCase):
+    def test_entry_skill_over_8kib_cannot_be_delivered(self):
+        from skill_bundle import SKILL_SOURCE, build_skill_bundle, build_skill_markdown
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)/'source'
+            shutil.copytree(SKILL_SOURCE, source)
+            (source/'SKILL.md').write_text('文' * 3000, encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, '8KiB'):
+                build_skill_bundle(Path(temporary)/'result.zip', source=source)
+            with self.assertRaisesRegex(ValueError, '8KiB'):
+                build_skill_markdown(source=source)
+
     def test_missing_setup_reference_blocks_both_delivery_formats(self):
         from skill_bundle import SKILL_SOURCE, build_skill_bundle, build_skill_markdown
         with tempfile.TemporaryDirectory() as temporary:

@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,19 @@ class ConnectionClientTests(unittest.TestCase):
         class Endpoint(BaseHTTPRequestHandler):
             def do_GET(self):
                 outer.hits.append(('GET', self.path))
+                if outer.mode == 'slow_headers':
+                    try:
+                        self.wfile.write(b'HTTP/1.1 200 OK\r\nX-Slow: ')
+                        self.wfile.flush()
+                        for _ in range(18):
+                            self.wfile.write(b'x')
+                            self.wfile.flush()
+                            time.sleep(.4)
+                        self.wfile.write(b'\r\nContent-Length: 2\r\n\r\n{}')
+                        self.wfile.flush()
+                    except OSError:
+                        pass
+                    return
                 if outer.mode == 'trickle':
                     self.send_response(200)
                     self.end_headers()
@@ -84,7 +98,7 @@ class ConnectionClientTests(unittest.TestCase):
     def save_connection(self):
         self.file.write_text(json.dumps(self.connection, ensure_ascii=False), encoding='utf-8')
 
-    def call(self, *args, python=False, environment=None):
+    def call(self, *args, python=False, environment=None, launcher=None):
         env = {key: value for key, value in os.environ.items() if not key.startswith('MEDIAFLOW_')}
         env.update(PATH='', MEDIAFLOW_API_URL='http://127.0.0.1:0',
             MEDIAFLOW_PYTHON='not-a-runtime', MEDIAFLOW_SKILL_CONFIG=str(self.root/'unused.json'),
@@ -92,7 +106,7 @@ class ConnectionClientTests(unittest.TestCase):
         env.update(environment or {})
         executable = [sys.executable, str(SCRIPTS/'mediaflow.py')] if python else [
             shutil.which('powershell') or shutil.which('pwsh'), '-NoProfile', '-ExecutionPolicy',
-            'Bypass', '-File', str(SCRIPTS/'mediaflow.ps1')]
+            'Bypass', '-File', str(launcher or SCRIPTS/'mediaflow.ps1')]
         return subprocess.run(executable + list(args), env=env, cwd=self.root, capture_output=True,
             text=True, encoding='utf-8', errors='replace', timeout=12)
 
@@ -105,6 +119,25 @@ class ConnectionClientTests(unittest.TestCase):
         self.assertFalse(payload['client_runtime']['available'])
         self.assertEqual(payload['onboarding_summary']['registered_devices'], 2)
         self.assertNotIn('onboarding', payload)
+        self.assertEqual(self.hits, [('GET', '/api/automation')])
+        self.assertEqual({path.name: path.read_bytes() for path in self.root.iterdir()}, before)
+
+    def test_rendered_connection_card_runs_under_restricted_execution_policy(self):
+        from fixed_runner.platform_connection import connection_card
+        self.file = self.root/"用户's 连接资料.json"
+        self.connection['connection_file'] = str(self.file)
+        self.save_connection()
+        card = connection_card(self.connection)
+        command = re.search(r'```powershell\n(.*?)\n```', card, re.DOTALL).group(1)
+        before = {path.name: path.read_bytes() for path in self.root.iterdir()}
+        env = {key: value for key, value in os.environ.items() if not key.startswith('MEDIAFLOW_')}
+        env.update(PATH='', MEDIAFLOW_PYTHON='missing-python', MEDIAFLOW_API_URL='http://127.0.0.1:0',
+            LOCALAPPDATA=str(self.root/'isolated-appdata'))
+        result = subprocess.run([shutil.which('powershell') or shutil.which('pwsh'), '-NoProfile',
+            '-ExecutionPolicy', 'Restricted', '-Command', command], env=env, cwd=self.root,
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=12)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)['reason_code'], 'connected')
         self.assertEqual(self.hits, [('GET', '/api/automation')])
         self.assertEqual({path.name: path.read_bytes() for path in self.root.iterdir()}, before)
 
@@ -121,7 +154,7 @@ class ConnectionClientTests(unittest.TestCase):
         result = self.call('list_tasks', '--connection-file', str(self.file), python=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(json.loads(result.stdout)['ok'])
-        self.assertEqual(self.hits, [('GET', '/api/automation'), ('POST', '/api/automation')])
+        self.assertEqual(self.hits.count(('POST', '/api/automation')), 1)
 
     def test_explicit_connection_preserves_legacy_receipts_and_at_most_once_writes(self):
         receipt_path = self.root/'已存在回执目录/requests.db'
@@ -214,8 +247,31 @@ class ConnectionClientTests(unittest.TestCase):
         self.save_connection()
         result = self.call('list_tasks', '--connection-file', str(self.file))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.hits, [('GET', '/api/automation'), ('GET', '/api/automation'),
-            ('POST', '/api/automation')])
+        self.assertTrue(json.loads(result.stdout)['ok'])
+        self.assertEqual(self.hits.count(('POST', '/api/automation')), 1)
+
+    def test_old_launcher_uses_current_client_after_installation_moves(self):
+        current = self.root/'升级后的安装'
+        shutil.copytree(SCRIPTS.parent, current)
+        old_launcher = self.root/'仅保留的旧入口.ps1'
+        shutil.copyfile(SCRIPTS/'mediaflow.ps1', old_launcher)
+        self.connection.update(app_root=str(current), skill_path=str(current/'SKILL.md'),
+            client_path=str(current/'scripts/mediaflow.ps1'), python=sys.executable, runtime_available=True)
+        self.save_connection()
+        result = self.call('list_tasks', '--connection-file', str(self.file), launcher=old_launcher)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(json.loads(result.stdout)['ok'])
+        self.assertEqual(self.hits.count(('POST', '/api/automation')), 1)
+
+    def test_python_identity_deadline_includes_slow_response_headers(self):
+        self.mode = 'slow_headers'
+        started = time.monotonic()
+        result = self.call('content_plan_save', '--request-id', 'no-post-after-timeout',
+            '--connection-file', str(self.file), python=True)
+        self.assertLess(time.monotonic() - started, 6.2)
+        self.assertEqual(json.loads(result.stdout)['reason_code'], 'connection_timeout')
+        self.assertFalse(any(method == 'POST' for method, _ in self.hits))
+        self.assertFalse((self.root/'receipts.db').exists())
 
     def test_check_deadline_is_shared_across_streamed_response_body(self):
         self.mode = 'trickle'

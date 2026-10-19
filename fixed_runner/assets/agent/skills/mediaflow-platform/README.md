@@ -11,7 +11,7 @@
 ### 首页“下载 Skill”
 
 1. 解压 ZIP，保留 `mediaflow-platform` 目录结构。
-2. 让 Agent 读取该目录的 `SKILL.md`，在目录内调用 `./scripts/mediaflow.ps1 check`。
+2. 让 Agent 读取该目录的 `SKILL.md`，在目录内调用 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/mediaflow.ps1 check`（只影响当前进程，不改系统执行策略）。
 3. 根据用户目标继续。解压即用，无需放入宿主全局技能目录或重启宿主。
 
 完整 Markdown 导出用于阅读、审阅和离线参考；需要执行客户端时使用软件现成文件或 ZIP。仅收到 Skill 时的检查与回复流程，以 [SKILL.md](SKILL.md#首次接入一次检查即可) 为准。

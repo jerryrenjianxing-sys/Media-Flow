@@ -5,7 +5,9 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import socket
 import sqlite3
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -94,6 +96,23 @@ def verify_connection(connection):
     url = urllib.parse.urlsplit(automation_url(connection['api_url']))
     deadline = time.monotonic() + 5
     client = http.client.HTTPConnection(url.hostname, url.port, timeout=5)
+    transport = None
+    response = None
+    expired = threading.Event()
+
+    def abort_at_deadline():
+        expired.set()
+        if transport is not None:
+            try:
+                transport.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    # Socket read timeouts alone reset when each header byte arrives. Abort the
+    # transport at one wall-clock deadline, including slow/trickling headers.
+    watchdog = threading.Timer(5, abort_at_deadline)
+    watchdog.daemon = True
+    watchdog.start()
     try:
         client.connect()
         transport = client.sock
@@ -116,13 +135,20 @@ def verify_connection(connection):
             if len(data) > 1048576:
                 raise ValueError('oversized response')
         info = json.loads(data)
+    except ConnectionFailure:
+        raise
     except TimeoutError:
         raise ConnectionFailure('connection_timeout', '5秒内未完成连接检查；尚不能确定服务未启动，请先询问用户') from None
     except (OSError, http.client.HTTPException):
+        if expired.is_set() or time.monotonic() >= deadline:
+            raise ConnectionFailure('connection_timeout', '5秒内未完成连接检查；尚不能确定服务未启动，请先询问用户') from None
         raise ConnectionFailure('connection_failed', '暂时无法连接平台，不能据此认定服务未启动；请先询问用户，不自动启动后台') from None
     except (ValueError, TypeError):
         raise ConnectionFailure('unexpected_service', '响应不是支持的MediaFlow接口；请检查连接说明，不重复启动服务') from None
     finally:
+        watchdog.cancel()
+        if response is not None:
+            response.close()
         client.close()
     if not isinstance(info, dict) or info.get('product') != 'MediaFlow' or str(info.get('api_version')) != '1' or info.get('status') != 'available':
         raise ConnectionFailure('unexpected_service', '响应不是支持的MediaFlow接口；请重新复制连接说明')

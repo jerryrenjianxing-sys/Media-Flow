@@ -20,8 +20,11 @@ with tempfile.TemporaryDirectory() as temporary, open(os.devnull, 'w') as sink:
                             DEVICE_PROFILE_PATH=Path(temporary)/'device_profiles.json',
                             PLATFORM_PROFILE_PATH=Path(temporary)/'platform_profiles.json'):
             import model_providers
+            import runtime_control
             with patch.multiple(model_providers, CONFIG_DB=Path(temporary)/'providers.db',
-                                TASK_DB=Path(temporary)/'tasks.db', SECRET_ROOT=Path(temporary)/'secrets'):
+                                TASK_DB=Path(temporary)/'tasks.db', SECRET_ROOT=Path(temporary)/'secrets'), \
+                    patch.multiple(runtime_control, SECRET_PATH=Path(temporary)/'secrets/openrouter-api-key.dpapi',
+                                   LEGACY_SECRET_PATH=Path(temporary)/'legacy-key.dpapi'):
                 suite = unittest.defaultTestLoader.discover(str(ROOT / 'fixed_runner'), pattern='test_*.py')
                 with contextlib.redirect_stdout(sink):
                     result = unittest.TextTestRunner(verbosity=1).run(suite)

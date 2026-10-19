@@ -166,7 +166,8 @@ class RuntimeSupervisorTests(unittest.TestCase):
             log_event=lambda *_args, **_kwargs: None,
             device_discovery=lambda: {"device-1", "127.0.0.1:16416"},
         )
-        roles = [role for role, _factory in supervisor.desired_factories()]
+        with patch('background_host.optional_analyzer_spec', return_value=None):
+            roles = [role for role, _factory in supervisor.desired_factories()]
         self.assertIn("worker-device-1", roles)
         self.assertNotIn("worker-127-0-0-1-16416", roles)
 

@@ -69,7 +69,8 @@ def connection_card(connection=None):
         '```powershell\n'
         f"$mfConnection = '{path}'\n"
         '$mf = Get-Content -LiteralPath $mfConnection -Raw -Encoding UTF8 | ConvertFrom-Json\n'
-        '& $mf.client_path check --connection-file $mfConnection\n'
+        '& "$env:SystemRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" '
+        '-NoProfile -ExecutionPolicy Bypass -File $mf.client_path check --connection-file $mfConnection\n'
         '```\n\n'
         '客户端和运行环境由已安装平台提供，现有文件即可使用。连接资料每次重读，升级后使用其中的当前路径。'
         '检查成功后简要说明连接结果，结合我的目标继续；没有具体目标时举2～3个可交办的例子。'

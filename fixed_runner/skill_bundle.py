@@ -48,6 +48,8 @@ def _skill_contents(source=None):
             raise ValueError('%s is not UTF-8 text' % name) from exc
         if _MACHINE_PATH.search(text) or str(source.resolve()) in text:
             raise ValueError('%s contains a machine-specific absolute path' % name)
+        if name == 'SKILL.md' and len(text.encode('utf-8')) > 8192:
+            raise ValueError('Entry Skill exceeds 8KiB; disclose branch details in references')
         contents.append((name, data))
     return contents
 
