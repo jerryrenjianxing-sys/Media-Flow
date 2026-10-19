@@ -2607,40 +2607,46 @@
       "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
     },
     {
-      "path": "openspec/changes/streamline-external-agent-onboarding/design.md",
-      "role": "change",
+      "path": "openspec/changes/archive/2026-10-20-streamline-external-agent-onboarding/design.md",
+      "role": "historical",
       "action": "retain",
-      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+      "reason": "dev.54已完成接入变更的历史证据；现行契约已同步主规格，旧失败保持"
     },
     {
-      "path": "openspec/changes/streamline-external-agent-onboarding/proposal.md",
-      "role": "change",
+      "path": "openspec/changes/archive/2026-10-20-streamline-external-agent-onboarding/proposal.md",
+      "role": "historical",
       "action": "retain",
-      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+      "reason": "dev.54已完成接入变更的历史证据；现行契约已同步主规格，旧失败保持"
     },
     {
-      "path": "openspec/changes/streamline-external-agent-onboarding/specs/execution-architecture/spec.md",
-      "role": "change",
+      "path": "openspec/changes/archive/2026-10-20-streamline-external-agent-onboarding/specs/execution-architecture/spec.md",
+      "role": "historical",
       "action": "retain",
-      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+      "reason": "dev.54已完成接入变更的历史证据；现行契约已同步主规格，旧失败保持"
     },
     {
-      "path": "openspec/changes/streamline-external-agent-onboarding/specs/independent-runtime-host/spec.md",
-      "role": "change",
+      "path": "openspec/changes/archive/2026-10-20-streamline-external-agent-onboarding/specs/independent-runtime-host/spec.md",
+      "role": "historical",
       "action": "retain",
-      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+      "reason": "dev.54已完成接入变更的历史证据；现行契约已同步主规格，旧失败保持"
     },
     {
-      "path": "openspec/changes/streamline-external-agent-onboarding/specs/project-governance/spec.md",
-      "role": "change",
+      "path": "openspec/changes/archive/2026-10-20-streamline-external-agent-onboarding/specs/project-governance/spec.md",
+      "role": "historical",
       "action": "retain",
-      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+      "reason": "dev.54已完成接入变更的历史证据；现行契约已同步主规格，旧失败保持"
     },
     {
-      "path": "openspec/changes/streamline-external-agent-onboarding/tasks.md",
-      "role": "change",
+      "path": "openspec/changes/archive/2026-10-20-streamline-external-agent-onboarding/tasks.md",
+      "role": "historical",
       "action": "retain",
-      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+      "reason": "dev.54已完成接入变更的历史证据；现行契约已同步主规格，旧失败保持"
+    },
+    {
+      "path": "openspec/changes/archive/2026-10-20-streamline-external-agent-onboarding/specs/electron-desktop/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "dev.54接入与联合退出完成变更的历史证据；现行契约已同步主规格，旧失败保持"
     },
     {
       "path": "openspec/changes/wire-engagement-correction-evidence/proposal.md",
