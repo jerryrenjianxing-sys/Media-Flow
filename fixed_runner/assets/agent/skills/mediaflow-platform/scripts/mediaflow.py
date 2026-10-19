@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sqlite3
 import sys
-from _common import configuration, error, invoke
+from _common import ConnectionFailure, configuration, error, invoke, load_connection, verify_connection
 
 
 class Parser(argparse.ArgumentParser):
@@ -21,15 +21,21 @@ def main(argv=None):
     parser.add_argument('--request-id')
     parser.add_argument('--session-id', default='skill-local')
     parser.add_argument('--config')
+    parser.add_argument('--connection-file')
     parser.add_argument('--timeout', type=float, default=30)
     try:
         opts = parser.parse_args(argv)
         args = json.loads(Path(opts.arguments_file).read_text(encoding='utf-8-sig') if opts.arguments_file else opts.arguments)
         if not isinstance(args, dict) or not 0 < opts.timeout <= 120:
             raise ValueError('参数必须是JSON对象；超时必须在0至120秒之间')
-        url, receipts = configuration(opts.config)
+        connection = load_connection(opts.connection_file) if opts.connection_file else None
+        if connection:
+            verify_connection(connection)
+        url, receipts = configuration(opts.config, connection)
         result = invoke(url, receipts, {'action': opts.action, 'arguments': args,
             'request_id': opts.request_id, 'session_id': opts.session_id}, opts.timeout)
+    except ConnectionFailure as exc:
+        result = error(exc.code, str(exc))
     except sqlite3.Error:
         result = error('receipt_store_unavailable', '本机请求回执不可用；保留文件并查询服务端原回执，不要重放写请求', 'unknown')
     except (ValueError, OSError, TypeError):

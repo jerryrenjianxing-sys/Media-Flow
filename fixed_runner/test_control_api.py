@@ -1342,6 +1342,9 @@ class ControlApiTest(unittest.TestCase):
             try:
                 with (
                     patch.object(Handler, "store", store),
+                    # Fake inventory must not launch an asynchronous ADB refresh
+                    # whose temporary database outlives this HTTP fixture.
+                    patch("control_api.status_runtime_signature", return_value=None),
                     patch(
                         "control_api.device_statuses",
                         return_value=[

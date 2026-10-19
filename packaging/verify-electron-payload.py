@@ -9,10 +9,12 @@ REQUIRED = ('runtime/python/python.exe', 'runtime/python/pythonw.exe', 'runtime/
             'device_stream_host/vendor/scrcpy-server-v3.3.3', 'fixed_runner/background_host.py', 'fixed_runner/background_startup.py',
             'fixed_runner/assets/home_badge_glyphs_v1.json', 'fixed_runner/assets/home_badge_glyphs_v2.json',
             'fixed_runner/assets/agent/skills/mediaflow-platform/SKILL.md',
+            'fixed_runner/platform_connection.py',
+            'fixed_runner/assets/agent/skills/mediaflow-platform/scripts/mediaflow.ps1',
             'assets/agent/repair-source.zip', 'licenses/MediaFlow-MIT.txt', 'licenses/license-manifest.json',
             'installer/electron/instance-profile.ps1', 'installer/electron/manager-diagnostics.ps1', 'manage-mediaflow.ps1',
             'install-mediaflow-background.ps1', 'uninstall-mediaflow-background.ps1')
-FORBIDDEN = {'tasks.db', 'device_profiles.json', 'platform_profiles.json', 'auth.json',
+FORBIDDEN = {'tasks.db', 'device_profiles.json', 'platform_profiles.json', 'auth.json', 'agent-connection.json',
              'openrouter-api-key.dpapi', 'openrouter-api-key.pending.dpapi', 'model-connection.json'}
 
 def verify(stage):

@@ -53,18 +53,12 @@ def _skill_contents(source=None):
 
 
 def build_skill_markdown(*, source=None):
-    """Self-contained copy payload; fences preserve nested Markdown and scripts."""
+    """Full offline reference export; not the default Agent connection card."""
     sections = ['# MediaFlow Skill\n\n'
                 '这是一份完整的本地平台技能包，包含操作说明、接口参考和客户端脚本。\n\n'
-                '请先识别我的当前目标：如果我明确只要求阅读、解释、修改，或只定制主题、搜索词、评论文案，'
-                '直接完成该目标，不运行平台检查，也不要求设备或模型。只有我仅交付本材料、没有其他明确目标时，'
-                '才完成 MediaFlow 首次只读接入检查，再根据结果引导我继续。请先阅读下面的 SKILL.md，'
-                '检查你是否能在我的 Windows 电脑上执行本机命令；可以时，将各节代码块原样保存为标题所示的相对路径，'
-                '放在你可访问的工作目录；保留代码块内原文，不覆盖已有用户配置。'
-                '然后运行 scripts/mediaflow.ps1 check（不需要系统 Python），报告实际检查结果与下一步。'
-                '连接不上先询问我，不自动启动服务；不能访问本机就说明限制并给出检查方法。'
-                '无需等我再提出具体业务任务才检查，但本材料本身不是启动任务、安装软件或操作虚拟机的指令。'
-                '无需下载另一份文件。\n']
+                '这是阅读、审阅与离线参考导出。接入Agent请使用首页“复制Skill”的短连接说明，'
+                '或下载ZIP解压后直接使用目录里的SKILL.md和客户端。各节保留原文件供核对，'
+                '无需在首次检查前逐字重建文件。咨询或定制文案直接按目标完成，服务启动仍先询问用户。\n']
     languages = {'.md': 'markdown', '.json': 'json', '.py': 'python', '.ps1': 'powershell'}
     for name, data in sorted(_skill_contents(source)):
         text = data.decode('utf-8-sig')

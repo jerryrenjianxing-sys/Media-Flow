@@ -28,3 +28,9 @@ export async function loadSkillMarkdown(request) {
   if(!document.trim()) throw new Error('skill_copy_empty');
   return document;
 }
+
+export async function loadSkillConnection(request) {
+  const document=await loadSkillMarkdown(request);
+  if(new TextEncoder().encode(document).byteLength>4096) throw new Error('skill_connection_too_large');
+  return document;
+}

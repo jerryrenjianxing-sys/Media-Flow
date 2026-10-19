@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { platformSummary, loadSkillArchive, loadSkillMarkdown } from '../app/lib/platform-home-state.mjs';
+import { platformSummary, loadSkillArchive, loadSkillMarkdown, loadSkillConnection } from '../app/lib/platform-home-state.mjs';
+
+test('copy accepts a short UTF-8 connection card, not the full executable package', async () => {
+  const card='# MediaFlow 连接说明\n\n读取已安装的 Skill，再运行现成客户端完成只读检查。\n';
+  assert.equal(await loadSkillConnection(async()=>new Response(card,{headers:{'content-type':'text/markdown; charset=utf-8'}})),card);
+  const oversized='中'.repeat(1366);
+  await assert.rejects(loadSkillConnection(async()=>new Response(oversized,{headers:{'content-type':'text/markdown'}})),/skill_connection_too_large/);
+});
 
 test('copy loads complete Markdown and rejects HTML errors and empty responses', async () => {
   const document='# MediaFlow Skill\n\n### `mediaflow-platform/SKILL.md`\n\n````markdown\nhello\n````\n';

@@ -3081,8 +3081,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/platform-skill":
             as_markdown = parse_qs(parsed.query).get('format') == ['markdown']
+            as_connect = parse_qs(parsed.query).get('format') == ['connect']
             try:
-                if as_markdown:
+                if as_connect:
+                    from platform_connection import connection_card
+                    payload = connection_card().encode('utf-8')
+                elif as_markdown:
                     payload = build_skill_markdown().encode('utf-8')
                 else:
                     with tempfile.TemporaryDirectory(prefix="mediaflow-skill-") as directory:
@@ -3095,10 +3099,11 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             self.send_response(200)
-            self.send_header("Content-Type", "text/markdown; charset=utf-8" if as_markdown else "application/zip")
+            self.send_header("Content-Type", "text/markdown; charset=utf-8" if as_markdown or as_connect else "application/zip")
             self.send_header(
                 "Content-Disposition",
-                'attachment; filename="MediaFlow-Skill.md"' if as_markdown else 'attachment; filename="MediaFlow-Skill.zip"',
+                'attachment; filename="MediaFlow-Connect.md"' if as_connect else
+                ('attachment; filename="MediaFlow-Skill.md"' if as_markdown else 'attachment; filename="MediaFlow-Skill.zip"'),
             )
             self.send_header("Content-Length", str(len(payload)))
             origin = self.headers.get("Origin", "")
@@ -4577,6 +4582,12 @@ def main() -> int:
         if any(not _is_virtual_adb_id(str(value)) for value in saved.get('device_ids', [])) or DEVICE_PROFILE_PATH.is_file():
             raise RuntimeError('验收实例不能使用真实设备档案')
     server = ThreadingHTTPServer((HOST, PORT), Handler)
+    from platform_connection import publish_connection
+    try:
+        publish_connection()
+    except Exception:
+        server.server_close()
+        raise
     print(json.dumps({"event": "control_api_ready", "url": f"http://{HOST}:{PORT}"}))
     def reconcile_virtual_devices_on_startup() -> None:
         if ACCEPTANCE or Handler.store.runtime_updating():

@@ -8,13 +8,13 @@
 
 ## 1. 连接已安装的平台
 
-复制版按材料标题还原目录和脚本；下载版解压进入 mediaflow-platform。Windows PowerShell 执行：
+连接卡方式直接使用卡片指向的现成 Skill 和客户端，并沿用卡片的 `--connection-file`；下载版解压进入 mediaflow-platform 即可使用。无需重建脚本、安装到宿主全局目录或重启宿主。没有连接卡时，在 Skill 目录用 Windows PowerShell 执行：
 
 ```powershell
 ./scripts/mediaflow.ps1 check
 ```
 
-check只使用系统PowerShell，不执行Python；GET `/api/automation` 同时返回client_runtime与onboarding登记快照。设备上次状态及last_seen_at不代表当前在线。后续业务命令保留明确配置的Python，否则自动取得平台运行环境；不要求系统PATH有Python。只有Bash的Windows宿主调用系统PowerShell运行脚本，不把.ps1当Bash执行。云端或另一台电脑不能把自己的回环地址当成用户电脑。
+check只使用系统PowerShell，不执行Python；一次GET `/api/automation` 核对平台身份，使用共享5秒请求截止，不创建工作文件。设备登记与last_seen_at不代表当前在线。显式连接文件每次重读，地址和包内Python取当前资料；没有该参数时保留旧配置方式。只有Bash的Windows宿主调用系统PowerShell运行脚本，不把.ps1当Bash执行。云端或另一台电脑不能把自己的回环地址当成用户电脑。
 
 平台不可达：先报告“尚未连接，服务是否启动未确认”，询问用户再处理。能通过已核实后台状态确认停止时，问“MediaFlow尚未启动，需要我帮你启动吗？”旧版缺少运行信息时提示更新平台或保留用户已配置的Python；不因此重装MuMu。无Key不妨碍检查。
 
@@ -28,7 +28,7 @@ check只使用系统PowerShell，不执行Python；GET `/api/automation` 同时�
 
 用户要求配置或执行后，才按需调用 `list_devices` / `platform_status` 获取实际状态；这些旧查询可能进行设备对账、ADB连接或任务收口，不是首次只读check的替代。
 
-默认 API 为 http://127.0.0.1:48138，管理入口为 http://127.0.0.1:3001；已有配置及平台返回信息优先。connected 只表示接口接入，不等于设备验收通过。检查当前任务及占用，不为准备设备恢复其他等待任务。
+默认 API 为 http://127.0.0.1:48138，管理入口为 http://127.0.0.1:3001；显式连接资料优先，否则沿用已有配置及平台返回信息。connected 只表示接口接入，不等于设备验收通过。检查当前任务及占用，不为准备设备恢复其他等待任务。
 
 ## 2. MuMu 与空白实例
 
@@ -50,18 +50,15 @@ MuMu 实例设置：自定义宽900、高1600、DPI320。已达标不重复改�
 这些直接维护REST接口不经过automation客户端，不具有其request_id去重保证，也不能凭空给它们加编号参数。保存原返回和操作时间；超时先看设备/初始化状态，不自动重发POST。已注册实例的启停可以走api.md中的虚拟机操作工具链，取得持久化回执。
 
 ```powershell
-# 使用前一步确认的运行配置；默认安装无需填写路径。
-$setupConfigPath = if ($env:MEDIAFLOW_SKILL_CONFIG) { $env:MEDIAFLOW_SKILL_CONFIG } else { './config.json' }
-$setupConfig = if (Test-Path -LiteralPath $setupConfigPath) { Get-Content -Raw -LiteralPath $setupConfigPath | ConvertFrom-Json } else { @{} }
-$api = if ($env:MEDIAFLOW_API_URL) { $env:MEDIAFLOW_API_URL } elseif ($setupConfig.api_url) { $setupConfig.api_url } else { 'http://127.0.0.1:48138' }
-$api = $api.TrimEnd('/') -replace '/api/automation$', ''
+# $api 为刚才 check 已核对身份的当前平台 api_url，不从旧草稿猜测。
 Invoke-RestMethod -Method Post -Uri "$api/api/virtual-devices/reconcile" -ContentType 'application/json' -Body '{}'
+# 使用连接卡时，该命令也沿用卡片的 --connection-file 参数。
 ./scripts/mediaflow.ps1 list_devices
 ```
 
 核对实例与永久设备 ID 一一对应，ADB 端口变化不另建平台设备。任务台 `/devices` 打开画面，确认截图能刷新；看屏只需 ADB。映射不明先核对对象，不连接另一台冒充成功，不循环启停。
 
-若前面使用了 --config 指定另一个文件，setupConfigPath也沿用那个文件；只接受已经由客户端验证的本机地址，不借此连接其他电脑。
+直接维护接口沿用刚才客户端已核对身份的本机地址。需要重新读地址时重读同一连接资料并先 check；没有连接资料时沿用同一 --config。只接受已经验证的回环地址，不借此连接其他电脑。
 
 显示及应用验收以设备页后端返回的实际检查结果为准；页面只显示设置值或尚未检查时，记为待验证。截图只能证明画面尺寸，不能单独证明320 DPI。这里不提供不存在的DPI或输入验证API。
 

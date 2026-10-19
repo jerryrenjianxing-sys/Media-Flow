@@ -311,20 +311,21 @@ def handle_automation_http(handler, method, path, body=None):
     if method == 'GET':
         from skill_onboarding import stored_onboarding
         from product_version import product_version
-        from runtime_layout import BUNDLED_PYTHON, IS_DISTRIBUTION
-        python = BUNDLED_PYTHON if IS_DISTRIBUTION else Path(sys.executable)
-        if python.name.lower() == 'pythonw.exe':
-            python = python.with_name('python.exe')
-        available = python.is_file()
+        from platform_connection import current_connection, onboarding_summary, CAPABILITIES
+        connection = current_connection()
+        available = connection['runtime_available']
+        snapshot = stored_onboarding(getattr(getattr(handler, 'store', None), 'path', None))
         # Do not construct PlatformContext here: repairs/operations can recover state.
         handler._json({**automation_catalog(), 'product': 'MediaFlow',
             'product_version': product_version(),
-            'onboarding': stored_onboarding(getattr(getattr(handler, 'store', None), 'path', None)),
+            'connection': connection, 'capabilities': CAPABILITIES,
+            'onboarding_summary': onboarding_summary(snapshot),
+            'onboarding': snapshot,
             'client_runtime': {
             'api_url': 'http://' + host,
             'management_url': f'http://127.0.0.1:{UI_PORT}',
-            'mode': 'installed' if IS_DISTRIBUTION else 'development',
-            'python': str(python.resolve()) if available else None,
+            'mode': connection['mode'],
+            'python': connection['python'] if available else None,
             'available': available,
             'reason_code': 'ready' if available else 'runtime_missing',
             'user_message': '可使用平台运行环境' if available else '平台运行环境缺失，请修复MediaFlow安装',

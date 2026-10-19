@@ -45,6 +45,9 @@ control_api.ensure_worker = forbidden
 control_api.ensure_workers = forbidden
 # Intentionally use the production handler, not main(): no startup ADB reconciliation.
 server = control_api.ThreadingHTTPServer(('127.0.0.1', 0), control_api.Handler)
+runtime_layout.API_PORT = server.server_port
+from platform_connection import publish_connection
+publish_connection()
 print(json.dumps({'port': server.server_port}), flush=True)
 server.serve_forever()
 '''
@@ -71,6 +74,11 @@ server.serve_forever()
             catalog = json.loads(read('/api/automation'))
             assert catalog['api_version'] == '1', catalog
             assert b'SKILL.md' in read('/api/platform-skill?format=markdown')
+            card = read('/api/platform-skill?format=connect')
+            assert len(card) <= 4096 and b'--connection-file' in card
+            connection_path = root / 'data/agent-connection.json'
+            connection = json.loads(connection_path.read_text(encoding='utf-8'))
+            assert connection == catalog['connection']
             assert read('/api/platform-skill').startswith(b'PK')
             assert json.loads(read('/api/content-plans'))['content_plans'] == []
             skill = stage / 'fixed_runner/assets/agent/skills/mediaflow-platform/scripts/mediaflow.ps1'
@@ -78,6 +86,14 @@ server.serve_forever()
             client = subprocess.run([str(windows / 'System32/WindowsPowerShell/v1.0/powershell.exe'),
                                      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(skill), 'check'],
                                     env=env, cwd=root, capture_output=True, timeout=20)
+            if client.returncode:
+                raise RuntimeError(client.stdout.decode('utf-8', errors='replace') + client.stderr.decode('utf-8', errors='replace'))
+            client = subprocess.run([str(windows / 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+                                     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(skill), 'check',
+                                     '--connection-file', str(connection_path)],
+                                    env={**env, 'MEDIAFLOW_API_URL': 'http://127.0.0.1:1',
+                                         'MEDIAFLOW_PYTHON': 'nonexistent-python'},
+                                    cwd=root, capture_output=True, timeout=10)
             if client.returncode:
                 raise RuntimeError(client.stdout.decode('utf-8', errors='replace') + client.stderr.decode('utf-8', errors='replace'))
             # This route is read-only and exercises PowerShell's bundled-Python discovery.

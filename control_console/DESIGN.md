@@ -11,7 +11,7 @@ tokens: app/design-tokens.css
 
 ## 首页
 
-参考skills.sh的极简居中构图：MediaFlow大字、中文“一份 Skill，一站式掌控媒体自动化。”；下载Skill、复制Skill两个按钮，同源ZIP/完整Markdown。下方本地Agent图标滚动带可暂停，减少动态效果时静态展示；不暗示全部实测或商业合作。
+参考skills.sh的极简居中构图：MediaFlow大字、中文“一份 Skill，一站式掌控媒体自动化。”；下载Skill、复制Skill两个按钮。下载提供完整同源ZIP；复制提供不超过4KiB的Markdown本机连接说明，指向现成Skill和客户端，不要求重建文件。完整Markdown参考保留API导出，不混称默认复制内容。下方本地Agent图标滚动带可暂停，减少动态效果时静态展示；不暗示全部实测或商业合作。
 管理功能仅留角落“任务台”。首页不内置聊天、不加载或保存业务草稿，不显示项目/会话/模型设置。
 
 ## 任务台与视觉

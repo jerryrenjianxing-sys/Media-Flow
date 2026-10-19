@@ -312,6 +312,23 @@ class ExtractedSkillCliTests(unittest.TestCase):
             'matched_like_probability', 'matched_favorite_probability',
             'matched_comment_probability')], [0] * 6)
 
+    def test_comment_preview_is_independent_from_plan_preview_and_submission(self):
+        config = {'config': {**self.config['config'], 'preview_only': True,
+            'like_probability': .3, 'favorite_probability': .2, 'comment_probability': .1}}
+        preview = self.run_cli('plan_tasks', '--arguments', json.dumps(config), request_id='view-only')
+        self.assertEqual(preview.returncode, 0, preview.stdout)
+        self.assertEqual(self.launches, [])
+        self.assertEqual(self.store.list(), [])
+        plan_id = json.loads(preview.stdout)['plan_id']
+        submitted = self.run_cli('execute_plan', '--arguments', json.dumps({'plan_id': plan_id}),
+                                 request_id='explicit-run')
+        self.assertEqual(submitted.returncode, 0, submitted.stdout)
+        self.assertEqual(len(self.launches), 1)
+        task = self.store.list()[0]
+        self.assertTrue(task.payload['preview_only'])
+        self.assertEqual(task.payload['like_probability'], .3)
+        self.assertEqual(task.payload['favorite_probability'], .2)
+
     def test_both_bundles_preview_home_inspection_without_execution_and_keep_null_results(self):
         from skill_bundle import build_skill_markdown
         entries = re.findall(r'### `([^`]+)`\n\n(`{4,})[^\n]*\n(.*?)\n\2\n',
@@ -509,7 +526,9 @@ class ExtractedSkillCliTests(unittest.TestCase):
             str(self.skill/'scripts/mediaflow.ps1'), 'list_tasks'], env=env,
             capture_output=True, text=True, errors='replace', timeout=15)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Ask the user before starting MediaFlow', result.stderr)
+        failure = json.loads(result.stdout)
+        self.assertEqual(failure['reason_code'], 'connection_failed')
+        self.assertEqual(failure['next_action'], 'ask_user')
         self.assertEqual(self.hits, [])
 
     @unittest.skipUnless(os.name == 'nt', 'Windows portable runtime')

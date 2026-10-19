@@ -10,6 +10,21 @@
 
 不强制完整问卷。用户已经说清的目标、范围、主题和参数继续保留；轮次、条数、停留等普通缺省直接采用并简短说明。
 
+用户问“能做什么”时，用定制主题、准备设备、安排任务、查看结果解释产品用途，并给2～3个自然语言例子；已有连接结果足够时直接回答，不重新扫描设备或展开参数目录。能力介绍不是当前状态报告，更不是本次任务就绪证明。
+
+## 六个状态不要混用
+
+| 表达 | 可依据什么说明 |
+| --- | --- |
+| 平台已连接 | 一次 check 已核对实际平台身份 |
+| 设备已登记 | 已保存登记及检测时间；不代表当前在线 |
+| 本次任务就绪 | 本次设备、所需能力和计划预检通过，不是通用资格认证 |
+| 任务已提交 | 原计划产生真实提交回执；不等于已开始或已完成 |
+| 任务执行完成 | 原任务终态与已保存结果；异常、失败、缺项分别保留 |
+| 评论仅预览 | 生成但不发送评论；不是整个任务的执行开关 |
+
+设备锁、冻结版本、队列和请求幂等由程序维护。Agent 使用现成客户端及真实回执，不要求用户学习内部编号或重复批准普通操作。面向用户默认只讲当前目标所需的状态；任务历史、退役设备、DPI及内部模式码在对应问题中再展开。
+
 ## 保存与修改
 
 ### 内容计划
@@ -36,7 +51,7 @@
 
 1. 调用 `list_devices`、`list_tasks`，并用当前会话的 `plan_status` 核对计划。虚拟机使用清单中的永久 UUID 或当前 ADB 地址；用户明确选真机时使用 `list_devices.online` 中 `device_type=physical` 的准确 `device_id`。不按名称猜地址。平台默认仍用虚拟机，不用范围外设备补位。
 2. 若用户选择内容计划，先读取真实 `plan_id/revision_id`。非 `general` 计划同时传 `content_plan_id` 和 `content_plan_revision_id`；计划会按 `content_round_start`（默认1）对应的启用主题补齐当前轮的 `topic_prompt/search_query`。不要重复询问已有字段，也不要让旧草稿字段覆盖所选修订。
-3. 默认一轮20条、首页 `general`、停留8～25秒、不巡检、六项互动概率全0、`preview_only=true`。显式搜索用 `search`，只缺搜索词才问；严格生产/证据场景 `search_trust_results=false`。模式细节见 `content-guide.md#四种内容模式`。
+3. 默认一轮20条、首页 `general`、停留8～25秒、不巡检、六项互动概率全0。评论默认 `preview_only=true`，仅表示不发送评论，不阻止运行浏览任务。显式搜索用 `search`，只缺搜索词才问；严格生产/证据场景 `search_trust_results=false`。模式细节见 `content-guide.md#四种内容模式`。
 4. `plan_tasks.arguments.config` 必须含 `device_ids,video_count,round_count,content_mode,engagement_inspection_enabled`。`search/hybrid` 需要 `search_query`，`mixed` 需要 `topic_prompt`；选内容计划时由真实修订补齐。启用巡检时传 `inspection_every_rounds`。
 5. 用户只要方案、保存或“先不启动”时，可以解释或停在 `plan_tasks`，绝不调用 `execute_plan`。用户明确要运行且参数齐全时，`plan_tasks → execute_plan → plan_status`；不再要求固定口令、卡片或权限等级。
 
@@ -56,7 +71,7 @@
 
 用户明确“只按轮数结束、不设时间停止”时传 `batch_stop_policy=round_count`。批次回执的 `deadline:null` 表示无执行时间截止，不是缺失配置；计划提交前的十分钟有效期是另一回事。未指定时沿用 `deadline` 策略。两种方式都保留暂停、安全停止与单次操作超时。
 
-评论模板/词池属于内容计划；发送前约束 `comment_policy_enabled/comment_policy_prompt` 属于任务参数/预设。用户明确要求评论时才配置。只预览保持 `preview_only=true`；真实发送需本次明确目标并设 `false`，固定安全与画面复核仍优先。
+评论模板/词池属于内容计划；发送前约束 `comment_policy_enabled/comment_policy_prompt` 属于任务参数/预设。用户明确要求评论时才配置。**评论仅预览**用 `preview_only=true`：任务仍正常执行，只生成不发送评论，已选择的点赞/收藏不受该字段禁止。明确要求发送评论时设 `false`，固定安全与画面复核仍优先。“先给任务方案”则停在 `plan_tasks`，与评论仅预览分开。
 
 ### 队列、继续与恢复
 
@@ -114,6 +129,8 @@ dev.41起，动作确认区分 `confirmed`（本次成功）、`not_applied`（�
 `result_summary:null` 或某字段 `null` 表示没有持久化结果，不能写0。当前接口只给 `topic_matches` 聚合，不给四类相关性明细；不自行推算 `adjacent/unrelated/uncertain`。结合已有证据定位可能属于搜索来源、主题标准、模型、页面/设备或流程问题；证据不足时写“当前未核实”。“建议修改”与“已通过 content_plan_save/preset_save/model_activate 等确定回执修改”必须分开。
 
 ## 修复
+
+正式业务设备动作由固定执行器完成。用户明确要求项目开发带测时，开发者按项目 MBH 指引取得同一设备锁，单步观察与纠错后释放，再交固定程序独立复验；MBH成功不是正式任务成功。本通用 Skill 不附带个人电脑的 MBH 路径，登录或验证码仍由用户在目标设备完成。
 
 先 `task_evidence/incident_evidence`，再按用户目标决定只诊断、创建候选还是应用：`repair_create → 宿主文件工具编辑返回的workspace_path → repair_test/repair_validate → repair_diff → repair_prepare_apply → repair_apply`。先失败回归再最小修复；完整验证通过并匹配补丁哈希才准备应用。候选不覆盖正式目录；更新等待空闲并保留旧版本和数据。
 

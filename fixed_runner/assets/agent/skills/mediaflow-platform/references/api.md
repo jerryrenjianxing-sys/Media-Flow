@@ -1,8 +1,16 @@
 # 本地Automation API v1
 
-首次接入用 `./scripts/mediaflow.ps1 check`，仅GET `/api/automation`，不调用Python或业务POST。响应新增product、product_version、onboarding；onboarding含available、source=stored_snapshot、read_at、paused、task_summary和devices。设备仅提供登记名称、实例号、last_known_state、last_known_environment、last_seen_at、updated_at，online固定null；read_at是读取时间，不是设备检测时间。快照不可读时available=false、队列与设备值为null，不伪装零任务/零设备。
+## 接入、身份与能力
 
-check的退出码0表示平台身份及连接已确认，不表示设备、Python或业务能力就绪。失败返回结构化reason_code、service_state=unknown、next_action=ask_user；连接失败不自动启动。只有已批准的配置/业务操作才使用下方旧状态工具，它们可能执行设备对账或任务收口。
+首页连接说明由 `GET /api/platform-skill?format=connect` 提供，指向已存在的 Skill、PowerShell 客户端和本机连接资料；ZIP 及 `format=markdown` 分别保留可执行包与完整阅读导出。Markdown 参考不要求手工重建文件。
+
+连接资料不含凭据，由软件在既有外部数据根原子更新。`--connection-file` 显式指定时优先于旧地址/运行时配置，客户端每次调用重读；升级后不缓存程序或Python路径。文件与 GET `/api/automation` 的 `connection` 使用同一描述，包含产品、实例、数据根、程序位置、当前地址、Skill/客户端/包内Python、版本及模式。路径仅用于本机，不能写入通用技能包或再分发材料。
+
+首次接入沿用连接卡中的 `check --connection-file` 命令；没有连接卡时用 `./scripts/mediaflow.ps1 check`。check一次GET `/api/automation`，整个请求共享5秒截止，不调用Python或业务POST，不创建工作文件、扫描设备或启动服务。GET提供身份、面向用户目标的能力索引和简短登记摘要；能力支持与当前观测、任务就绪分别解释。首次回复只报告必要结论，不转发完整动作表、任务历史或退役设备。
+
+原字段product、product_version、onboarding及client_runtime保留兼容。onboarding含available、source=stored_snapshot、read_at、paused、task_summary和devices。设备仅提供登记名称、实例号、last_known_state、last_known_environment、last_seen_at、updated_at，online固定null；read_at是读取时间，不是设备检测时间。快照不可读时available=false、队列与设备值为null，不伪装零任务/零设备。
+
+check的退出码0表示平台身份及连接已确认，不表示设备、Python或业务能力就绪。失败返回结构化reason_code及下一步说明；路径失效、错误实例、运行时缺失和服务不可达分别处理。服务状态未确认时先询问，不自动启动。只有用户需要配置/业务操作时才使用下方旧状态工具，它们可能执行设备对账或任务收口。
 
 GET 同时返回 `client_runtime`：api_url、management_url、mode（development/installed）、python、available、reason_code、user_message。Windows启动脚本用它自动找到平台运行环境；路径仅在当前本机接口返回，不写入可分发材料。缺失运行环境不会阻断查看动作清单，但客户端应提示修复平台，不能自动安装另一套开发工具。老接口没有此字段时保留显式Python配置兼容。
 
@@ -101,14 +109,14 @@ Bash命令工具（Windows同样适用）在Skill目录调用：
 "$MEDIAFLOW_PYTHON" scripts/mediaflow.py task_evidence --arguments '{"task_id":"已有任务编号"}'
 ```
 
-直接读取脚本JSON和退出码，不用`| tail`吞掉失败退出码。仅当命令工具确实是PowerShell时用以下启动器（先取 `MEDIAFLOW_PYTHON`，再取本地配置的 `python`）：
+直接读取脚本JSON和退出码，不用`| tail`吞掉失败退出码。Windows用PowerShell启动器；使用连接卡时，以下各命令均附带同一 `--connection-file` 参数，无需把本机路径复制到脚本或配置。没有该参数时，先取 `MEDIAFLOW_PYTHON`、本地配置 `python`，再取当前平台运行时：
 
 ```powershell
 ./scripts/mediaflow.ps1 list_devices
 ./scripts/mediaflow.ps1 plan_tasks --arguments-file task-arguments.json --request-id plan-unique-001 --session-id ses_current
 ```
 
-`--arguments`可直接传JSON对象；Windows转义复杂或大参数使用`--arguments-file`。`--timeout`默认为30秒，上限120秒。写入返回超时不自动重试。`MEDIAFLOW_SKILL_CONFIG`或`--config`指定配置文件，客户端配置支持api_url与receipt_db，启动器还读取python；环境MEDIAFLOW_API_URL/MEDIAFLOW_RECEIPT_DB优先。回执默认位于当前用户LOCALAPPDATA/MediaFlow/skill/receipts.db，不能放进源码或发行包。
+`--arguments`可直接传JSON对象；Windows转义复杂或大参数使用`--arguments-file`。业务命令的`--timeout`默认为30秒，上限120秒，不改变check共享5秒截止。写入返回超时不自动重试。`--connection-file`显式文件优先；未使用它时，`MEDIAFLOW_SKILL_CONFIG`或`--config`指定配置文件，客户端配置支持api_url与receipt_db，启动器还读取python，环境MEDIAFLOW_API_URL/MEDIAFLOW_RECEIPT_DB优先于旧配置。回执默认位于当前用户LOCALAPPDATA/MediaFlow/skill/receipts.db，不能放进源码或发行包。
 
 同一request_id同参数返回原接入响应（不刷新成后来业务状态）；同编号不同参数返回request_id_conflict。用查询动作获取实时状态。接入中断会永久保留未知回执，不能删除回执或换ID来试成功。
 

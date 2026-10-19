@@ -4,7 +4,7 @@ Windows电脑端平台页面，默认端口3001；通过业务API48138操作，�
 
 ## 路由
 
-- /：外部Skill首页，复制完整Markdown和下载同源ZIP。
+- /：外部Skill首页，复制简短Markdown连接说明和下载完整同源ZIP；完整Markdown参考仍通过API导出。
 - /manage：任务台管理入口；/workbench：完整任务参数。
 - /devices：设备与画面；/devices/guide：真机按需准备说明。
 - /run：真实运行进度、等待与停止。
@@ -24,4 +24,4 @@ npm test
 ```
 
 npm test包含生产构建及页面回归。仅构建通过不代表设备或实际浏览器流程通过。运行环境与入口见[运行手册](../RUNBOOK.md)；布局以[DESIGN](DESIGN.md)为准。
-本轮只同步帮助文案，不恢复内置Agent、聊天状态或权限等级。
+页面复用外部Skill入口，不恢复内置Agent、聊天状态或权限等级。

@@ -71,6 +71,21 @@ finally:
 
 
 class PlatformSkillDownloadTests(unittest.TestCase):
+    def test_connect_card_uses_existing_files_without_reconstructing_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.isolated_server(Path(directory)) as (base_url, temporary_root):
+                with urllib.request.urlopen(base_url + '/api/platform-skill?format=connect', timeout=10) as response:
+                    self.assertEqual(response.headers['Content-Type'], 'text/markdown; charset=utf-8')
+                    payload = response.read()
+                self.assertLessEqual(len(payload), 4096)
+                card = payload.decode('utf-8')
+                self.assertIn('--connection-file', card)
+                self.assertIn('agent-connection.json', card)
+                self.assertIn('SKILL.md', card)
+                self.assertNotIn('原样保存', card)
+                self.assertNotIn('### `mediaflow-platform/', card)
+                self.assertEqual(list(temporary_root.iterdir()), [])
+
     def test_markdown_reconstructs_every_downloaded_file_without_task_store_access(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.isolated_server(Path(directory)) as (base_url, temporary_root):

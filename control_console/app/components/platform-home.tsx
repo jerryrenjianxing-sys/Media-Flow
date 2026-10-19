@@ -4,7 +4,7 @@ import {useEffect,useRef,useState} from "react";
 import Link from "next/link";
 import {API} from "./workbench-types";
 import {fetchLocalApi} from "../lib/local-api";
-import {loadSkillArchive,loadSkillMarkdown} from "../lib/platform-home-state.mjs";
+import {loadSkillArchive,loadSkillConnection} from "../lib/platform-home-state.mjs";
 
 const agents=[['claude-code','Claude Code'],['cursor','Cursor'],['codex','Codex'],['copilot','GitHub Copilot'],['windsurf','Windsurf'],['gemini','Gemini'],['cline','Cline'],['amp','Amp'],['antigravity','Antigravity'],['openclaw','OpenClaw'],['droid','Droid'],['goose','Goose'],['kilo','Kilo'],['kiro-cli','Kiro CLI'],['nous-research','Hermes'],['opencode','OpenCode'],['roo','Roo'],['trae','Trae'],['vscode','VS Code'],['zed','Zed']];
 type ActionState='idle'|'loading'|'done'|'error';
@@ -34,9 +34,9 @@ export default function PlatformHome({legacySession=false}:{legacySession?:boole
     if(copying.current)return;
     copying.current=true;setCopy('loading');
     try{
-      const markdown=await loadSkillMarkdown(()=>fetchLocalApi(`${API}/api/platform-skill?format=markdown`,{cache:'no-store'},15000));
-      try{await navigator.clipboard.writeText(markdown);setCopy('done');}
-      catch{setCopy('idle');setManual(markdown);}
+      const connection=await loadSkillConnection(()=>fetchLocalApi(`${API}/api/platform-skill?format=connect`,{cache:'no-store'},15000));
+      try{await navigator.clipboard.writeText(connection);setCopy('done');}
+      catch{setCopy('idle');setManual(connection);}
     }catch{setCopy('error');}finally{copying.current=false;}
   }
   function toggleTheme(){const theme=dark?'light':'dark';document.documentElement.dataset.theme=theme;localStorage.setItem('mediaflow-theme',theme);window.dispatchEvent(new Event('mediaflow-theme-change'));}
@@ -55,10 +55,10 @@ export default function PlatformHome({legacySession=false}:{legacySession?:boole
         <button className="skill-button skill-button-primary" type="button" disabled={download==='loading'} onClick={()=>void downloadSkill()}><Icon kind="download"/>{download==='loading'?'正在准备…':download==='error'?'重试下载':'下载 Skill'}</button>
         <button className="skill-button skill-button-secondary" type="button" disabled={copy==='loading'} onClick={()=>void copySkill()}><Icon kind="copy"/>{copy==='loading'?'正在读取…':copy==='done'?'已复制':'复制 Skill'}</button>
       </div>
-      <p className="skill-format">Markdown 格式 · 包含操作说明与完整脚本</p>
+      <p className="skill-format">复制连接说明 · 下载完整 Skill</p>
       <div className="skill-feedback" aria-live="polite" aria-atomic="true">
         {download==='error'?<p className="skill-error">下载暂不可用，请重试或进入任务台检查本机服务。</p>:download==='done'?<p>已发起下载，请查看浏览器下载列表。</p>:null}
-        {copy==='error'?<p className="skill-error">读取失败。点击“复制 Skill”重试，或到任务台检查本机服务。</p>:copy==='done'?<p>完整 Markdown 已复制，粘贴给你的 Agent 即可。</p>:null}
+        {copy==='error'?<p className="skill-error">连接说明读取失败。点击“复制 Skill”重试，或到任务台检查本机服务。</p>:copy==='done'?<p>连接说明已复制，粘贴给本机 Agent 即可。</p>:null}
       </div>
       {legacySession?<p className="skill-legacy">旧会话数据仍保留；此入口已改为外部 Skill，不会删除历史记录。</p>:null}
     </section>
@@ -71,8 +71,8 @@ export default function PlatformHome({legacySession=false}:{legacySession?:boole
     </section>
     <footer className="skill-footer"><span>本地运行 · 自由连接</span><a className="skill-workbench" href="/manage"><Icon kind="grid"/>任务台<Icon kind="arrow"/></a></footer>
     <dialog ref={dialog} className="skill-copy-dialog" onClose={()=>setManual('')}>
-      <h2>手动复制 Skill</h2><p>浏览器未允许直接复制。下方已选中完整 Markdown，请按 Ctrl+C（Mac 为 ⌘C）。</p>
-      <textarea ref={manualText} aria-label="完整 Skill Markdown" readOnly value={manual}/>
+      <h2>手动复制连接说明</h2><p>浏览器未允许直接复制。下方已选中 Markdown 连接说明，请按 Ctrl+C（Mac 为 ⌘C）并粘贴给本机 Agent。</p>
+      <textarea ref={manualText} aria-label="Skill 连接说明 Markdown" readOnly value={manual}/>
       <button type="button" className="skill-button skill-button-primary" onClick={()=>dialog.current?.close()}>完成</button>
     </dialog>
   </main>;

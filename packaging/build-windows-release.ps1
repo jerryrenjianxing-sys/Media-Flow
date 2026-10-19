@@ -268,6 +268,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Platform Skill or repair source assembly faile
 if ($LASTEXITCODE -ne 0) { throw 'Bundled licensing materials are incomplete.' }
 
 $forbiddenNames = @(
+    'agent-connection.json',
     'tasks.db',
     'openrouter-api-key.dpapi',
     'openrouter-api-key.pending.dpapi',

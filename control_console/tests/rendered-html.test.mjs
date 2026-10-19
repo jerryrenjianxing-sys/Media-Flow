@@ -51,6 +51,9 @@ test("platform home offers Skill download and management without an embedded cha
   assert.doesNotMatch(html, /127\.0\.0\.1:3000|打开 Agent|返回 Agent/);
   assert.match(html, /下载 Skill/);
   assert.match(html, /复制 Skill/);
+  assert.match(html, /复制连接说明 · 下载完整 Skill/);
+  assert.match(html, /手动复制连接说明/);
+  assert.doesNotMatch(html, /完整 Markdown 已复制|下方已选中完整 Markdown|包含操作说明与完整脚本/);
   assert.match(html, /href="\/manage"/);
   assert.doesNotMatch(html, /class="mf-management-nav"/);
   assert.doesNotMatch(html, /正在准备任务台/);
