@@ -9,7 +9,7 @@ const { createConnectionFiles } = require('../lib/connection-files.cjs');
 test('copy delivers a persistent named MD file with exactly the connection document', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mediaflow-md-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const document = '# MediaFlow连接说明\n\n读取本机现成 Skill。\n';
+  const document = '# 连接 MediaFlow\n\n读取本机现成 Skill。\n';
   let copied;
   let revealed;
   const files = createConnectionFiles({ directory, loadConnection: async () => document,

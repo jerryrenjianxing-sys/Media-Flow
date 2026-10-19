@@ -17,7 +17,7 @@ function createConnectionFiles({ directory, loadConnection, writeFiles, revealFi
   const pending = new Map();
   async function prepare(filename) {
     const document = await loadConnection();
-    if (typeof document !== 'string' || !document.startsWith('# MediaFlow') || Buffer.byteLength(document, 'utf8') > 4096) throw new Error('MD连接说明无效，请检查平台或重新打开软件。');
+    if (typeof document !== 'string' || !/^# [^\r\n]*MediaFlow/u.test(document) || Buffer.byteLength(document, 'utf8') > 4096) throw new Error('MD连接说明无效，请检查平台或重新打开软件。');
     const fileId = crypto.createHash('sha256').update(filename).update('\0').update(document).digest('hex');
     const folder = path.join(directory, fileId);
     const file = path.join(folder, filename);

@@ -134,10 +134,12 @@ else {
       diagnostics.write('error', 'desktop-exit-failed', error);
       showWindow();
       const busy = error.code === 'stop_refused';
-      const result = await dialog.showMessageBox(window, { type: 'warning', buttons: busy ? ['返回任务台', '仅退出界面'] : ['返回', '查看日志'], defaultId: 0, cancelId: 0,
+      const handoff = error.code === 'ERR_MEDIAFLOW_INSTALLER_HANDOFF';
+      const result = await dialog.showMessageBox(window, { type: 'warning', buttons: handoff ? ['返回', '查看日志'] : ['返回', '仅退出界面', '查看日志'], defaultId: 0, cancelId: 0,
         message: busy ? '后台仍有操作占用，未完全退出。' : '未能确认安全退出，窗口已保留。',
         detail: busy ? '当前任务、维护或人工控制仍占用后台。不会强行中断；可以只退出界面，让后台继续运行。' : '请重试或查看日志。后台身份、停止结果或更新交接尚未确认。' });
-      if (result.response === 1) { if (busy) interfaceOnly = true; else await shell.openPath(diagnostics.directory); }
+      if (!handoff && result.response === 1) interfaceOnly = true;
+      if (result.response === (handoff ? 1 : 2)) await shell.openPath(diagnostics.directory);
     } finally {
       exitInteraction = false;
     }

@@ -8,7 +8,7 @@ function createDesktopExit({ waitForStartup, updates, runtime, quit }) {
       if (pending) return pending;
       pending = (async () => {
         await waitForStartup();
-        await updates.prepareExit();
+        await updates.prepareExit({ keepBackground: !stopBackground });
         if (stopBackground) {
           if (!runtime) throw new Error('后台实例尚未核实，不能完全退出。');
           await runtime.stop();

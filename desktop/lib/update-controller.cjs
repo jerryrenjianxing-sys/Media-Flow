@@ -221,14 +221,14 @@ class UpdateController {
     this.active.token.cancel();
     return this.runPromise || Promise.resolve(this.state.get());
   }
-  async prepareExit() {
-    if (this.state.get().update.phase === 'installing' || this.journal.read()?.phase === 'installing') throw new Error('安装程序正在交接，请等待安装结果，暂不能另行退出。');
+  async prepareExit({ keepBackground = false } = {}) {
+    if (this.state.get().update.phase === 'installing' || this.journal.read()?.phase === 'installing') throw Object.assign(new Error('安装程序正在交接，请等待安装结果，暂不能另行退出。'), { code: 'ERR_MEDIAFLOW_INSTALLER_HANDOFF' });
     if (this.active) {
       this.active.cancelled = true;
       this.active.token.cancel();
       await this.runPromise;
     }
-    if (this.journal.read()) throw new Error('更新恢复尚未确认，请查看日志或重试启动后再退出。');
+    if (this.journal.read() && !keepBackground) throw new Error('更新恢复尚未确认，请查看日志或重试启动后再完全退出。');
   }
   deferUpdate() {
     if (this.active) return this.cancelUpdate();

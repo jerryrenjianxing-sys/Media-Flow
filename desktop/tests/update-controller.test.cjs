@@ -139,6 +139,17 @@ test('installed candidate and published version remain separate and automatic ch
   assert.equal(f.state.get().update.checkAutomatic, true);
 });
 
+test('an inactive recovery journal permits interface-only exit without clearing the gate, but blocks complete exit', async () => {
+  const f = fixture();
+  f.journal.write({ phase: 'stopped', operationId: 'operation-1' });
+  await assert.rejects(f.controller.prepareExit(), /恢复尚未确认/);
+  await f.controller.prepareExit({ keepBackground: true });
+  assert.equal(f.journal.read().operationId, 'operation-1');
+  assert.deepEqual(f.calls, []);
+  f.journal.write({ phase: 'installing', operationId: 'operation-1' });
+  await assert.rejects(f.controller.prepareExit({ keepBackground: true }), error => error.code === 'ERR_MEDIAFLOW_INSTALLER_HANDOFF');
+});
+
 test('unavailable update metadata reports a short safe reason while platform remains usable', async () => {
   const logged = [];
   const f = fixture({ diagnostics: { write: (...event) => logged.push(event), info() {}, warn() {}, error() {}, debug() {} } });

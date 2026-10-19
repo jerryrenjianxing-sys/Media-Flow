@@ -30,7 +30,7 @@ test('busy or failed shutdown keeps the desktop open and permits a later interfa
   assert.equal(exited, true);
 });
 
-test('installation handoff or incomplete recovery cannot be bypassed by either exit mode', async () => {
+test('installation handoff cannot be bypassed by either exit mode', async () => {
   const exit = createDesktopExit({ waitForStartup: async () => {}, updates: { prepareExit: async () => { throw new Error('安装正在交接'); } },
     runtime: { stop: async () => assert.fail('must not stop') }, quit: () => assert.fail('must not quit') });
   await assert.rejects(exit.request(true), /交接/);

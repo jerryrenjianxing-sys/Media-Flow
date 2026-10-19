@@ -4,7 +4,7 @@ Windows电脑端平台页面，默认端口3001；通过业务API48138操作，�
 
 ## 路由
 
-- /：外部Skill首页，复制简短Markdown连接说明和下载完整同源ZIP；完整Markdown参考仍通过API导出。
+- /：外部Skill首页，下载与桌面复制同一短MD连接文件，支持改名和受控文件位置；普通浏览器仅下载MD。旧ZIP/完整Markdown接口仅兼容保留，无TXT或正文复制回退。
 - /manage：任务台管理入口；/workbench：完整任务参数。
 - /devices：设备与画面；/devices/guide：真机按需准备说明。
 - /run：真实运行进度、等待与停止。
