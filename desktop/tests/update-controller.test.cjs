@@ -126,6 +126,19 @@ test('startup checks once and page refresh/concurrent checks neither download no
   assert.deepEqual(f.calls, ['check']);
 });
 
+test('installed candidate and published version remain separate and automatic check failure is nonblocking', async () => {
+  const f = fixture();
+  f.updater.checkForUpdates = async () => { f.updater.emit('update-not-available', { version: '0.4.1-dev.44' }); };
+  await f.controller.startupCheck();
+  assert.equal(f.state.get().desktopVersion, '0.4.1-dev.45');
+  assert.equal(f.state.get().update.publishedVersion, '0.4.1-dev.44');
+  assert.match(f.state.get().update.message, /高于最新公开版本/);
+  f.updater.checkForUpdates = async () => { throw new Error('offline'); };
+  await f.controller.checkForUpdates({ automatic: true });
+  assert.equal(f.state.get().update.phase, 'check_unavailable');
+  assert.equal(f.state.get().update.checkAutomatic, true);
+});
+
 test('unavailable update metadata reports a short safe reason while platform remains usable', async () => {
   const logged = [];
   const f = fixture({ diagnostics: { write: (...event) => logged.push(event), info() {}, warn() {}, error() {}, debug() {} } });
@@ -133,7 +146,7 @@ test('unavailable update metadata reports a short safe reason while platform rem
   f.updater.checkForUpdates = async () => { throw failure; };
   await f.controller.checkForUpdates();
   const {message, phase} = f.state.get().update;
-  assert.equal(phase, 'error');
+  assert.equal(phase, 'check_unavailable');
   assert.ok(message.length <= 160);
   assert.match(message, /更新资料暂不可用/);
   assert.match(message, /仍可继续使用平台/);
@@ -147,7 +160,7 @@ test('network and unknown updater errors have concise Chinese recovery text with
     const f = fixture();
     f.updater.emit('error', failure);
     const {message, phase} = f.state.get().update;
-    assert.equal(phase, 'error');
+    assert.equal(phase, 'check_unavailable');
     assert.ok(message.length <= 160 && /[\u3400-\u9fff]/.test(message));
     assert.doesNotMatch(message, /HttpError|Headers|private|cache|upstream|secret/i);
     assert.match(message, /平台.*可.*使用|可继续使用平台/);

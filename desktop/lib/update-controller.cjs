@@ -72,16 +72,21 @@ class UpdateController {
         return;
       }
       this.info = info;
-      this.patch({ phase: 'available', version: info.version, releaseNotes: notesText(info.releaseNotes), message: `发现新版 ${info.version}。点击更新后开始下载。`, canCancel: false });
+      this.patch({ phase: 'available', version: info.version, publishedVersion: info.version, releaseNotes: notesText(info.releaseNotes), message: `发现新版 ${info.version}。点击更新后开始下载。`, canCancel: false });
     });
-    this.updater.on('update-not-available', () => { this.info = null; this.patch({ phase: 'current', message: '当前已是最新开发版本。', canCancel: false }); });
+    this.updater.on('update-not-available', info => {
+      this.info = null;
+      const publishedVersion = semver.valid(info?.version);
+      const ahead = publishedVersion && semver.gt(this.state.get().desktopVersion, publishedVersion);
+      this.patch({ phase: 'current', version: null, publishedVersion, message: ahead ? '当前安装版本高于最新公开版本，暂无可更新版本。' : '当前已是最新公开开发版本。', canCancel: false });
+    });
     this.updater.on('download-progress', progress => {
       if (!this.active || this.active.cancelled) return;
       this.patch({ phase: 'downloading', percent: progress.percent, bytesPerSecond: progress.bytesPerSecond, transferred: progress.transferred, total: progress.total, message: this.state.get().update.differential === 'full' ? '差分不可用，正在下载完整安装包…' : '正在下载更新…', canCancel: true });
     });
     this.updater.on('error', error => {
       this.diagnostics.write('error', 'updater-error', error);
-      if (!this.active && error.name !== 'CancellationError') this.patch({ phase: 'error', message: this.errorMessage(error, 'checking'), canCancel: false });
+      if (!this.active && error.name !== 'CancellationError') { this.info = null; this.patch({ phase: 'check_unavailable', version: null, publishedVersion: null, message: this.errorMessage(error, 'checking'), canCancel: false }); }
     });
     const diagnostics = this.diagnostics;
     this.updater.logger = {
@@ -94,14 +99,16 @@ class UpdateController {
       }
     };
   }
-  startupCheck() { if (this.startupChecked) return Promise.resolve(this.state.get()); this.startupChecked = true; return this.checkForUpdates(); }
-  checkForUpdates() {
+  startupCheck() { if (this.startupChecked) return Promise.resolve(this.state.get()); this.startupChecked = true; return this.checkForUpdates({ automatic: true }); }
+  checkForUpdates({ automatic = false } = {}) {
     if (this.runPromise) return Promise.resolve(this.state.get());
     if (!this.updater) { this.patch({ phase: 'current', message: '开发模式连接现有后台；安装版支持在线更新。' }); return Promise.resolve(this.state.get()); }
-    if (this.checkPromise) return this.checkPromise;
+    if (this.checkPromise) { if (!automatic) this.patch({ checkAutomatic: false }); return this.checkPromise; }
+    this.patch({ checkAutomatic: automatic });
     this.checkPromise = this.updater.checkForUpdates().then(() => this.state.get()).catch(error => {
       this.diagnostics.write('error', 'update-check-failed', error);
-      this.patch({ phase: 'error', message: this.errorMessage(error, 'checking'), canCancel: false });
+      this.info = null;
+      this.patch({ phase: 'check_unavailable', version: null, publishedVersion: null, message: this.errorMessage(error, 'checking'), canCancel: false });
       return this.state.get();
     }).finally(() => { this.checkPromise = null; });
     return this.checkPromise;
@@ -213,6 +220,15 @@ class UpdateController {
     this.active.cancelled = true;
     this.active.token.cancel();
     return this.runPromise || Promise.resolve(this.state.get());
+  }
+  async prepareExit() {
+    if (this.state.get().update.phase === 'installing' || this.journal.read()?.phase === 'installing') throw new Error('安装程序正在交接，请等待安装结果，暂不能另行退出。');
+    if (this.active) {
+      this.active.cancelled = true;
+      this.active.token.cancel();
+      await this.runPromise;
+    }
+    if (this.journal.read()) throw new Error('更新恢复尚未确认，请查看日志或重试启动后再退出。');
   }
   deferUpdate() {
     if (this.active) return this.cancelUpdate();

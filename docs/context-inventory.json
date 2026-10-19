@@ -2,120 +2,6 @@
   "schema": 1,
   "scope": "Git可见维护文档、配置、平台Skill及页面帮助；不读取运行数据",
   "files": [
-    {"path":"packaging/release-notes/0.4.1-dev.53.md","role":"historical","action":"retain","reason":"52真实停止心跳共享拒绝复现，窄修后递增且不改旧资产"},
-    {"path":"openspec/changes/streamline-external-agent-onboarding/specs/independent-runtime-host/spec.md","role":"change","action":"retain","reason":"真实启停发现的短暂共享竞争及持续拒绝契约"},
-    {"path":"packaging/release-notes/0.4.1-dev.52.md","role":"historical","action":"retain","reason":"冻结51后的实际视觉缺陷修复，保留原资产并递增版本"},
-    {"path":"docs/dev51-validation.md","role":"historical","action":"retain","reason":"分层验证、原始失败、评审修正及真实Trae门槛"},
-    {"path":"GLOSSARY.md","role":"current","action":"update","reason":"统一六个用户状态概念，不混淆接入与执行"},
-    {"path":"docs/module-map.md","role":"current","action":"update","reason":"现行职责、Interface与验证接缝"},
-    {"path":"packaging/release-notes/0.4.1-dev.51.md","role":"historical","action":"retain","reason":"短连接接入候选范围，真实Trae前不公开"},
-    {"path":"openspec/changes/streamline-external-agent-onboarding/proposal.md","role":"change","action":"retain","reason":"用户批准的dev.51独立变更"},
-    {"path":"openspec/changes/streamline-external-agent-onboarding/design.md","role":"change","action":"retain","reason":"统一连接Interface与发行门槛"},
-    {"path":"openspec/changes/streamline-external-agent-onboarding/tasks.md","role":"change","action":"retain","reason":"实现、自动验收与真实体验分别记录"},
-    {"path":"openspec/changes/streamline-external-agent-onboarding/specs/execution-architecture/spec.md","role":"change","action":"retain","reason":"短连接与自然引导契约"},
-    {"path":"openspec/changes/streamline-external-agent-onboarding/specs/project-governance/spec.md","role":"change","action":"retain","reason":"真实体验验收与发布门槛"},
-    {
-      "path": "packaging/release-notes/0.4.1-dev.50.md",
-      "role": "historical",
-      "action": "retain",
-      "reason": "dev.49冻结后构建失败保持标签，修正真实stdin编码链路后递增最终后台修复发行，不覆盖旧资产"
-    },
-    {
-      "path": "packaging/release-notes/0.4.1-dev.49.md",
-      "role": "historical",
-      "action": "retain",
-      "reason": "安装后台路径身份与启动异常修复；真实接管及独立性验收分别记录，不改旧发行资产"
-    },
-    {
-      "path": "packaging/release-notes/0.4.1-dev.48.md",
-      "role": "historical",
-      "action": "retain",
-      "reason": "Electron复制权限修正及最终发行；不覆盖已发布资产，真实迁移未通过事实保留"
-    },
-    {
-      "path": "packaging/release-notes/0.4.1-dev.47.md",
-      "role": "historical",
-      "action": "retain",
-      "reason": "Electron隔离实例连接修正；已发布旧资产不覆盖，最终交付另行记录"
-    },
-    {
-      "path": "packaging/release-notes/0.4.1-dev.46.md",
-      "role": "historical",
-      "action": "retain",
-      "reason": "Electron升级验收候选；真实升级和迁移结果分别记录"
-    },
-    {
-      "path": "openspec/specs/electron-desktop/spec.md",
-      "role": "contract",
-      "action": "retain",
-      "reason": "Electron桌面生命周期及用户主动更新的现行契约；验收事实另存"
-    },
-    {
-      "path": "docs/electron-desktop.md",
-      "role": "current",
-      "action": "update",
-      "reason": "Electron运行、用户主动更新及隔离边界；实际验收与实现分开"
-    },
-    {
-      "path": "packaging/release-notes/0.4.1-dev.45.md",
-      "role": "historical",
-      "action": "retain",
-      "reason": "首个Electron候选发行范围；不把自动测试冒充真实升级或迁移"
-    },
-    {
-          "path": "openspec/changes/add-electron-desktop-github-updates/.openspec.yaml",
-          "role": "change",
-          "action": "retain",
-          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
-    },
-    {
-          "path": "openspec/changes/add-electron-desktop-github-updates/proposal.md",
-          "role": "change",
-          "action": "retain",
-          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
-    },
-    {
-          "path": "openspec/changes/add-electron-desktop-github-updates/design.md",
-          "role": "change",
-          "action": "retain",
-          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
-    },
-    {
-          "path": "openspec/changes/add-electron-desktop-github-updates/tasks.md",
-          "role": "change",
-          "action": "retain",
-          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
-    },
-    {
-          "path": "openspec/changes/add-electron-desktop-github-updates/specs/electron-desktop/spec.md",
-          "role": "change",
-          "action": "retain",
-          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
-    },
-    {
-          "path": "openspec/changes/add-electron-desktop-github-updates/specs/windows-distribution/spec.md",
-          "role": "change",
-          "action": "retain",
-          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
-    },
-    {
-          "path": "openspec/changes/add-electron-desktop-github-updates/specs/independent-runtime-host/spec.md",
-          "role": "change",
-          "action": "retain",
-          "reason": "用户批准的Electron迁移和GitHub更新；实现与验收分别记录"
-    },
-    {
-      "path": "packaging/release-notes/0.4.1-dev.44.md",
-      "role": "historical",
-      "action": "retain",
-      "reason": "dev.44发行范围与验收边界；不冒充实机安装或业务稳定性验收"
-    },
-    {
-      "path": "fixed_runner/assets/home_badge_glyphs_v2.md",
-      "role": "reference",
-      "action": "retain",
-      "reason": "角标字形补充规则的来源、调优与独立回归边界"
-    },
     {
       "path": ".agents/skills/openspec-apply-change/SKILL.md",
       "role": "reference",
@@ -205,6 +91,12 @@
       "role": "historical",
       "action": "retain",
       "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "GLOSSARY.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
     },
     {
       "path": "PROJECT.md",
@@ -501,6 +393,18 @@
       "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
     },
     {
+      "path": "docs/dev51-validation.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "docs/electron-desktop.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
       "path": "docs/history/2026-09-09/PROJECT.md",
       "role": "historical",
       "action": "retain",
@@ -586,6 +490,12 @@
     },
     {
       "path": "docs/mbh-development.md",
+      "role": "current",
+      "action": "update",
+      "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
+    },
+    {
+      "path": "docs/module-map.md",
       "role": "current",
       "action": "update",
       "reason": "现行入口/操作依据；统一最新要求，差距如实列出"
@@ -741,6 +651,12 @@
       "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
     },
     {
+      "path": "fixed_runner/assets/home_badge_glyphs_v2.md",
+      "role": "reference",
+      "action": "retain",
+      "reason": "工具说明/配置/素材；不独立决定产品流程，保留原职责"
+    },
+    {
       "path": "fixed_runner/testdata/home_badge/README.md",
       "role": "reference",
       "action": "retain",
@@ -757,6 +673,54 @@
       "role": "redirect",
       "action": "archive",
       "reason": "旧操作移至历史快照，原地址只指向当前入口和历史"
+    },
+    {
+      "path": "openspec/changes/add-electron-desktop-github-updates/.openspec.yaml",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-electron-desktop-github-updates/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-electron-desktop-github-updates/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-electron-desktop-github-updates/specs/electron-desktop/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-electron-desktop-github-updates/specs/independent-runtime-host/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-electron-desktop-github-updates/specs/project-governance/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-electron-desktop-github-updates/specs/windows-distribution/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/add-electron-desktop-github-updates/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
     },
     {
       "path": "openspec/changes/add-hybrid-feed-orchestration/.openspec.yaml",
@@ -2637,6 +2601,42 @@
       "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
     },
     {
+      "path": "openspec/changes/streamline-external-agent-onboarding/design.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/streamline-external-agent-onboarding/proposal.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/streamline-external-agent-onboarding/specs/execution-architecture/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/streamline-external-agent-onboarding/specs/independent-runtime-host/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/streamline-external-agent-onboarding/specs/project-governance/spec.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
+      "path": "openspec/changes/streamline-external-agent-onboarding/tasks.md",
+      "role": "change",
+      "action": "retain",
+      "reason": "活动变更/历史开发证据；适用范围见清理清单，未验任务不勾选"
+    },
+    {
       "path": "openspec/changes/wire-engagement-correction-evidence/proposal.md",
       "role": "change",
       "action": "retain",
@@ -2740,6 +2740,12 @@
     },
     {
       "path": "openspec/specs/device-profiles/spec.md",
+      "role": "contract",
+      "action": "retain",
+      "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
+    },
+    {
+      "path": "openspec/specs/electron-desktop/spec.md",
       "role": "contract",
       "action": "retain",
       "reason": "现行契约；混合旧兼容行为用适用范围隔离，不伪造验收"
@@ -2907,7 +2913,73 @@
       "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
     },
     {
+      "path": "packaging/release-notes/0.4.1-dev.44.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.45.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.46.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.47.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.48.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.49.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
       "path": "packaging/release-notes/0.4.1-dev.5.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.50.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.51.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.52.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.53.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.54.md",
       "role": "historical",
       "action": "retain",
       "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"

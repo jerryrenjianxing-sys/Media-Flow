@@ -54,7 +54,7 @@ test('sandbox preload exposes only scoped methods and subscription hides IPC eve
   let exposed;
   const context = { require: module => { assert.equal(module, 'electron'); return { ipcRenderer: ipc, contextBridge: { exposeInMainWorld: (name, bridge) => { assert.equal(name, 'mediaflowDesktop'); exposed = bridge; } } }; } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../preload.cjs'), 'utf8'), context);
-  assert.deepEqual(Object.keys(exposed).sort(), ['cancelUpdate', 'checkForUpdates', 'deferUpdate', 'getInstance', 'getState', 'openLogs', 'retryStartup', 'startUpdate', 'subscribe'].sort());
+  assert.deepEqual(Object.keys(exposed).sort(), ['cancelUpdate', 'checkForUpdates', 'copyConnectionFile', 'revealConnectionFile', 'deferUpdate', 'getInstance', 'getState', 'openLogs', 'retryStartup', 'startUpdate', 'subscribe'].sort());
   const received = [];
   const unsubscribe = exposed.subscribe((...args) => received.push(args));
   ipc.emit('mediaflow:state', { sender: 'privileged' }, { phase: 'available' });

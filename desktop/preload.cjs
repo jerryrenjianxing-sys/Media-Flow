@@ -13,5 +13,7 @@ contextBridge.exposeInMainWorld('mediaflowDesktop', Object.freeze({
   },
   checkForUpdates: invoke('checkForUpdates'), startUpdate: invoke('startUpdate'),
   deferUpdate: invoke('deferUpdate'), cancelUpdate: invoke('cancelUpdate'),
-  retryStartup: invoke('retryStartup'), openLogs: invoke('openLogs')
+  retryStartup: invoke('retryStartup'), openLogs: invoke('openLogs'),
+  copyConnectionFile: options => ipcRenderer.invoke('mediaflow:copyConnectionFile', options),
+  revealConnectionFile: options => ipcRenderer.invoke('mediaflow:revealConnectionFile', options)
 }));

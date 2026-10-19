@@ -5,7 +5,7 @@ import {useDesktopState, type DesktopState} from "../lib/desktop-bridge";
 const labels = {
   idle: "尚未检查", checking: "正在检查更新", available: "发现新版本",
   downloading: "正在下载更新", verifying: "正在校验安装包", waiting_idle: "等待任务与设备操作空闲",
-  countdown: "即将重启安装", installing: "正在打开安装程序", current: "已是最新版本", error: "更新未完成",
+  countdown: "即将重启安装", installing: "正在打开安装程序", current: "暂无可更新版本", check_unavailable: "暂时无法检查更新", error: "更新未完成",
 };
 const activePhases = new Set(["checking", "downloading", "verifying", "waiting_idle", "countdown", "installing"]);
 const megabytes = (value: number) => `${(value / 1048576).toFixed(1)} MB`;
@@ -33,6 +33,7 @@ export function DesktopUpdateBanner() {
   const {state, error, invoke} = useDesktopState();
   if (!state || ["idle", "checking", "current"].includes(state.update.phase)) return null;
   const update = state.update;
+  if (update.phase === "check_unavailable" && update.checkAutomatic) return null;
   const canStart = update.phase === "available" || (update.phase === "error" && !!update.version);
   return <aside className="desktop-update-banner" aria-label="软件更新">
     <UpdateStatus update={update}/>
@@ -42,7 +43,8 @@ export function DesktopUpdateBanner() {
       {update.phase === "available" && <button className="desktop-update-secondary" onClick={() => void invoke("deferUpdate")}>稍后</button>}
       {update.canCancel && <button className="desktop-update-secondary" onClick={() => void invoke("cancelUpdate")}>取消更新</button>}
       {update.phase === "error" && !update.version && <button onClick={() => void invoke("checkForUpdates")}>重新检查</button>}
-      {update.phase === "error" && <button className="desktop-update-secondary" onClick={() => void invoke("openLogs")}>查看日志</button>}
+      {update.phase === "check_unavailable" && <><button onClick={() => void invoke("checkForUpdates")}>重新检查</button><button className="desktop-update-secondary" onClick={() => void invoke("deferUpdate")}>关闭提示</button></>}
+      {["error", "check_unavailable"].includes(update.phase) && <button className="desktop-update-secondary" onClick={() => void invoke("openLogs")}>查看日志</button>}
     </div>
     {error && <p role="alert">{updateMessage(error)}</p>}
   </aside>;
@@ -54,6 +56,7 @@ export function DesktopUpdateSettings() {
   return <section className="settings-section desktop-update-settings">
     <h3>软件更新</h3>
     <p>桌面版本 {state.desktopVersion}{state.sourceRevision ? ` · ${state.sourceRevision.slice(0, 12)}` : ""}</p>
+    {state.update.publishedVersion && <p>最新公开开发版本 {state.update.publishedVersion}</p>}
     <p>{state.packaged ? "启动时自动检查 GitHub 新版；点击更新后才会下载，安装过程会显示进度。" : "当前为源码开发环境，安装版提供 GitHub 更新。"}</p>
     <UpdateStatus update={state.update}/>
     <div className="desktop-update-actions">

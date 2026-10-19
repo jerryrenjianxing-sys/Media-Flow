@@ -48,11 +48,11 @@
 .skill-workbench{display:inline-flex;align-items:center;gap:9px;padding:12px 0 12px 12px;white-space:nowrap}
 .skill-workbench svg{width:15px;height:15px}
 .skill-workbench:hover{color:var(--sh-accent)}
-.skill-copy-dialog{width:min(660px,calc(100% - 32px));padding:28px;border:1px solid var(--sh-line);border-radius:12px;background:var(--sh-bg);color:var(--sh-text);max-height:90svh;overflow:auto}
-.skill-copy-dialog::backdrop{background:#0009;backdrop-filter:blur(4px)}
-.skill-copy-dialog h2{font-size:20px;margin:0 0 12px}
-.skill-copy-dialog p{font-size:14px;line-height:1.8;color:var(--sh-muted)}
-.skill-copy-dialog textarea{display:block;width:100%;height:240px;resize:vertical;margin:20px 0;padding:14px;border:1px solid var(--sh-line);border-radius:6px;font-size:12px;background:var(--sh-bg);color:var(--sh-text)}
+.skill-file-options{display:inline-block;max-width:100%;margin-top:10px;text-align:left;color:var(--sh-muted);font-size:13px}
+.skill-file-options summary{cursor:pointer;text-align:center;padding:4px}
+.skill-file-options label{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
+.skill-file-options input{font:inherit;max-width:100%;width:260px;background:var(--sh-bg);color:var(--sh-text);border:1px solid var(--sh-line);border-radius:6px;padding:8px}
+.skill-feedback{max-width:660px}
 @keyframes skill-agents-scroll{to{transform:translateX(-50%)}}
 @media(min-height:900px){.skill-hero{padding-top:100px;padding-bottom:30px}.skill-agents{margin-bottom:70px}}
 @media(min-width:601px) and (max-height:850px){.skill-header{height:64px}.skill-hero{padding:28px 0 0}.skill-eyebrow{margin-bottom:18px}.skill-hero h1{font-size:clamp(72px,8vw,106px)}.skill-hero h2{font-size:26px;line-height:1.4;margin:20px 0 12px}.skill-description{font-size:15px;line-height:1.7}.skill-actions{margin:25px 0 12px}.skill-button{min-height:48px}.skill-feedback{min-height:28px;margin-top:8px}.skill-agents{margin:14px auto 22px}.skill-agents-heading{margin-bottom:16px}.skill-agents-note{margin-top:16px}.skill-footer{min-height:54px}}

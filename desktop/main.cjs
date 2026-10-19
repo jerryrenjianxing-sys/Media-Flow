@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, shell, dialog, session, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, shell, dialog, session, screen, clipboard, ClipboardItem } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -11,6 +11,8 @@ const { UpdateController } = require('./lib/update-controller.cjs');
 const { createProfileUpdater } = require('./lib/profile-updater.cjs');
 const { rewriteInstanceUrl, trustedSender, clipboardWriteAllowed } = require('./lib/session-policy.cjs');
 const { clampBounds, externalBrowserUrl, canOpenInstanceBrowser } = require('./lib/window-state.cjs');
+const { createConnectionFiles } = require('./lib/connection-files.cjs');
+const { createDesktopExit } = require('./lib/desktop-exit.cjs');
 
 app.setName('MediaFlow');
 app.enableSandbox();
@@ -33,6 +35,7 @@ else {
   let tray;
   let quitting = false;
   let startupPromise;
+  let exitInteraction = false;
   const preferences = new Journal(path.join(userData, 'window-preferences.json'));
   const urls = profile ? instanceUrls(profile) : { apiUrl: '', uiUrl: '' };
   const packageInfo = require('./package.json');
@@ -41,6 +44,21 @@ else {
   const browserAvailable = canOpenInstanceBrowser(profile);
   const state = new DesktopState({ desktopVersion: app.getVersion(), sourceRevision: buildInfo.sourceRevision || packageInfo.sourceRevision || 'development', instance: { ...urls, id: profile?.id || null, acceptance: Boolean(profile?.acceptance), browserAvailable }, packaged });
   const runtime = profile ? new RuntimeController({ profile, platformRoot, packaged, state, diagnostics }) : null;
+  const connectionFiles = createConnectionFiles({ directory: path.join(userData, 'connection-files'),
+    loadConnection: async () => {
+      if (!runtime) throw new Error('平台实例尚未配置。');
+      await runtime.probe(1500);
+      const response = await fetch(`${urls.apiUrl}/api/platform-skill?format=connect`, { signal: AbortSignal.timeout(4000), redirect: 'error' });
+      if (!response.ok || !response.headers.get('content-type')?.startsWith('text/markdown')) throw new Error('平台连接说明暂不可用。');
+      const chunks = []; let size = 0;
+      for await (const chunk of response.body) { size += chunk.length; if (size > 4096) throw new Error('平台连接说明超过大小限制。'); chunks.push(chunk); }
+      return Buffer.concat(chunks).toString('utf8');
+    },
+    writeFiles: async file => {
+      try { await clipboard.write([new ClipboardItem({ 'text/uri-list': pathToFileURL(file).href })]); }
+      catch (error) { diagnostics.write('error', 'connection-file-clipboard', error); throw error; }
+    }, revealFile: file => shell.showItemInFolder(file)
+  });
   const cacheDirectory = path.join(userData, 'update-cache');
   let updater = null;
   if (packaged && profile) {
@@ -58,6 +76,7 @@ else {
   }
   const updates = new UpdateController({ updater, state, runtime, diagnostics, journal: new Journal(path.join(userData, 'update-operation.json')), profile: profile || { id: 'invalid' }, cacheDirectory,
     installDirectory: path.dirname(process.execPath), cancellationFactory: () => new (require('builder-util-runtime').CancellationToken)(), beforeInstall: showWindow });
+  const exits = createDesktopExit({ waitForStartup: () => startupPromise, updates, runtime, quit: () => { quitting = true; app.quit(); } });
 
   function showWindow() { if (!window) return; if (window.isMinimized()) window.restore(); window.show(); window.focus(); }
   function sendState(value) { if (window && !window.isDestroyed()) window.webContents.send('mediaflow:state', value); }
@@ -65,9 +84,10 @@ else {
   app.on('second-instance', () => showWindow());
   app.on('activate', () => showWindow());
   app.on('window-all-closed', () => { /* Tray owns the desktop lifecycle; background is independent. */ });
-  app.on('before-quit', () => { quitting = true; });
+  app.on('before-quit', event => { if (!quitting) { event.preventDefault(); void exitDesktop(false); } });
 
   async function startup() {
+    if (exits.pending) throw new Error('正在退出，请稍候。');
     if (startupPromise) return startupPromise;
     startupPromise = (async () => {
       if (profileError) { state.patch('startup', { phase: 'error', message: profileError.message, ready: false }); return state.get(); }
@@ -91,30 +111,37 @@ else {
       openLogs: async () => { const result = await shell.openPath(diagnostics.directory); if (result) throw new Error(result); return state.get(); } };
     for (const [name, action] of Object.entries(actions)) ipcMain.handle(`mediaflow:${name}`, (event, ...args) => {
       if (!trustedSender(event, window, urls.uiUrl, splashUrl) || args.length) throw new Error('Desktop request is not permitted.');
+      if (exits.pending && !['getState', 'openLogs'].includes(name)) throw new Error('正在退出，请稍候。');
       return action();
     });
+    for (const [name, action] of Object.entries({ copyConnectionFile: value => connectionFiles.copy(value), revealConnectionFile: value => connectionFiles.reveal(value) })) {
+      ipcMain.handle(`mediaflow:${name}`, async (event, ...args) => {
+        if (!trustedSender(event, window, urls.uiUrl, '') || args.length !== 1 || exits.pending) throw new Error('Desktop request is not permitted.');
+        try { return await action(args[0]); }
+        catch (error) { diagnostics.write('error', name, error); throw new Error('MD文件操作未完成，请检查文件名或平台连接后重试。'); }
+      });
+    }
     ipcMain.on('mediaflow:getInstance', event => { event.returnValue = trustedSender(event, window, urls.uiUrl, splashUrl) ? { ...state.get().instance, streamUrl: profile ? `http://127.0.0.1:${profile.stream_port}` : '' } : null; });
   }
 
-  async function exitDesktop() {
-    if (updates.active && state.get().update.phase !== 'installing') {
-      updates.active.cancelled = true;
-      updates.active.token.cancel();
-      await updates.runPromise;
-      if (updates.journal.read()) { await dialog.showMessageBox(window, { type: 'error', message: '后台恢复尚未完成，请重试启动后再退出。' }); showWindow(); return; }
-    }
-    quitting = true;
-    app.quit();
-  }
-  async function stopBackground() {
-    if (updates.active) { showWindow(); return; }
+  async function exitDesktop(stopBackground = false) {
+    if (exitInteraction) return;
+    exitInteraction = true;
+    let interfaceOnly = false;
     try {
-      const result = await dialog.showMessageBox(window, { type: 'question', buttons: ['取消', '停止后台'], defaultId: 0, cancelId: 0, message: '停止该实例后台？', detail: '后台空闲时安全停止。关闭窗口或退出界面无需停止后台。' });
-      if (result.response !== 1) return;
-      await runtime.stop();
-      await window.loadURL(splashUrl);
+      await exits.request(stopBackground);
+    } catch (error) {
+      diagnostics.write('error', 'desktop-exit-failed', error);
       showWindow();
-    } catch (error) { diagnostics.write('error', 'tray-stop-failed', error); await dialog.showMessageBox(window, { type: 'error', message: error.message }); }
+      const busy = error.code === 'stop_refused';
+      const result = await dialog.showMessageBox(window, { type: 'warning', buttons: busy ? ['返回任务台', '仅退出界面'] : ['返回', '查看日志'], defaultId: 0, cancelId: 0,
+        message: busy ? '后台仍有操作占用，未完全退出。' : '未能确认安全退出，窗口已保留。',
+        detail: busy ? '当前任务、维护或人工控制仍占用后台。不会强行中断；可以只退出界面，让后台继续运行。' : '请重试或查看日志。后台身份、停止结果或更新交接尚未确认。' });
+      if (result.response === 1) { if (busy) interfaceOnly = true; else await shell.openPath(diagnostics.directory); }
+    } finally {
+      exitInteraction = false;
+    }
+    if (interfaceOnly) await exitDesktop(false);
   }
 
   app.whenReady().then(async () => {
@@ -151,11 +178,12 @@ else {
     tray.on('double-click', showWindow);
     tray.setContextMenu(Menu.buildFromTemplate([{ label: '打开 MediaFlow', click: showWindow }, { label: '在浏览器中打开', visible: !profile?.acceptance, enabled: Boolean(urls.uiUrl) && browserAvailable, click: () => { if (browserAvailable) void shell.openExternal(urls.uiUrl); } },
       { label: '检查更新', enabled: packaged && Boolean(profile), click: () => { showWindow(); void updates.checkForUpdates(); } },
-      { label: '打开日志', click: () => { void shell.openPath(diagnostics.directory); } }, { type: 'separator' }, { label: '停止后台', enabled: packaged && Boolean(profile), click: () => { void stopBackground(); } },
-      { label: '退出界面（后台继续运行）', click: () => { void exitDesktop(); } }]));
+      { label: '打开日志', click: () => { void shell.openPath(diagnostics.directory); } }, { type: 'separator' },
+      { label: '完全退出 MediaFlow', enabled: packaged && Boolean(profile), click: () => { void exitDesktop(true); } },
+      { label: '仅退出界面（后台继续运行）', click: () => { void exitDesktop(false); } }]));
     await window.loadURL(splashUrl);
     showWindow();
     diagnostics.write('info', 'desktop-started', { name: app.getName(), version: app.getVersion(), sourceRevision: state.get().sourceRevision, instance: profile?.id, packaged });
     void startup();
-  }).catch(error => { diagnostics.write('error', 'desktop-fatal', error); dialog.showErrorBox('MediaFlow 启动失败', error.message); app.quit(); });
+  }).catch(error => { diagnostics.write('error', 'desktop-fatal', error); dialog.showErrorBox('MediaFlow 启动失败', error.message); quitting = true; app.quit(); });
 }

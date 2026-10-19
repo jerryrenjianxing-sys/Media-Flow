@@ -72,7 +72,7 @@ function managementError(result, processError, action) {
     service_early_exit: '后台在启动过程中提前退出，请打开启动日志查看具体原因。',
     port_occupied: '服务端口已被占用，但未返回本实例身份。请检查端口占用。',
     startup_timeout: '后台未在限定时间内就绪，请打开启动日志后重试。',
-    stop_unconfirmed: '仍有后台进程存活或身份未核实，不能继续安装。',
+    stop_unconfirmed: '仍有后台进程存活或身份未核实，不能确认已停止。',
     stop_refused: '后台仍有任务、维护或人工控制占用，不能安全停止。',
     legacy_host_gate_unavailable: '旧后台不支持安全停机交接，请通过原版本正常停止后重试。',
     helper_failed: '后台管理子程序未能完成，请打开启动日志。',
@@ -160,7 +160,7 @@ class RuntimeController {
     await this.manager({ platformRoot: this.platformRoot, profile: this.profile, action: 'Stop', operationId, timeout: 45000 });
     const status = await this.manager({ platformRoot: this.platformRoot, profile: this.profile, action: 'Status', timeout: 10000 });
     if (status.instance_id !== this.profile.id || status.stopped_confirmed !== true || status.background?.state !== 'stopped' || !Array.isArray(status.processes) ||
-      status.processes.some(process => process.running !== false || ['unknown', 'mismatch'].includes(process.identity))) throw new Error('仍有该实例的后台进程存活或身份未核实。安装已取消。');
+      status.processes.some(process => process.running !== false || ['unknown', 'mismatch'].includes(process.identity))) throw new Error('仍有该实例的后台进程存活或身份未核实，不能确认已停止。');
     this.diagnostics.write('info', 'background-stopped-confirmed', { instance: this.profile.id });
     this.state.patch('startup', { phase: 'stopped', message: '该实例后台已安全停止。', ready: false });
   }

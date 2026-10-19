@@ -53,7 +53,7 @@ function createProfileUpdater(NsisUpdater, { profilePath, installDirectory, publ
   updater.allowPrerelease = true;
   updater.channel = 'dev';
   updater.allowDowngrade = false;
-  if (publish) updater.setFeedURL(publish);
+  if (publish) updater.setFeedURL(publish.provider === 'github' ? { ...publish, provider: 'custom', updateProvider: require('./published-releases.cjs').PublishedGitHubProvider } : publish);
   return updater;
 }
 module.exports = { createProfileUpdater, profileInstallerArguments };

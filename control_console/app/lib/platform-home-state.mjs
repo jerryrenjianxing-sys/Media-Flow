@@ -34,3 +34,9 @@ export async function loadSkillConnection(request) {
   if(new TextEncoder().encode(document).byteLength>4096) throw new Error('skill_connection_too_large');
   return document;
 }
+
+export function connectionFilename(value) {
+  if (typeof value !== 'string' || value.length > 100 || !/\.md$/i.test(value) || /[<>:"/\\|?*]/u.test(value) || [...value].some(char=>char.charCodeAt(0)<32) ||
+    /[. ]$/.test(value) || value.trim() !== value || !value.slice(0,-3).trim() || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(value)) throw new Error('请输入合法的MD文件名，后缀须为.md。');
+  return value;
+}

@@ -12,3 +12,4 @@ export function platformSummary(snapshot:PlatformSnapshot|null,error:boolean):{
 export function loadSkillArchive(request:()=>Promise<Response>):Promise<Blob>;
 export function loadSkillMarkdown(request:()=>Promise<Response>):Promise<string>;
 export function loadSkillConnection(request:()=>Promise<Response>):Promise<string>;
+export function connectionFilename(value:string):string;

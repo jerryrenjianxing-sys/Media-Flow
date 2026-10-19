@@ -56,3 +56,11 @@ test('update banner rejects raw bridge errors rather than merely wrapping their 
 test('source environment cannot initiate installed-release checks',()=>{
   snapshot({phase:'idle'},false);assert.match(render(DesktopUpdateSettings),/<button[^>]*disabled=""[^>]*>检查更新/);
 });
+test('automatic check unavailable stays in settings and manual failure can be dismissed',()=>{
+  snapshot({phase:'check_unavailable',checkAutomatic:true,message:'暂时无法检查更新。平台仍可使用。'});
+  assert.equal(render(DesktopUpdateBanner),'');
+  assert.match(render(DesktopUpdateSettings),/暂时无法检查更新/);
+  snapshot({phase:'check_unavailable',checkAutomatic:false,message:'暂时无法检查更新。平台仍可使用。'});
+  assert.match(render(DesktopUpdateBanner),/关闭提示/);
+  assert.doesNotMatch(render(DesktopUpdateBanner),/更新未完成/);
+});
