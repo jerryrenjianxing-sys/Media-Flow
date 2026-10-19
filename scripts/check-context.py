@@ -12,6 +12,7 @@ REGISTRY = 'docs/context-inventory.json'
 SUFFIXES = {'.md', '.yaml', '.yml', '.toml'}
 CURRENT = {
     'AGENTS.md', 'README.md', 'PROJECT.md', 'STATUS.md', 'RUNBOOK.md', 'CONTEXT.md',
+    'GLOSSARY.md', 'docs/module-map.md',
     'control_console/README.md', 'control_console/DESIGN.md', 'fixed_runner/README.md',
     'launcher/README.md', 'packaging/README.md', 'docs/context-cleanup.md',
     'docs/mbh-development.md', 'docs/current-followup.md',

@@ -2,6 +2,14 @@
   "schema": 1,
   "scope": "Git可见维护文档、配置、平台Skill及页面帮助；不读取运行数据",
   "files": [
+    {"path":"GLOSSARY.md","role":"current","action":"update","reason":"统一六个用户状态概念，不混淆接入与执行"},
+    {"path":"docs/module-map.md","role":"current","action":"update","reason":"现行职责、Interface与验证接缝"},
+    {"path":"packaging/release-notes/0.4.1-dev.51.md","role":"historical","action":"retain","reason":"短连接接入候选范围，真实Trae前不公开"},
+    {"path":"openspec/changes/streamline-external-agent-onboarding/proposal.md","role":"change","action":"retain","reason":"用户批准的dev.51独立变更"},
+    {"path":"openspec/changes/streamline-external-agent-onboarding/design.md","role":"change","action":"retain","reason":"统一连接Interface与发行门槛"},
+    {"path":"openspec/changes/streamline-external-agent-onboarding/tasks.md","role":"change","action":"retain","reason":"实现、自动验收与真实体验分别记录"},
+    {"path":"openspec/changes/streamline-external-agent-onboarding/specs/execution-architecture/spec.md","role":"change","action":"retain","reason":"短连接与自然引导契约"},
+    {"path":"openspec/changes/streamline-external-agent-onboarding/specs/project-governance/spec.md","role":"change","action":"retain","reason":"真实体验验收与发布门槛"},
     {
       "path": "packaging/release-notes/0.4.1-dev.50.md",
       "role": "historical",

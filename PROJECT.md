@@ -8,7 +8,7 @@
 
 ## 当前架构
 
-外部 Agent → 完整 mediaflow-platform Skill → 本机 API → SQLite 队列 → 每设备 Worker → 固定执行器 → Android。
+外部 Agent → 短连接说明 / mediaflow-platform Skill → 本机 API → SQLite 队列 → 每设备 Worker → 固定执行器 → Android。
 首页和任务台默认3001，业务API默认48138；运行配置可覆盖。当前不内置 OpenCode/Pi，不依赖自建聊天回合、权限等级或确认卡。
 
 产品主线是标准 MuMu：实际900×1600、320 DPI、竖屏；名称、来源、Root、精确版本不是整机门槛。真机保留显式启用与任务选择，本次五机带测是单独任务，不变成全产品默认。安装配置 Skill 不要求携带巨大虚拟机模板；旧模板、镜像及兼容接口保留。
@@ -21,6 +21,7 @@
 | 连接平台、启动、停止、准备、MBH开发入口 | [RUNBOOK](RUNBOOK.md) |
 | 用户目标到主题、保存、任务、复盘 | [平台Skill](fixed_runner/assets/agent/skills/mediaflow-platform/SKILL.md) |
 | 系统行为契约与长期决定 | [主规格](openspec/specs)、[决定索引](docs/decisions/README.md) |
+| 状态术语与代码职责 | [术语表](GLOSSARY.md)、[模块地图](docs/module-map.md) |
 | 开发中变更 | openspec list；读取相关变更的适用范围和未完成任务 |
 | 五机带测和已发现缺陷 | [后续纠错记录](docs/current-followup.md) |
 | 前端布局与桌面验收 | [现行设计](control_console/DESIGN.md) |

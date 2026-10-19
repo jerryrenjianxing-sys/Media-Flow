@@ -6,7 +6,9 @@
 
 首页/任务台：http://127.0.0.1:3001/ 。业务 API：http://127.0.0.1:48138 。
 
-用户仅提供 Skill 时，运行包内 scripts/mediaflow.ps1 check：只读 GET /api/automation，5秒总截止，不依赖系统Python，不连接ADB、不启动服务、不收口任务。设备登记快照带检测时间；online:null不是在线。
+首页复制的是短连接说明：读取其连接资料指向的现成Skill，再用现成PowerShell客户端 `check --connection-file`。资料在既有外部数据根的agent-connection.json，由后台启动时原子更新；不需要重建文件或全局安装Skill。ZIP解压即可使用，完整Markdown只作阅读参考。
+
+首次检查只读 GET /api/automation，5秒总截止，不依赖系统Python，不连接ADB、不启动服务、不收口任务。设备登记快照带检测时间；online:null不是在线。连接、登记、任务就绪与完成的口径见[术语表](GLOSSARY.md)。路径失效重新复制说明或打开软件，不搜索全盘或猜开发目录。
 
 服务确认未启动时先询问。仅连接失败不能断言软件没开。用户同意后才用已核实入口启动一次，最多30秒复查；不能猜路径、重复拉起后台或恢复等待任务。无本机工具时明确限制。
 
