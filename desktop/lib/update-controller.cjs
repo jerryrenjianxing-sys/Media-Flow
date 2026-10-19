@@ -81,7 +81,7 @@ class UpdateController {
     });
     this.updater.on('error', error => {
       this.diagnostics.write('error', 'updater-error', error);
-      if (!this.active && error.name !== 'CancellationError') this.patch({ phase: 'error', message: this.errorMessage(error), canCancel: false });
+      if (!this.active && error.name !== 'CancellationError') this.patch({ phase: 'error', message: this.errorMessage(error, 'checking'), canCancel: false });
     });
     const diagnostics = this.diagnostics;
     this.updater.logger = {
@@ -100,7 +100,8 @@ class UpdateController {
     if (!this.updater) { this.patch({ phase: 'current', message: '开发模式连接现有后台；安装版支持在线更新。' }); return Promise.resolve(this.state.get()); }
     if (this.checkPromise) return this.checkPromise;
     this.checkPromise = this.updater.checkForUpdates().then(() => this.state.get()).catch(error => {
-      this.patch({ phase: 'error', message: this.errorMessage(error), canCancel: false });
+      this.diagnostics.write('error', 'update-check-failed', error);
+      this.patch({ phase: 'error', message: this.errorMessage(error, 'checking'), canCancel: false });
       return this.state.get();
     }).finally(() => { this.checkPromise = null; });
     return this.checkPromise;
@@ -154,7 +155,8 @@ class UpdateController {
       this.assertActive(active);
       active.stopping = true;
       this.patch({ phase: 'waiting_idle', message: '正在安全停止该实例后台并核验进程退出…', blockers: [], canCancel: false });
-      await this.runtime.stop(active.operationId);
+      try { await this.runtime.stop(active.operationId); }
+      catch (error) { this.diagnostics.write('error', 'update-background-stop-failed', error); throw Object.assign(new Error('后台未能确认已停止。'), { code: 'ERR_MEDIAFLOW_UPDATE_STOP' }); }
       active.backgroundStopped = true;
       active.stopping = false;
       this.journal.write({ ...this.journal.read(), phase: 'stopped' });
@@ -176,8 +178,9 @@ class UpdateController {
       let recoveryError = null;
       try { await this.releaseOperation(active); } catch (releaseError) { recoveryError = releaseError; }
       this.diagnostics.write(cancelled ? 'info' : 'error', cancelled ? 'update-cancelled' : 'update-failed', error);
+      if (recoveryError) this.diagnostics.write('error', 'update-recovery-failed', recoveryError);
       this.patch({ phase: recoveryError ? 'error' : cancelled ? 'available' : 'error', countdownSeconds: null, blockers: [], canCancel: false,
-        message: recoveryError ? `${cancelled ? '更新已取消' : this.errorMessage(error)}；后台恢复需要重试：${recoveryError.message}` : cancelled ? '更新已取消，可稍后重新开始。' : this.errorMessage(error) });
+        message: recoveryError ? `${cancelled ? '更新已取消。' : this.errorMessage(error)}后台恢复尚未确认，请查看日志后重试；不会继续安装。` : cancelled ? '更新已取消，可稍后重新开始。' : this.errorMessage(error) });
       return this.state.get();
     }
   }
@@ -237,10 +240,35 @@ class UpdateController {
     this.journal.clear();
     this.diagnostics.write('info', installedTarget ? 'update-completed-verified' : 'update-interrupted-recovered', { version: pending.targetVersion, instance: this.profile.id });
   }
-  errorMessage(error) {
-    if (error.code === 'ENOSPC') return '磁盘空间不足，请释放空间后重试。';
-    if (/sha512|checksum|hash mismatch/i.test(error.message || '')) return '安装包校验失败，未安装。请重新下载。';
-    return error.message || '更新失败，请检查网络或打开日志后重试。';
+  async installerLaunchFailed(error) {
+    if (this.updater) this.updater.quitAndInstallCalled = false;
+    this.diagnostics.write('error', 'installer-launch-failed', error);
+    let recovered = false;
+    try {
+      const identity = await this.runtime.startup();
+      await this.recoverJournal(identity);
+      recovered = true;
+    } catch (recoveryError) {
+      this.diagnostics.write('error', 'installer-recovery-failed', recoveryError);
+    }
+    this.patch({ phase: 'error', canCancel: false, message: recovered ? '安装程序未能启动。后台已恢复，请查看日志后重试更新。' : '安装程序未能启动。后台恢复尚未确认，请查看日志后重试；不会继续安装。' });
+    return this.state.get();
+  }
+  errorMessage(error, stage = 'update') {
+    // Classify upstream detail; never send its body, headers, paths or stack to the page.
+    const message = String(error?.message || '');
+    const code = String(error?.code || '');
+    const status = Number(error?.statusCode || error?.status);
+    if (code === 'ENOSPC' || /磁盘空间不足/.test(message)) return '磁盘空间不足，请释放空间后重试。';
+    if (code === 'ERR_MEDIAFLOW_UPDATE_STOP') return '后台未能确认已停止，未安装。请检查后台状态或查看日志后重试。';
+    if (/sha512|checksum|hash mismatch/i.test(message)) return '安装包校验失败，未安装。请重新下载。';
+    if (stage === 'checking' && (status === 404 || /(?:HttpError|HTTP|status(?: code)?)\D{0,10}404\b/i.test(message) || /cannot find.*(?:dev|latest)\.yml/i.test(message))) return '更新资料暂不可用，暂时无法确认新版。仍可继续使用平台，稍后重新检查或查看日志。';
+    if (/E(?:CONN|NET|HOST|TIMEDOUT)|ERR_(?:INTERNET|NETWORK|CONNECTION|NAME_NOT_RESOLVED)|ETIMEDOUT/i.test(code) || /network|timed?\s*out|ERR_(?:INTERNET|NETWORK|CONNECTION|NAME_NOT_RESOLVED)/i.test(message)) return '更新网络连接失败。平台仍可使用，请检查网络后重试或查看日志。';
+    if (/更新清单缺少有效文件大小/.test(message)) return '更新资料缺少文件大小，无法检查空间。请稍后重新检查。';
+    if (/下载文件不在|更新缓存不是|下载未返回/.test(message)) return '更新安装包不可用，未安装。请重新下载或查看日志。';
+    if (/版本不一致|实例不一致|回执.*不一致|编号无效|未返回有效/.test(message)) return '更新身份或回执核对失败，未继续安装。请查看日志并修复安装后重试。';
+    if (/安装程序未能启动|ERR_MEDIAFLOW_INSTALLER_LAUNCH/.test(`${code} ${message}`)) return '安装程序未能启动。请查看日志后重试。';
+    return stage === 'checking' ? '暂时无法检查更新。平台仍可使用，请稍后重试或查看日志。' : '更新未完成，未继续安装。请查看日志后重试。';
   }
 }
 module.exports = { UpdateController, verifySha512, ensureDiskSpace, versionAllowed, installerInfo, UpdateCancelled };

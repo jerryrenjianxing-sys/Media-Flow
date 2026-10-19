@@ -49,12 +49,7 @@ else {
       baseCachePath: cacheDirectory, appUpdateConfigPath: path.join(process.resourcesPath, 'app-update.yml'), quit: () => {
         void updater.waitForInstallerLaunch().then(() => { quitting = true; app.quit(); }).catch(async error => {
           quitting = false;
-          updater.quitAndInstallCalled = false;
-          diagnostics.write('error', 'installer-launch-failed', error);
-          let message = `安装程序无法启动：${error.message}`;
-          try { const identity = await runtime.startup(); await updates.recoverJournal(identity); }
-          catch (recoveryError) { message += `；后台恢复需要重试：${recoveryError.message}`; }
-          updates.patch({ phase: 'error', message, canCancel: false });
+          await updates.installerLaunchFailed(error);
           showWindow();
         });
       }, relaunch: () => app.relaunch(), onQuit: handler => app.once('quit', (_event, code) => handler(code)) };

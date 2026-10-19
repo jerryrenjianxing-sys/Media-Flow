@@ -79,6 +79,41 @@ test('installer launch failure does not authorize quitting and successful elevat
   await updater.waitForInstallerLaunch();
 });
 
+test('asynchronous installer launch failure recovers original background and reports only safe state', async () => {
+  const logged = [];
+  const f = fixture({ diagnostics: { write: (...event) => logged.push(event), info() {}, warn() {}, error() {}, debug() {} } });
+  const launchError = new Error('spawn \\\\private-server\\Users\\Jerry\\setup.exe EACCES');
+  const recoveryError = new Error('HttpError: recovery response Headers: authorization Bearer private');
+  f.updater.quitAndInstallCalled = true;
+  f.runtime.startup = async () => { throw recoveryError; };
+  f.journal.write({ schema: 1, instanceId: 'acceptance', operationId: 'operation-1', requestId: 'request-1', targetVersion: info.version, sha512, phase: 'installing' });
+  await f.controller.installerLaunchFailed(launchError);
+  const {message, phase} = f.state.get().update;
+  assert.equal(phase, 'error');
+  assert.match(message, /安装程序未能启动/);
+  assert.match(message, /后台恢复尚未确认/);
+  assert.ok(message.length <= 160);
+  assert.doesNotMatch(message, /private-server|Users|Jerry|HttpError|Headers|authorization|Bearer/i);
+  assert.equal(f.updater.quitAndInstallCalled, false);
+  assert.ok(logged.some(event => event[1] === 'installer-launch-failed' && event[2] === launchError));
+  assert.ok(logged.some(event => event[1] === 'installer-recovery-failed' && event[2] === recoveryError));
+  assert.equal(f.journal.read().operationId, 'operation-1');
+  assert.equal(f.calls.some(value => value === 'download' || Array.isArray(value) && value[0] === 'install'), false);
+});
+
+test('installer launch failure confirms original journal cancellation before saying background restored', async () => {
+  const f = fixture();
+  f.journal.write({ schema: 1, instanceId: 'acceptance', operationId: 'operation-1', requestId: 'request-1', targetVersion: info.version, sha512, phase: 'installing' });
+  await f.controller.installerLaunchFailed(new Error('spawn \\\\private-server\\setup.exe EACCES'));
+  assert.equal(f.state.get().update.phase, 'error');
+  assert.match(f.state.get().update.message, /后台已恢复/);
+  assert.doesNotMatch(f.state.get().update.message, /private-server|EACCES/i);
+  assert.equal(f.calls[0], 'restart');
+  assert.match(f.calls[1].endpoint, /operation-1\/cancel$/);
+  assert.equal(f.journal.read(), null);
+  assert.equal(f.calls.some(value => value === 'download' || Array.isArray(value) && value[0] === 'install'), false);
+});
+
 test('startup checks once and page refresh/concurrent checks neither download nor install', async () => {
   const f = fixture();
   await Promise.all([f.controller.startupCheck(), f.controller.startupCheck()]);
@@ -89,6 +124,36 @@ test('startup checks once and page refresh/concurrent checks neither download no
   await f.controller.deferUpdate();
   assert.equal(f.state.get().update.phase, 'idle');
   assert.deepEqual(f.calls, ['check']);
+});
+
+test('unavailable update metadata reports a short safe reason while platform remains usable', async () => {
+  const logged = [];
+  const f = fixture({ diagnostics: { write: (...event) => logged.push(event), info() {}, warn() {}, error() {}, debug() {} } });
+  const failure = Object.assign(new Error(`HttpError: 404 Not Found\nHeaders: { authorization: Bearer private }\n at C:\\Private User\\MediaFlow\\resources\\app.asar\\main.cjs\n${'upstream body '.repeat(2000)}`), { statusCode: 404 });
+  f.updater.checkForUpdates = async () => { throw failure; };
+  await f.controller.checkForUpdates();
+  const {message, phase} = f.state.get().update;
+  assert.equal(phase, 'error');
+  assert.ok(message.length <= 160);
+  assert.match(message, /更新资料暂不可用/);
+  assert.match(message, /仍可继续使用平台/);
+  assert.doesNotMatch(message, /HttpError|Headers|authorization|Bearer|Private User|app\.asar|upstream body/i);
+  assert.equal(f.calls.some(value => value === 'download' || Array.isArray(value) && ['stop', 'install'].includes(value[0])), false);
+  assert.ok(logged.some(event => event[1] === 'update-check-failed' && event[2] === failure));
+});
+
+test('network and unknown updater errors have concise Chinese recovery text without raw details', async () => {
+  for (const failure of [Object.assign(new Error('connect failed at C:\\Private\\cache'), { code: 'ETIMEDOUT' }), new Error('upstream secret body'), Object.assign(new Error('HttpError: 404\nHeaders: private'), { statusCode: 404 })]) {
+    const f = fixture();
+    f.updater.emit('error', failure);
+    const {message, phase} = f.state.get().update;
+    assert.equal(phase, 'error');
+    assert.ok(message.length <= 160 && /[\u3400-\u9fff]/.test(message));
+    assert.doesNotMatch(message, /HttpError|Headers|private|cache|upstream|secret/i);
+    assert.match(message, /平台.*可.*使用|可继续使用平台/);
+    if (failure.code === 'ETIMEDOUT') assert.match(message, /网络/);
+    assert.deepEqual(f.calls, []);
+  }
 });
 
 test('concurrent update clicks perform one download and verify before preparing/stopping/visible install', async () => {
@@ -120,6 +185,7 @@ test('hash and disk failure leave background untouched and never install', async
     assert.equal(f.state.get().update.phase, 'error');
     assert.equal(f.calls.some(value => value?.endpoint), false);
     assert.equal(f.calls.some(value => Array.isArray(value) && ['stop', 'install'].includes(value[0])), false);
+    assert.match(f.state.get().update.message, stage === 'verify' ? /校验失败/ : /磁盘空间不足/);
   }
 });
 
@@ -168,7 +234,8 @@ test('actual stop failure prevents install and records error', async () => {
   const f = fixture(); f.runtime.stop = async () => { throw new Error('own process still running'); };
   await f.controller.checkForUpdates(); await f.controller.startUpdate();
   assert.equal(f.state.get().update.phase, 'error');
-  assert.match(f.state.get().update.message, /still running/);
+  assert.match(f.state.get().update.message, /后台未能确认已停止，未安装/);
+  assert.doesNotMatch(f.state.get().update.message, /still running/);
   assert.equal(f.calls.some(value => Array.isArray(value) && value[0] === 'install'), false);
 });
 
@@ -200,10 +267,13 @@ test('preparing journal survives restart and reconciles same request then cancel
 
 test('unconfirmed cancel retains journal for subsequent startup recovery', async () => {
   const f = fixture(); const original = f.runtime.api;
-  f.runtime.api = async (endpoint, options) => { if (endpoint.endsWith('/cancel')) throw new Error('cancel reply lost'); return original(endpoint, options); };
+  f.runtime.api = async (endpoint, options) => { if (endpoint.endsWith('/cancel')) throw new Error('HttpError: private recovery body at C:\\Private\\app.asar'); return original(endpoint, options); };
   f.state.on('change', value => { if (value.update.phase === 'countdown') void f.controller.cancelUpdate(); });
   await f.controller.checkForUpdates(); await f.controller.startUpdate();
   assert.equal(f.state.get().update.phase, 'error'); assert.equal(f.journal.read().operationId, 'operation-1');
+  assert.match(f.state.get().update.message, /后台恢复尚未确认/);
+  assert.ok(f.state.get().update.message.length <= 160);
+  assert.doesNotMatch(f.state.get().update.message, /HttpError|private|app\.asar/i);
   f.runtime.api = original;
   await f.controller.recoverJournal({ product_version: '0.4.1-dev.45' });
   assert.equal(f.journal.read(), null);

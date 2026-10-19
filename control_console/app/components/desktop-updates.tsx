@@ -9,19 +9,23 @@ const labels = {
 };
 const activePhases = new Set(["checking", "downloading", "verifying", "waiting_idle", "countdown", "installing"]);
 const megabytes = (value: number) => `${(value / 1048576).toFixed(1)} MB`;
+function updateMessage(value: unknown, fallback = "更新未完成，请查看日志后重试。") {
+  if (typeof value !== "string" || value.length > 160 || !/[\u3400-\u9fff]/.test(value) || /[\r\n\u2028\u2029]|https?:\/\/|[a-z]:[\\/]|\\\\|(?:HttpError|Error:|Headers:|authorization|Bearer|api[_-]?key|password|secret|token=)/i.test(value)) return fallback;
+  return value;
+}
 
 export function UpdateStatus({update}: {update: DesktopState["update"]}) {
   const percent = Math.max(0, Math.min(100, Number(update.percent) || 0));
   return <div className="desktop-update-status" aria-live="polite">
     <strong>{labels[update.phase]}{update.version ? ` · ${update.version}` : ""}</strong>
-    {update.message && <p>{update.message}</p>}
+    {update.message && <p>{updateMessage(update.message)}</p>}
     {update.phase === "downloading" && <>
       <progress max={100} value={percent} aria-label="更新下载进度"/>
       <span>{percent.toFixed(0)}%{update.total ? ` · ${megabytes(update.transferred || 0)} / ${megabytes(update.total)}` : ""}{update.bytesPerSecond ? ` · ${megabytes(update.bytesPerSecond)}/s` : ""}</span>
     </>}
     {update.phase === "countdown" && typeof update.countdownSeconds === "number" && <p>{update.countdownSeconds} 秒后重启安装，可以取消。</p>}
     {update.differential === "full" && <p>本次使用完整安装包下载。</p>}
-    {!!update.blockers?.length && <ul>{update.blockers.map((blocker, index) => <li key={`${blocker.kind}-${blocker.id || index}`}>{blocker.message}</li>)}</ul>}
+    {!!update.blockers?.length && <ul>{update.blockers.map((blocker, index) => <li key={`${blocker.kind}-${blocker.id || index}`}>{updateMessage(blocker.message, "后台仍有操作占用，请等待或查看日志。")}</li>)}</ul>}
   </div>;
 }
 
@@ -38,8 +42,9 @@ export function DesktopUpdateBanner() {
       {update.phase === "available" && <button className="desktop-update-secondary" onClick={() => void invoke("deferUpdate")}>稍后</button>}
       {update.canCancel && <button className="desktop-update-secondary" onClick={() => void invoke("cancelUpdate")}>取消更新</button>}
       {update.phase === "error" && !update.version && <button onClick={() => void invoke("checkForUpdates")}>重新检查</button>}
+      {update.phase === "error" && <button className="desktop-update-secondary" onClick={() => void invoke("openLogs")}>查看日志</button>}
     </div>
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert">{updateMessage(error)}</p>}
   </aside>;
 }
 
@@ -57,6 +62,6 @@ export function DesktopUpdateSettings() {
       {state.update.canCancel && <button className="desktop-update-secondary" onClick={() => void invoke("cancelUpdate")}>取消更新</button>}
       <button className="desktop-update-secondary" onClick={() => void invoke("openLogs")}>查看日志</button>
     </div>
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert">{updateMessage(error)}</p>}
   </section>;
 }

@@ -41,6 +41,18 @@ test('countdown and retry preserve a visible recovery action',()=>{
   snapshot({phase:'error',version:'0.4.1-dev.46',message:'下载校验失败'});
   assert.match(render(DesktopUpdateBanner),/重试更新/);assert.match(render(DesktopUpdateBanner),/下载校验失败/);
 });
+test('update banner rejects raw bridge errors rather than merely wrapping their stack',()=>{
+  const raw = `HttpError: 404 Not Found\nHeaders: authorization Bearer private\n at C:\\Private User\\app.asar\\main.cjs ${'upstream body '.repeat(2000)}`;
+  for(const message of [raw,'更新失败：C:\\Private User\\app.asar','安装程序无法启动：spawn \\\\private-server\\Users\\Jerry\\setup.exe EACCES','更新失败：authorization Bearer private','错误正文'.repeat(100)]){
+    snapshot({phase:'error',message});
+    globalThis.__desktopFixture.error=message;
+    const html=render(DesktopUpdateBanner);
+    assert.match(html,/更新未完成/);
+    assert.match(html,/查看日志/);
+    assert.doesNotMatch(html,/HttpError|Headers|authorization|Bearer|Private User|private-server|Jerry|app\.asar|upstream body|错误正文/i);
+    assert.ok(html.length < 2000);
+  }
+});
 test('source environment cannot initiate installed-release checks',()=>{
   snapshot({phase:'idle'},false);assert.match(render(DesktopUpdateSettings),/<button[^>]*disabled=""[^>]*>检查更新/);
 });
