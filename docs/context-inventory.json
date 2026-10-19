@@ -399,6 +399,12 @@
       "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
     },
     {
+      "path": "docs/dev54-validation.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
+    },
+    {
       "path": "docs/electron-desktop.md",
       "role": "reference",
       "action": "retain",
