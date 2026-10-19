@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import tempfile
 import sys
+import json
+import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from background_host import RuntimeSupervisor, default_role_health_probe
+from background_host import RuntimeSupervisor, atomic_json_write, default_role_health_probe
 
 
 class FakeHttpResponse:
@@ -264,6 +268,79 @@ class RuntimeSupervisorTests(unittest.TestCase):
             ["worker-device-1", "incident-analyzer", "control-ui", "device-stream-host", "control-api"],
             self.control.stopped,
         )
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows file-sharing behavior")
+    def test_shutdown_completes_after_a_brief_heartbeat_read_lock(self) -> None:
+        heartbeat = self.root / "heartbeat.json"
+        atomic_json_write(heartbeat, {"state": "running"})
+        with heartbeat.open("rb") as reader:
+            release = threading.Timer(0.08, reader.close)
+            release.start()
+            try:
+                outcome = self.supervisor.request_shutdown()
+            finally:
+                release.join()
+        self.assertEqual("stopped", outcome["state"])
+        self.assertEqual("stopped", json.loads(heartbeat.read_text())["state"])
+        self.assertEqual([], list(self.root.glob("*.tmp")))
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows file-sharing behavior")
+    def test_shutdown_does_not_claim_stopped_if_heartbeat_stays_locked(self) -> None:
+        heartbeat = self.root / "heartbeat.json"
+        atomic_json_write(heartbeat, {"state": "running", "prior": "complete"})
+        before = heartbeat.read_bytes()
+        foreign_temporary = self.root / "heartbeat.json.other-writer.tmp"
+        foreign_temporary.write_text("another writer", encoding="utf-8")
+        self.supervisor.stop_request_path.write_text("{}", encoding="utf-8")
+        started = time.monotonic()
+        with heartbeat.open("rb"), self.assertRaises(PermissionError):
+            self.supervisor.request_shutdown()
+        elapsed = time.monotonic() - started
+        self.assertGreaterEqual(elapsed, 0.35)
+        self.assertLess(elapsed, 1.5)
+        self.assertEqual(before, heartbeat.read_bytes())
+        self.assertTrue(self.supervisor.stop_request_path.is_file())
+        self.assertEqual("another writer", foreign_temporary.read_text())
+        self.assertEqual([foreign_temporary], list(self.root.glob("*.tmp")))
+
+
+class AtomicJsonWriteTests(unittest.TestCase):
+    def test_concurrent_writers_publish_complete_json_without_temp_collisions(self) -> None:
+        barrier = threading.Barrier(2)
+        arrived = threading.local()
+
+        class SynchronizedPath(type(Path())):
+            def replace(self, target):
+                # Hold both real filesystem replacements until each writer
+                # has finished its JSON, making a shared temp name collide.
+                if not getattr(arrived, "ready", False):
+                    arrived.ready = True
+                    barrier.wait(timeout=5)
+                return super().replace(target)
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = SynchronizedPath(directory) / "heartbeat.json"
+            payloads = [{"state": "running", "writer": "a"}, {"state": "stopped", "writer": "b"}]
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                writes = [executor.submit(atomic_json_write, target, value) for value in payloads]
+                for write in writes:
+                    write.result(timeout=5)
+            self.assertIn(json.loads(target.read_text()), payloads)
+            self.assertEqual([], list(Path(directory).glob("*.tmp")))
+
+    def test_other_replace_errors_propagate_without_retry_or_target_damage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "heartbeat.json"
+            atomic_json_write(target, {"state": "running"})
+            before = target.read_bytes()
+            failure = OSError(28, "isolated filesystem failure")
+            with patch.object(Path, "replace", side_effect=failure) as replace:
+                with self.assertRaises(OSError) as caught:
+                    atomic_json_write(target, {"state": "stopped"})
+            self.assertIs(failure, caught.exception)
+            replace.assert_called_once()
+            self.assertEqual(before, target.read_bytes())
+            self.assertEqual([], list(Path(directory).glob("*.tmp")))
 
 
 if __name__ == "__main__":

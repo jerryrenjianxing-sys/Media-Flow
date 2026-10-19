@@ -16,6 +16,7 @@ import shutil
 import signal
 import subprocess
 import time
+import uuid
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -94,11 +95,33 @@ def now_iso() -> str:
 
 def atomic_json_write(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    temporary.replace(path)
+    temporary = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        deadline = time.monotonic() + 0.4
+        while True:
+            try:
+                temporary.replace(path)
+                return
+            except OSError as exc:
+                remaining = deadline - time.monotonic()
+                # Windows readers/scanners can briefly deny replacement even
+                # after the new JSON is complete. Never hide a lasting denial.
+                if (
+                    os.name != "nt"
+                    or getattr(exc, "winerror", None) not in {5, 32}
+                    or remaining <= 0
+                ):
+                    raise
+                time.sleep(min(0.02, remaining))
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            # Preserve the original failure if a scanner also holds our temp.
+            pass
 
 
 def append_log(event: str, **details: Any) -> None:
