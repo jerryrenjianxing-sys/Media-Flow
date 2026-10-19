@@ -2,6 +2,7 @@
   "schema": 1,
   "scope": "Git可见维护文档、配置、平台Skill及页面帮助；不读取运行数据",
   "files": [
+    {"path":"docs/dev51-validation.md","role":"historical","action":"retain","reason":"分层验证、原始失败、评审修正及真实Trae门槛"},
     {"path":"GLOSSARY.md","role":"current","action":"update","reason":"统一六个用户状态概念，不混淆接入与执行"},
     {"path":"docs/module-map.md","role":"current","action":"update","reason":"现行职责、Interface与验证接缝"},
     {"path":"packaging/release-notes/0.4.1-dev.51.md","role":"historical","action":"retain","reason":"短连接接入候选范围，真实Trae前不公开"},

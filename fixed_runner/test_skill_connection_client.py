@@ -123,7 +123,7 @@ class ConnectionClientTests(unittest.TestCase):
         self.assertEqual({path.name: path.read_bytes() for path in self.root.iterdir()}, before)
 
     def test_rendered_connection_card_runs_under_restricted_execution_policy(self):
-        from fixed_runner.platform_connection import connection_card
+        from platform_connection import connection_card
         self.file = self.root/"用户's 连接资料.json"
         self.connection['connection_file'] = str(self.file)
         self.save_connection()

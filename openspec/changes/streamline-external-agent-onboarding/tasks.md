@@ -4,8 +4,8 @@
 - [x] 3. 首页复制和渐进式Skill引导
 - [x] 4. 阅读索引、模块地图、术语及现行规范
 ## Verification and delivery
-- [ ] 5. Python/PowerShell/前端/Electron/类型/lint/构建/OpenSpec
-- [ ] 6. 独立规范与需求评审，处理缺陷
+- [x] 5. Python/PowerShell/前端/Electron/类型/lint/构建/OpenSpec
+- [x] 6. 独立规范与需求评审，处理缺陷
 - [ ] 7. 唯一干净提交、隔离安装升级与发行资产草稿
 - [ ] 8. 本机空闲核对、备份、安装、数据一致性及页面
 - [ ] 9. 全新Trae三场景真实记录，健康首次接入目标60秒
