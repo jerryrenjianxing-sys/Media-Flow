@@ -43,16 +43,21 @@ function cssRule(css, selector) {
   return match[1];
 }
 
-test("platform home offers Skill download and management without an embedded chat", async () => {
+test("platform home offers only MD file copy and workbench as primary actions without an embedded chat", async () => {
   const response = await render();
   const html = await response.text();
   assert.equal(response.status, 200);
   assert.doesNotMatch(html, /id="agent-input"|aria-label="会话历史"/);
   assert.doesNotMatch(html, /127\.0\.0\.1:3000|打开 Agent|返回 Agent/);
-  assert.match(html, /下载 Skill/);
-  assert.match(html, /复制 Skill/);
-  assert.match(html, /复制连接说明 · 下载完整 Skill/);
-  assert.match(html, /手动复制连接说明/);
+  assert.match(html, /复制 MD 文件/);
+  assert.doesNotMatch(html, /下载 MD|下载 Skill|下载完整 Skill|手动复制|可先下载/);
+  const actions=html.match(/<div class="skill-actions">([\s\S]*?)<\/div>/)?.[1];
+  assert.ok(actions, 'primary action group must exist');
+  assert.equal((actions.match(/<(?:button|a)\b/g)||[]).length,2);
+  assert.match(actions, /class="skill-button skill-button-primary"[^>]*disabled/);
+  assert.match(actions, /<a[^>]*class="skill-button skill-button-secondary"[^>]*href="\/manage"|<a[^>]*href="\/manage"[^>]*class="skill-button skill-button-secondary"/);
+  assert.equal((html.match(/href="\/manage"/g)||[]).length,1);
+  assert.match(html, /文件复制需桌面版/);
   assert.doesNotMatch(html, /完整 Markdown 已复制|下方已选中完整 Markdown|包含操作说明与完整脚本/);
   assert.match(html, /href="\/manage"/);
   assert.doesNotMatch(html, /class="mf-management-nav"/);
@@ -68,7 +73,7 @@ test("platform home offers Skill download and management without an embedded cha
   assert.equal(legacy.headers.get('location'),'/settings');
 });
 
-test("Skill home keeps real local Agent marks and management links out of primary content", async () => {
+test("Skill home keeps real local Agent marks and detailed management pages behind the task desk", async () => {
   const html = await (await render()).text();
   assert.match(html,/src="\/agents\/codex.svg"/);
   assert.match(html,/暂停图标滚动/);
@@ -84,7 +89,7 @@ test("legacy session bookmarks stay on platform home and explain preserved data"
   assert.equal(response.headers.get('location'), null);
   const html = await response.text();
   assert.match(html, /旧会话数据仍保留/);
-  assert.match(html, /下载 Skill/);
+  assert.match(html, /复制 MD 文件/);
   assert.doesNotMatch(html, /127\.0\.0\.1:3000|id="agent-input"/);
 });
 

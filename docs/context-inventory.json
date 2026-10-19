@@ -3039,6 +3039,24 @@
       "reason": "历史事实/已归档方案/原文快照；不作为当前操作，不改验收结论"
     },
     {
+      "path": "openspec/changes/archive/2026-10-20-simplify-home-primary-actions/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "首页复制与任务台双入口的窄范围变更；安装版与源码验收分别记录"
+    },
+    {
+      "path": "openspec/changes/archive/2026-10-20-simplify-home-primary-actions/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "首页复制与任务台双入口的窄范围变更；安装版与源码验收分别记录"
+    },
+    {
+      "path": "openspec/changes/archive/2026-10-20-simplify-home-primary-actions/specs/execution-architecture/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "首页复制与任务台双入口的窄范围变更；安装版与源码验收分别记录"
+    },
+    {
       "path": "research/windows-independent-runtime-packaging-2026-08-28.md",
       "role": "historical",
       "action": "retain",

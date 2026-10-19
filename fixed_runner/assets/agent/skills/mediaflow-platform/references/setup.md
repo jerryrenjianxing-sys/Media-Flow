@@ -2,7 +2,7 @@
 
 ## 场景与目标
 
-用户已经安装 MediaFlow Windows 软件，从首页复制或下载本 Skill 交给外部 Agent。平台、运行环境、控制组件及 Skill 随软件提供，开发版共用这套 Skill。这里不是从零安装 MediaFlow、Python、Node 或 Agent 的教程，也不要求巨大虚拟机镜像。
+用户已经安装 MediaFlow Windows 软件，从桌面首页复制MD连接文件交给外部 Agent，读取文件指向的现成Skill。平台、运行环境、控制组件及 Skill 随软件提供，开发版共用这套 Skill。这里不是从零安装 MediaFlow、Python、Node 或 Agent 的教程，也不要求巨大虚拟机镜像。
 
 收到“配置虚拟机、准备环境、安装抖音”等请求，先检查现状，只补本次缺项。推荐开场：“我先检查平台和 MuMu，已有环境直接复用；缺的软件再补齐，登录由你完成。”仅配置不启动视频或互动任务。
 
