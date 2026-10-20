@@ -83,6 +83,13 @@ test("Skill home keeps real local Agent marks and detailed management pages behi
   assert.match(management,/class="mf-management-nav"/);
 });
 
+test("Skill home copies a fixed MD filename without an editor or disclosure control", async () => {
+  const html = await (await render()).text();
+  assert.doesNotMatch(html, /<details\b|<summary\b|<input\b|MD文件名|skill-file-options/);
+  const css = await source('../app/skill-home.css');
+  assert.doesNotMatch(css, /skill-file-options/);
+});
+
 test("legacy session bookmarks stay on platform home and explain preserved data", async () => {
   const response = await render('/?session=ses_previous');
   assert.equal(response.status, 200);

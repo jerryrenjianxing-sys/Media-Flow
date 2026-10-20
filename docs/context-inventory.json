@@ -3069,6 +3069,24 @@
       "reason": "不可变dev.55发行说明；构建、实际安装与公开分别核验"
     },
     {
+      "path": "openspec/changes/archive/2026-10-20-remove-home-filename-options/proposal.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "首页固定MD文件名的窄范围变更；不更改已发布安装包"
+    },
+    {
+      "path": "openspec/changes/archive/2026-10-20-remove-home-filename-options/tasks.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "固定文件名、移除编辑控件和复制／导航回归的完成条件"
+    },
+    {
+      "path": "openspec/changes/archive/2026-10-20-remove-home-filename-options/specs/execution-architecture/spec.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "首页固定文件交付契约；桌面合法文件名校验保持兼容"
+    },
+    {
       "path": "research/windows-independent-runtime-packaging-2026-08-28.md",
       "role": "historical",
       "action": "retain",

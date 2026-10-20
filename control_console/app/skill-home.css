@@ -45,10 +45,6 @@
 .skill-agents:hover .skill-marquee-track,.skill-agents:focus-within .skill-marquee-track,.skill-agents.is-paused .skill-marquee-track{animation-play-state:paused}
 .skill-agents-note{text-align:center;color:var(--sh-muted);font-size:11px;line-height:1.7;margin:22px 0 0}
 .skill-footer{margin:0 48px;padding:0;min-height:64px;border-top:1px solid var(--sh-line);display:flex;flex-direction:row;flex-shrink:0;align-items:center;justify-content:space-between;gap:20px;font-size:12px;color:var(--sh-muted)}
-.skill-file-options{display:inline-block;max-width:100%;margin-top:10px;text-align:left;color:var(--sh-muted);font-size:13px}
-.skill-file-options summary{cursor:pointer;text-align:center;padding:4px}
-.skill-file-options label{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
-.skill-file-options input{font:inherit;max-width:100%;width:260px;background:var(--sh-bg);color:var(--sh-text);border:1px solid var(--sh-line);border-radius:6px;padding:8px}
 .skill-feedback{max-width:660px}
 @keyframes skill-agents-scroll{to{transform:translateX(-50%)}}
 @media(min-height:900px){.skill-hero{padding-top:100px;padding-bottom:30px}.skill-agents{margin-bottom:70px}}

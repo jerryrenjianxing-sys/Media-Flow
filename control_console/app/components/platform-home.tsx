@@ -7,6 +7,7 @@ import {connectionFilename} from "../lib/platform-home-state.mjs";
 const agents=[['claude-code','Claude Code'],['cursor','Cursor'],['codex','Codex'],['copilot','GitHub Copilot'],['windsurf','Windsurf'],['gemini','Gemini'],['cline','Cline'],['amp','Amp'],['antigravity','Antigravity'],['openclaw','OpenClaw'],['droid','Droid'],['goose','Goose'],['kilo','Kilo'],['kiro-cli','Kiro CLI'],['nous-research','Hermes'],['opencode','OpenCode'],['roo','Roo'],['trae','Trae'],['vscode','VS Code'],['zed','Zed']];
 type ActionState='idle'|'loading'|'done'|'error';
 const subscribeDesktop=()=>()=>{};
+const connectionFileName='MediaFlow连接说明.md';
 
 function Icon({kind}:{kind:'copy'|'grid'|'pause'|'play'}){
   const paths={copy:<><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 8V3H3v13h5"/></>,grid:<><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,pause:<path d="M8 5v14M16 5v14"/>,play:<path d="m8 4 12 8-12 8Z"/>};
@@ -17,20 +18,20 @@ export default function PlatformHome({legacySession=false}:{legacySession?:boole
   const [copy,setCopy]=useState<ActionState>('idle');
   const [paused,setPaused]=useState(false),[dark,setDark]=useState(false);
   const desktop=useSyncExternalStore(subscribeDesktop,()=>typeof window.mediaflowDesktop?.copyConnectionFile==='function',()=>false);
-  const [filename,setFilename]=useState('MediaFlow连接说明.md'),[fileId,setFileId]=useState(''),[notice,setNotice]=useState('');
+  const [fileId,setFileId]=useState(''),[notice,setNotice]=useState('');
   const copying=useRef(false);
   useEffect(()=>{const sync=()=>setDark(document.documentElement.dataset.theme==='dark');sync();const observer=new MutationObserver(sync);observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});return()=>observer.disconnect();},[]);
   async function copySkill(){
     if(copying.current)return;
     copying.current=true;setCopy('loading');setNotice('');
     try{
-      const name=connectionFilename(filename);
+      const name=connectionFilename(connectionFileName);
       const bridge=window.mediaflowDesktop;
       if(!bridge?.copyConnectionFile)throw new Error('desktop_required');
       const result=await bridge.copyConnectionFile({filename:name});
       setFileId(result.fileId);setCopy(result.copied?'done':'error');
       setNotice(result.copied?'MD文件已复制。请粘贴到支持文件附件的本机Agent；不能粘贴时可打开文件位置后拖入。':'文件复制未完成，可打开文件位置后拖入或选择此MD。');
-    }catch{setCopy('error');setNotice('MD文件复制未完成，请检查文件名与平台连接后重试。');}finally{copying.current=false;}
+    }catch{setCopy('error');setNotice('MD文件复制未完成，请检查平台连接后重试。');}finally{copying.current=false;}
   }
   async function revealFile(){try{await window.mediaflowDesktop?.revealConnectionFile?.({fileId});}catch{setNotice('文件位置暂不可用，请重新生成MD文件后重试。');}}
   function toggleTheme(){const theme=dark?'light':'dark';document.documentElement.dataset.theme=theme;localStorage.setItem('mediaflow-theme',theme);window.dispatchEvent(new Event('mediaflow-theme-change'));}
@@ -50,7 +51,6 @@ export default function PlatformHome({legacySession=false}:{legacySession?:boole
         <a className="skill-button skill-button-secondary" href="/manage"><Icon kind="grid"/>任务台</a>
       </div>
       <p className="skill-format">仅提供 .md 文件 · {!desktop?'文件复制需桌面版 · ':''}完整 Skill 已随软件安装</p>
-      <details className="skill-file-options"><summary>文件名</summary><label>MD文件名 <input aria-label="MD文件名" maxLength={100} value={filename} onChange={event=>setFilename(event.target.value)}/></label></details>
       <div className="skill-feedback" aria-live="polite" aria-atomic="true">
         {notice?<p className={copy==='error'?'skill-error':undefined}>{notice}</p>:null}
         {fileId&&desktop?<button type="button" className="text-button" onClick={()=>void revealFile()}>打开文件位置</button>:null}
