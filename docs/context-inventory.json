@@ -3057,6 +3057,18 @@
       "reason": "首页复制与任务台双入口的窄范围变更；安装版与源码验收分别记录"
     },
     {
+      "path": "docs/dev55-validation.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "dev.55本机安装与发行的分层证据；未验收事实保持，不替代现行STATUS"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.55.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "不可变dev.55发行说明；构建、实际安装与公开分别核验"
+    },
+    {
       "path": "research/windows-independent-runtime-packaging-2026-08-28.md",
       "role": "historical",
       "action": "retain",
