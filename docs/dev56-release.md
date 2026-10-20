@@ -40,3 +40,9 @@ computer-use实际窗口检查：首页无文件名编辑、展开控件或下�
 日常未安装56、未启动日常服务。只读前后对比874条任务全部行及状态、576证据目录／24,753文件、2个内容修订、3339模型调用和凭据哈希均一致；原安装仍为dev.55。证据为isolated-continuity.json、history-before.json与history-after.json。
 
 上述门槛通过后才推送源码和纯标签、创建GitHub草稿；公开及远端摘要另行记录，不重建同号资产。
+
+## GitHub公开交付
+
+2026-10-20 11:01:08 +08:00公开[dev.56开发预发行](https://github.com/jerryrenjianxing-sys/Media-Flow/releases/tag/v0.4.1-dev.56)。草稿及公开后均逐项核对8资产大小／SHA-256，与本机一致；匿名取得384字节dev.yml与本机原字节一致，安装器HEAD为200且长度206,005,348。远端纯标签仍指向220fb09c78ac8f5c84cf7ccc9f439a0c2cf2443b，后续交付文档提交不改变包身份，不覆盖旧包或同号重建。
+
+证据为忽略目录work/dev56-validation/draft-release-verification.json和public-release-verification.json。源码及标签已推送；日常安装保持dev.55，用户可自行安装或发起更新。本轮没有完成日常56安装、真实Agent、原生托盘联合退出重验、系统DPI、关闭Codex独立性或真实设备业务，不作相应通过声明；设置页旧下载措辞继续作为非阻断文案记录。
