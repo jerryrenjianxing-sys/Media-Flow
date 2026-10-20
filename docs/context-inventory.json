@@ -3087,6 +3087,18 @@
       "reason": "首页固定文件交付契约；桌面合法文件名校验保持兼容"
     },
     {
+      "path": "docs/dev56-release.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "dev.56构建、隔离升级和公开发行证据；日常安装不自动切换"
+    },
+    {
+      "path": "packaging/release-notes/0.4.1-dev.56.md",
+      "role": "historical",
+      "action": "retain",
+      "reason": "不可变dev.56发行说明，旧发行资产和未验收事实保持"
+    },
+    {
       "path": "research/windows-independent-runtime-packaging-2026-08-28.md",
       "role": "historical",
       "action": "retain",
